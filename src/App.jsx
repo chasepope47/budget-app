@@ -129,12 +129,12 @@ function App() {
       <main className="flex-1 max-w-5xl mx-auto px-4 py-6 space-y-6">
         {currentPage === "dashboard" && (
           <Dashboard
-            month={sampleBudget.month}
+            month={Budget.month}
             income={totalIncome}
             fixed={totalFixed}
             variable={totalVariable}
             leftover={leftoverForGoals}
-            goals={sampleGoals}
+            goals={Goals}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
@@ -144,8 +144,8 @@ function App() {
 
         {currentPage === "budget" && (
           <BudgetPage
-            month={sampleBudget.month}
-            budget={sampleBudget}
+            month={Budget.month}
+            budget={Budget}
             totals={{
               income: totalIncome,
               fixed: totalFixed,
