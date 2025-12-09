@@ -207,6 +207,7 @@ function NeonProgressBar({ value }) {
 
 // ----- Dashboard -----
 function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal }) {
+  const [transactions, setTransactions] = useState([]);
   const allocatedPercent = income > 0 ? ((income - leftover) / income) * 100 : 0;
 
   return (
@@ -251,6 +252,52 @@ function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal
       <button className="mt-2 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition">
         + Add Goal
       </button>
+
+      <Card title="BANK STATEMENT IMPORT (CSV)">
+        <BankImportCard
+          onTransactionsParsed={(rows) => setTransactions(rows)}
+        />
+
+        {transactions.length > 0 && (
+          <div className="mt-4">
+            <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
+              Parsed Transactions
+            </h3>
+            <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-900 text-slate-300">
+                  <tr>
+                    <th className="px-2 py-1">Date</th>
+                    <th className="px-2 py-1">Description</th>
+                    <th className="px-2 py-1 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {transactions.map((tx, idx) => (
+                    <tr key={idx} className="hover:bg-slate-900/70">
+                      <td className="px-2 py-1 text-slate-300">
+                        {tx.date || "-"}
+                      </td>
+                      <td className="px-2 py-1 text-slate-200">
+                        {tx.description || "-"}
+                      </td>
+                      <td
+                        className={`px-2 py-1 text-right ${
+                          tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
+                        }`}
+                      >
+                        {isNaN(tx.amount)
+                          ? "-"
+                          : `$${tx.amount.toFixed(2)}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -412,6 +459,105 @@ function GoalDetailPage({ goal }) {
       </Card>
     </div>
   );
+}
+function BankImportCard({ onTransactionsParsed }) {
+  const [error, setError] = useState("");
+  const [fileName, setFileName] = useState("");
+
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError("");
+    setFileName(file.name);
+
+    try {
+      const text = await file.text();
+      const rows = parseCsvTransactions(text);
+      onTransactionsParsed(rows);
+    } catch (err) {
+      console.error(err);
+      setError("Could not read or parse this file. Make sure it's a CSV.");
+    }
+  }
+
+  return (
+    <div className="space-y-2 text-xs">
+      <p className="text-slate-400">
+        Upload a <span className="text-cyan-300 font-semibold">.csv</span>{" "}
+        bank statement. We&apos;ll parse basic fields like date, description,
+        and amount.
+      </p>
+
+      <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
+        <span>Choose CSV file</span>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+      </label>
+
+      {fileName && (
+        <p className="text-[0.7rem] text-slate-500">
+          Selected: <span className="text-slate-300">{fileName}</span>
+        </p>
+      )}
+
+      {error && <p className="text-[0.7rem] text-rose-400">{error}</p>}
+
+      <p className="text-[0.7rem] text-slate-500">
+        Tip: Most banks let you export recent transactions as CSV from their
+        website.
+      </p>
+    </div>
+  );
+}
+
+function parseCsvTransactions(text) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length === 0) return [];
+
+  // assume first row is header
+  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+
+  const dateIndex = header.findIndex((h) =>
+    ["date", "transaction date", "posted date"].includes(h)
+  );
+  const descIndex = header.findIndex((h) =>
+    ["description", "details", "memo", "payee"].includes(h)
+  );
+  const amountIndex = header.findIndex((h) =>
+    ["amount", "amt", "transaction amount", "debit", "credit"].includes(h)
+  );
+
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    // naive split – enough for simple exports
+    const cols = raw.split(",").map((c) => c.trim());
+
+    if (cols.length === 0 || cols.every((c) => c === "")) continue;
+
+    const date = dateIndex >= 0 ? cols[dateIndex] : "";
+    const description = descIndex >= 0 ? cols[descIndex] : "";
+
+    let amount = NaN;
+    if (amountIndex >= 0) {
+      const rawAmt = cols[amountIndex].replace(/[$,]/g, "");
+      amount = Number(rawAmt);
+    }
+
+    rows.push({
+      date,
+      description,
+      amount,
+    });
+  }
+
+  return rows;
 }
 
 export default App;
