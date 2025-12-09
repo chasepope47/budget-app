@@ -134,7 +134,7 @@ function App() {
             fixed={totalFixed}
             variable={totalVariable}
             leftover={leftoverForGoals}
-            goals={Goals}
+            goals={goals}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
