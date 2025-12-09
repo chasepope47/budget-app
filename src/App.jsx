@@ -23,6 +23,27 @@ function saveStoredState(state) {
   }
 }
 
+function mergeTransactions(existing, incoming) {
+  // create a simple key like: "2025-01-01|STARBUCKS|-5.75"
+  const makeKey = (tx) =>
+    `${(tx.date || "").trim()}|${(tx.description || "")
+      .trim()
+      .toLowerCase()}|${isNaN(tx.amount) ? "NaN" : tx.amount}`;
+
+  const seen = new Set(existing.map((tx) => makeKey(tx)));
+  const merged = [...existing];
+
+  for (const tx of incoming) {
+    const key = makeKey(tx);
+    if (!seen.has(key)) {
+      merged.push(tx);
+      seen.add(key);
+    }
+  }
+
+  return merged;
+}
+
 // ----- Sample Data -----
 const sampleBudget = {
   month: "January 2026",
@@ -141,11 +162,12 @@ const [transactions, setTransactions] = useState(stored?.transactions || []);
             variable={totalVariable}
             leftover={leftoverForGoals}
             goals={goals}
+            transactions={transactions}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
             }}
-            onTransactionsUpdate={(rows) => setTransactions(rows)}
+            onTransactionsUpdate={(rows) => setTransactions((prev) => mergeTransactions(prev, rows))}
           />
         )}
 
