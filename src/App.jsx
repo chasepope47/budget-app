@@ -76,14 +76,15 @@ function App() {
 
   const [budget, setBudget] = useState(stored?.budget || sampleBudget);
   const [goals, setGoals] = useState(stored?.goals || sampleGoals);
+const [transcations, setTransactions] = useState(stored?.transactions || []);
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || "japan"
   );
 
   useEffect(() => {
-    saveStoredState({ budget, goals, selectedGoalId });
-  }, [budget, goals, selectedGoalId]);
+    saveStoredState({ budget, goals, transactions, selectedGoalId });
+  }, [budget, goals, transactions, selectedGoalId]);
 
   const totalIncome = sumAmounts(budget.incomeItems);
   const totalFixed = sumAmounts(budget.fixedExpenses);
@@ -139,6 +140,7 @@ function App() {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
             }}
+            onTransactionsUpdate={(rows) => setTransactions(rows)}
           />
         )}
 
@@ -206,7 +208,7 @@ function NeonProgressBar({ value }) {
 }
 
 // ----- Dashboard -----
-function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal }) {
+function Dashboard({ month, income, fixed, variable, leftover, goals, transactions, onOpenGoal, onTransactionsUpdate, }) {
   const [transactions, setTransactions] = useState([]);
   const allocatedPercent = income > 0 ? ((income - leftover) / income) * 100 : 0;
 
@@ -255,7 +257,7 @@ function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal
 
       <Card title="BANK STATEMENT IMPORT (CSV)">
         <BankImportCard
-          onTransactionsParsed={(rows) => setTransactions(rows)}
+          onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
         />
 
         {transactions.length > 0 && (
@@ -269,6 +271,7 @@ function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal
                   <tr>
                     <th className="px-2 py-1">Date</th>
                     <th className="px-2 py-1">Description</th>
+                    <th className="px-2 py-1">Category</th>
                     <th className="px-2 py-1 text-right">Amount</th>
                   </tr>
                 </thead>
@@ -280,6 +283,9 @@ function Dashboard({ month, income, fixed, variable, leftover, goals, onOpenGoal
                       </td>
                       <td className="px-2 py-1 text-slate-200">
                         {tx.description || "-"}
+                      </td>
+                      <td className="px-2 py-1 text-slate-300">
+                        {tx.category || "Other"}
                       </td>
                       <td
                         className={`px-2 py-1 text-right ${
@@ -515,6 +521,100 @@ function BankImportCard({ onTransactionsParsed }) {
   );
 }
 
+function categorizeTransaction(description, amount) {
+  const text = (description || "").toLowerCase();
+
+  if (amount > 0) {
+    // Money coming in
+    if (text.includes("payroll") || text.includes("direct deposit")) {
+      return "Income – Paycheck";
+    }
+    if (text.includes("refund") || text.includes("rebate")) {
+      return "Income – Refund";
+    }
+    return "Income – Other";
+  }
+
+  // Money going out (expenses)
+  if (text.includes("uber") || text.includes("lyft") || text.includes("taxi")) {
+    return "Transport – Rideshare";
+  }
+  if (
+    text.includes("shell") ||
+    text.includes("chevron") ||
+    text.includes("exxon") ||
+    text.includes("gas") ||
+    text.includes("fuel")
+  ) {
+    return "Transport – Gas";
+  }
+  if (
+    text.includes("walmart") ||
+    text.includes("costco") ||
+    text.includes("grocery") ||
+    text.includes("smith") ||
+    text.includes("kroger")
+  ) {
+    return "Groceries";
+  }
+  if (
+    text.includes("starbucks") ||
+    text.includes("coffee") ||
+    text.includes("mcdonald") ||
+    text.includes("taco bell") ||
+    text.includes("restaurant") ||
+    text.includes("cafe")
+  ) {
+    return "Food & Dining";
+  }
+  if (
+    text.includes("netflix") ||
+    text.includes("spotify") ||
+    text.includes("hulu") ||
+    text.includes("disney") ||
+    text.includes("subscription") ||
+    text.includes("prime")
+  ) {
+    return "Subscriptions";
+  }
+  if (
+    text.includes("rent") ||
+    text.includes("landlord") ||
+    text.includes("mortgage")
+  ) {
+    return "Housing – Rent/Mortgage";
+  }
+  if (
+    text.includes("power") ||
+    text.includes("electric") ||
+    text.includes("water") ||
+    text.includes("utility") ||
+    text.includes("utilities")
+  ) {
+    return "Utilities";
+  }
+  if (text.includes("gym") || text.includes("fitness")) {
+    return "Health & Fitness";
+  }
+  if (
+    text.includes("insurance") ||
+    text.includes("geico") ||
+    text.includes("allstate")
+  ) {
+    return "Insurance";
+  }
+  if (
+    text.includes("amazon") ||
+    text.includes("target") ||
+    text.includes("best buy") ||
+    text.includes("shop")
+  ) {
+    return "Shopping";
+  }
+
+  return "Other";
+}
+
 function parseCsvTransactions(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
@@ -549,6 +649,8 @@ function parseCsvTransactions(text) {
       const rawAmt = cols[amountIndex].replace(/[$,]/g, "");
       amount = Number(rawAmt);
     }
+
+    const category = categorizeTransaction(description, amount);
 
     rows.push({
       date,
