@@ -763,28 +763,78 @@ function categorizeTransaction(description, amount) {
   return "Other";
 }
 
+const HEADER_ALIASES = {
+  date: [
+    "date",
+    "transaction date",
+    "posted date",
+    "posting date",
+    "trans date",
+  ],
+  description: [
+    "description",
+    "details",
+    "memo",
+    "payee",
+    "transaction description",
+    "narrative",
+  ],
+  debit: ["debit", "withdrawal", "outflow", "money out", "charge"],
+  credit: ["credit", "deposit", "inflow", "money in", "payment", "credit amount"],
+  amount: ["amount", "amt", "transaction amount", "value"],
+};
+
+function normalizeHeaderRow(line) {
+  return line
+    .split(",")
+    .map((h) => h.trim().toLowerCase().replace(/"/g, ""));
+}
+
+function findHeaderIndex(header, aliases) {
+  return header.findIndex((h) => aliases.includes(h));
+}
+
+function parseAmountCell(cell) {
+  if (!cell) return NaN;
+  let cleaned = String(cell).trim();
+
+  // remove quotes
+  cleaned = cleaned.replace(/"/g, "");
+
+  // handle parentheses for negatives: (123.45) => -123.45
+  let negative = false;
+  if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+    negative = true;
+    cleaned = cleaned.slice(1, -1);
+  }
+
+  // strip $ and commas
+  cleaned = cleaned.replace(/[$,]/g, "");
+
+  if (cleaned === "") return NaN;
+
+  let num = Number(cleaned);
+  if (isNaN(num)) return NaN;
+  return negative ? -num : num;
+}
+
 function parseCsvTransactions(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
-  // assume first row is header
-  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  // try to treat first non-empty line as header
+  const header = normalizeHeaderRow(lines[0]);
 
-  const dateIndex = header.findIndex((h) =>
-    ["date", "transaction date", "posted date"].includes(h)
-  );
-  const descIndex = header.findIndex((h) =>
-    ["description", "details", "memo", "payee"].includes(h)
-  );
-  const amountIndex = header.findIndex((h) =>
-    ["amount", "amt", "transaction amount", "debit", "credit"].includes(h)
-  );
+  const dateIndex = findHeaderIndex(header, HEADER_ALIASES.date);
+  const descIndex = findHeaderIndex(header, HEADER_ALIASES.description);
+  const amountIndex = findHeaderIndex(header, HEADER_ALIASES.amount);
+  const debitIndex = findHeaderIndex(header, HEADER_ALIASES.debit);
+  const creditIndex = findHeaderIndex(header, HEADER_ALIASES.credit);
 
   const rows = [];
 
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
-    // naive split – enough for simple exports
     const cols = raw.split(",").map((c) => c.trim());
 
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
@@ -793,10 +843,20 @@ function parseCsvTransactions(text) {
     const description = descIndex >= 0 ? cols[descIndex] : "";
 
     let amount = NaN;
+
     if (amountIndex >= 0) {
-      const rawAmt = cols[amountIndex].replace(/[$,]/g, "");
-      amount = Number(rawAmt);
+      // single Amount column
+      amount = parseAmountCell(cols[amountIndex]);
+    } else if (debitIndex >= 0 || creditIndex >= 0) {
+      // separate Debit/Credit columns
+      const debit = debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
+      const credit = creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
+      // convention: money in = positive, money out = negative
+      amount = credit - debit;
     }
+
+    // if row is basically empty, skip
+    if (!date && !description && isNaN(amount)) continue;
 
     const category = categorizeTransaction(description, amount);
 
@@ -804,6 +864,7 @@ function parseCsvTransactions(text) {
       date,
       description,
       amount,
+      category,
     });
   }
 
