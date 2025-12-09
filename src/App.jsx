@@ -129,7 +129,7 @@ function App() {
       <main className="flex-1 max-w-5xl mx-auto px-4 py-6 space-y-6">
         {currentPage === "dashboard" && (
           <Dashboard
-            month={Budget.month}
+            month={budget.month}
             income={totalIncome}
             fixed={totalFixed}
             variable={totalVariable}
@@ -144,8 +144,8 @@ function App() {
 
         {currentPage === "budget" && (
           <BudgetPage
-            month={Budget.month}
-            budget={Budget}
+            month={budget.month}
+            budget={budget}
             totals={{
               income: totalIncome,
               fixed: totalFixed,
