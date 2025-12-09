@@ -1,4 +1,4 @@
-import React, { useState,useEffect } from "react";
+import React, { useState, useEffect } from "react";
 
 // ----- Local Storage -----
 const STORAGE_KEY = "budgetAppState_v1";
@@ -76,7 +76,7 @@ function App() {
 
   const [budget, setBudget] = useState(stored?.budget || sampleBudget);
   const [goals, setGoals] = useState(stored?.goals || sampleGoals);
-const [transcations, setTransactions] = useState(stored?.transactions || []);
+const [transactions, setTransactions] = useState(stored?.transactions || []);
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || "japan"
@@ -119,6 +119,11 @@ const [transcations, setTransactions] = useState(stored?.transactions || []);
               onClick={() => setCurrentPage("budget")}
             />
             <NavButton
+              label="Transactions"
+              active={currentPage === "transactions"}
+              onClick={() => setCurrentPage("transactions")}
+            />
+            <NavButton
               label="Goal Detail"
               active={currentPage === "goalDetail"}
               onClick={() => setCurrentPage("goalDetail")}
@@ -155,6 +160,10 @@ const [transcations, setTransactions] = useState(stored?.transactions || []);
               leftover: leftoverForGoals,
             }}
           />
+        )}
+
+        {currentPage === "transactions" && (
+          <TransactionsPage transactions={transactions} />
         )}
 
         {currentPage === "goalDetail" && (
@@ -208,8 +217,7 @@ function NeonProgressBar({ value }) {
 }
 
 // ----- Dashboard -----
-function Dashboard({ month, income, fixed, variable, leftover, goals, transactions, onOpenGoal, onTransactionsUpdate, }) {
-  const [transactions, setTransactions] = useState([]);
+function Dashboard({ month, income, fixed, variable, leftover, goals, transactions = [], onOpenGoal, onTransactionsUpdate = () => {}, }) {
   const allocatedPercent = income > 0 ? ((income - leftover) / income) * 100 : 0;
 
   return (
@@ -260,7 +268,7 @@ function Dashboard({ month, income, fixed, variable, leftover, goals, transactio
           onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
         />
 
-        {transactions.length > 0 && (
+        {Array.isArray(transactions) && transactions.length > 0 && (
           <div className="mt-4">
             <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
               Parsed Transactions
@@ -409,6 +417,71 @@ function ListWithTotal({ items, total }) {
         </span>
         <span className="text-slate-100">${total.toFixed(2)}</span>
       </div>
+    </div>
+  );
+}
+
+// ----- Transactions Page -----
+function TransactionsPage({ transactions = [] }) {
+  const hasData = Array.isArray(transactions) && transactions.length > 0;
+
+  return (
+    <div className="space-y-4">
+      <header className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-slate-100">
+          Transactions
+        </h1>
+        <span className="text-xs text-slate-400">
+          Imported from your bank CSV files
+        </span>
+      </header>
+
+      <Card title="ALL TRANSACTIONS">
+        {!hasData && (
+          <p className="text-xs text-slate-400">
+            No transactions yet. Import a CSV on the Dashboard to see them here.
+          </p>
+        )}
+
+        {hasData && (
+          <div className="max-h-[480px] overflow-auto border border-slate-800 rounded-lg">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-900 text-slate-300 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1">Date</th>
+                  <th className="px-2 py-1">Description</th>
+                  <th className="px-2 py-1">Category</th>
+                  <th className="px-2 py-1 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {transactions.map((tx, idx) => (
+                  <tr key={idx} className="hover:bg-slate-900/70">
+                    <td className="px-2 py-1 text-slate-300">
+                      {tx.date || "-"}
+                    </td>
+                    <td className="px-2 py-1 text-slate-200">
+                      {tx.description || "-"}
+                    </td>
+                    <td className="px-2 py-1 text-slate-300">
+                      {tx.category || "Other"}
+                    </td>
+                    <td
+                      className={`px-2 py-1 text-right ${
+                        tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
+                      }`}
+                    >
+                      {isNaN(tx.amount)
+                        ? "-"
+                        : `$${tx.amount.toFixed(2)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
