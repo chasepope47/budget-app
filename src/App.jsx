@@ -201,13 +201,16 @@ function detectTargetAccountForImport(
   currentAccountId,
   importedRows = []
 ) {
-  const withTransactions = (accounts || []).filter(
+  
+const withTransactions = (accounts || []).filter(
     (acc) => Array.isArray(acc.transactions) && acc.transactions.length > 0
   );
 
-  // If no account has existing transactions yet, just use the current account
+  // If no account has existing transactions yet, treat this as a *new* account.
+  // That way your very first CSV import becomes its own account instead of
+  // always dumping into "Main Account".
   if (!withTransactions.length) {
-    return currentAccountId;
+    return null;
   }
 
   const importedDescriptions = buildDescriptionSet(importedRows);
