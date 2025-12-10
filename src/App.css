@@ -40,25 +40,31 @@
   color: #888;
 }
 
+/* move left → right inside the filled part, then back */
 @keyframes shine {
   0% {
-    transform: translateX(-50%);
-    opacity: 0;
+    transform: translateX(0);
+    opacity: 0.15;
   }
-  15% {
+  20% {
     opacity: 1;
   }
-  70% {
+  50% {
+    transform: translateX(calc(100% - var(--shine-width)));
+    opacity: 1;
+  }
+  80% {
     opacity: 1;
   }
   100% {
-    transform: translateX(120%);
-    opacity: 0;
+    transform: translateX(0);
+    opacity: 0.15;
   }
 }
 
+/* the class that actually runs the animation */
 .shine {
-  animation: shine 2.2s linear infinite;
+  animation: shine 2.2s ease-in-out infinite;
 }
 
 .progress-bar {
@@ -74,14 +80,18 @@
   background: linear-gradient(to right, #22d3ee, #a78bfa, #22d3ee);
   box-shadow: 0 0 20px rgba(34, 211, 238, 0.8);
   position: relative; /* important for shine */
+  overflow: hidden;   /* NEW: keep the shine inside the filled bar */
 }
 
 .progress-shine {
+  --shine-width: 3rem;        /* width of the glowing bar */
+
   position: absolute;
   top: 0;
   left: 0;
-  width: 3rem;
+  width: var(--shine-width);
   height: 100%;
+  border-radius: 999px;
   background: linear-gradient(
     90deg,
     transparent,
