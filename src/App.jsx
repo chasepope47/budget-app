@@ -314,20 +314,33 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState(null);
+  const [info, setInform] = React.useState(null);
   const [submitting, setSubmitting] = React.useState(false);
 
-  async function handleSubmit(e) {
+    async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
+    setInfo(null);   // <-- Clear info message
     setSubmitting(true);
+
     try {
       if (mode === "signin") {
         await onSignIn(email, password);
+
       } else {
-        await onSignUp(email, password);
+        // SIGN UP FLOW
+        const { user, session } = await onSignUp(email, password);
+
+        // If Supabase requires email confirmation, user exists but session === null
+        if (user && !session) {
+          setInfo(
+            "Account created! Check your email and click the confirmation link. " +
+            "After that, this page will automatically log you in."
+          );
+        }
       }
     } catch (err) {
-      setError(err.message || "Something went wrong");
+      setError(err.message || "Something went wrong.");
     } finally {
       setSubmitting(false);
     }
@@ -399,6 +412,13 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
           {error && (
             <p className="text-xs text-red-400 whitespace-pre-wrap">{error}</p>
           )}
+
+          {info && (
+            <p className="text-xs text-emerald-300 whitespace-pre-wrap mt-1">
+              {info}
+            </p>
+          )}
+
 
           <button
             type="submit"

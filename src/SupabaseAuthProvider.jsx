@@ -8,14 +8,19 @@ export function SupabaseAuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // On mount, check current session and subscribe to changes
   useEffect(() => {
     let ignore = false;
 
     async function getInitialSession() {
       const {
         data: { session },
+        error,
       } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("Error getting initial session:", error);
+      }
+
       if (!ignore) {
         setUser(session?.user ?? null);
         setAuthLoading(false);
@@ -38,7 +43,6 @@ export function SupabaseAuthProvider({ children }) {
     };
   }, []);
 
-  // Helpers for email/password login
   async function signInWithEmail(email, password) {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -47,16 +51,26 @@ export function SupabaseAuthProvider({ children }) {
     if (error) throw error;
   }
 
-  async function signUpWithEmail(email, password) {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    if (error) throw error;
-  }
+async function signUpWithEmail(email, password) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      // After they click the confirm email link,
+      // Supabase will redirect them back here:
+      emailRedirectTo: window.location.origin,
+    },
+  });
+
+  if (error) throw error;
+  return data; // so the UI can show a "check your email" message if you want
+}
 
   async function signOut() {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Error signing out:", error);
+    }
   }
 
   const value = {
