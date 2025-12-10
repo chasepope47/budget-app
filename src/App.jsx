@@ -545,7 +545,7 @@ function NeonProgressBar({ value }) {
   return (
     <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
       <div
-        className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.8)] progress-sweep"
+        className="h-full rounded-full shadow-[0_0_18px_rgba(34,211,238,0.7)] progress-sweep"
         style={{ width: `${clamped}%` }}
       />
     </div>

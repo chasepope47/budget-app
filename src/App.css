@@ -45,13 +45,24 @@
   0% {
     background-position: 0% 50%;
   }
+  50% {
+    background-position: 100% 50%;
+  }
   100% {
-    background-position: 200% 50%;
+    background-position: 0% 50%;
   }
 }
 
-/* Makes the gradient move from left → right */
+/* obvious glowing band that moves left ↔ right */
 .progress-sweep {
-  background-size: 200% 100%;
-  animation: bar-sweep 3s linear infinite;
+  background-image: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.1),
+    rgba(34, 211, 238, 0.15),
+    rgba(244, 114, 182, 0.9),
+    rgba(34, 211, 238, 0.15),
+    rgba(15, 23, 42, 0.1)
+  );
+  background-size: 250% 100%;
+  animation: bar-sweep 1.8s ease-in-out infinite;
 }
