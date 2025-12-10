@@ -157,6 +157,147 @@ function normalizeAccounts(accs) {
   }));
 }
 
+function buildDescriptionSet(transactions = []) {
+  const set = new Set();
+  (transactions || []).forEach((tx) => {
+    const desc = (tx.description || "").trim().toLowerCase();
+    if (!desc) return;
+    // keep full description for now
+    set.add(desc);
+  });
+  return set;
+}
+
+function guessAccountTypeFromRows(rows = []) {
+  if (!rows.length) return "checking";
+  let negatives = 0;
+  let positives = 0;
+  for (const tx of rows) {
+    if (typeof tx.amount !== "number") continue;
+    if (tx.amount < 0) negatives++;
+    else if (tx.amount > 0) positives++;
+  }
+  if (negatives === 0 && positives === 0) return "checking";
+  const ratio = negatives / (negatives + positives);
+  // if it's mostly charges with occasional payments, call it a credit account
+  return ratio >= 0.7 ? "credit" : "checking";
+}
+
+function guessAccountNameFromRows(rows = []) {
+  if (!rows.length) return "Imported Account";
+  const sample = (rows[0].description || "").trim();
+  if (!sample) return "Imported Account";
+  const words = sample.split(/\s+/).filter((w) => w.length > 3);
+  if (!words.length) return "Imported Account";
+  const label = words[0].replace(/[^a-z0-9]/gi, " ");
+  const cleaned = label.trim();
+  if (!cleaned) return "Imported Account";
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) + " Account";
+}
+
+function detectTargetAccountForImport(
+  accounts = [],
+  currentAccountId,
+  importedRows = []
+) {
+  const withTransactions = (accounts || []).filter(
+    (acc) => Array.isArray(acc.transactions) && acc.transactions.length > 0
+  );
+
+  // If no account has existing transactions yet, just use the current account
+  if (!withTransactions.length) {
+    return currentAccountId;
+  }
+
+  const importedDescriptions = buildDescriptionSet(importedRows);
+  if (!importedDescriptions.size) {
+    return currentAccountId;
+  }
+
+  let bestAccountId = null;
+  let bestOverlap = 0;
+
+  for (const acc of withTransactions) {
+    const existingDescriptions = buildDescriptionSet(acc.transactions);
+    if (!existingDescriptions.size) continue;
+
+    let overlap = 0;
+    for (const desc of importedDescriptions) {
+      if (existingDescriptions.has(desc)) overlap++;
+    }
+
+    if (overlap > bestOverlap) {
+      bestOverlap = overlap;
+      bestAccountId = acc.id;
+    }
+  }
+
+  // Heuristic thresholds:
+  // - If we have at least 3 overlapping exact descriptions OR
+  //   at least 20% of imported descriptions overlap with this account,
+  //   we treat it as the same account.
+  const overlapRatio =
+    importedDescriptions.size > 0 ? bestOverlap / importedDescriptions.size : 0;
+
+  if (bestAccountId && (bestOverlap >= 3 || overlapRatio >= 0.2)) {
+    return bestAccountId;
+  }
+
+  // Otherwise, this looks like a new account
+  return null;
+}
+
+function importTransactionsWithDetection(
+  accounts = [],
+  currentAccountId,
+  importedRows = []
+) {
+  const targetId = detectTargetAccountForImport(
+    accounts,
+    currentAccountId,
+    importedRows
+  );
+
+  // Case 1: We matched an existing account
+  if (targetId) {
+    const nextAccounts = (accounts || []).map((acc) =>
+      acc.id === targetId
+        ? {
+            ...acc,
+            transactions: mergeTransactions(acc.transactions || [], importedRows),
+          }
+        : acc
+    );
+    return {
+      targetAccountId: targetId,
+      accounts: nextAccounts,
+      createdNew: false,
+    };
+  }
+
+  // Case 2: No good match → create a new account
+  const type = guessAccountTypeFromRows(importedRows);
+  const name = guessAccountNameFromRows(importedRows);
+  const newId =
+    name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") +
+    "-" +
+    Date.now();
+
+  const newAccount = {
+    id: newId,
+    name,
+    type,
+    startingBalance: 0,
+    transactions: importedRows,
+  };
+
+  return {
+    targetAccountId: newId,
+    accounts: [...(accounts || []), newAccount],
+    createdNew: true,
+  };
+}
+
 function App() {
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
@@ -268,6 +409,26 @@ const totalBalance = accountRows.reduce(
 
 const currentAccountBalance =
   accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
+
+  // ---- CSV import with automatic account detection ----
+function handleImportedTransactions(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+
+  const result = importTransactionsWithDetection(
+    accounts,
+    currentAccountId,
+    rows
+  );
+
+  setAccounts(result.accounts);
+
+  if (
+    result.targetAccountId &&
+    result.targetAccountId !== currentAccountId
+  ) {
+    setCurrentAccountId(result.targetAccountId);
+  }
+}
 
   // ---- Persist state to localStorage on changes ----
   useEffect(() => {
@@ -428,38 +589,26 @@ const currentAccountBalance =
          />
         )}
 
-        {currentPage === "dashboard" && (
-          <Dashboard
-            month={budget.month}
-            income={totalIncome}
-            fixed={totalFixed}
-            variable={totalVariable}
-            leftover={leftoverForGoals}
-            goals={goals}
-            transactions={transactions}
-            currentAccountBalance={currentAccountBalance}
-            totalBalance={totalBalance}
-            onOpenGoal={(id) => {
-              setSelectedGoalId(id);
-              setCurrentPage("goalDetail");
-            }}
-            onTransactionsUpdate={(rows) =>
-              setAccounts((prev) =>
-                prev.map((account) =>
-                  account.id === currentAccountId
-                    ? {
-                        ...account,
-                        transactions: mergeTransactions(
-                          account.transactions || [],
-                          rows
-                        ),
-                      }
-                    : account
-                )
-              )
-            }
-          />
-        )}
+      {currentPage === "dashboard" && (
+  <Dashboard
+    month={budget.month}
+    income={totalIncome}
+    fixed={totalFixed}
+    variable={totalVariable}
+    leftover={leftoverForGoals}
+    goals={goals}
+    transactions={transactions}
+    currentAccountBalance={currentAccountBalance}
+    totalBalance={totalBalance}
+    sectionsOrder={dashboardSectionsOrder}
+    onOpenGoal={(id) => {
+      setSelectedGoalId(id);
+      setCurrentPage("goalDetail");
+    }}
+    onTransactionsUpdate={handleImportedTransactions}
+  />
+)}
+
 
         {currentPage === "balances" && (
           <BalancesDashboard
