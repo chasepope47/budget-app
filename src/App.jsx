@@ -418,6 +418,7 @@ const totalBalance = accountRows.reduce(
 
 const currentAccountBalance =
   accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
+
 // ---- CSV import with automatic account detection ----
 function handleImportedTransactions(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return;
@@ -437,23 +438,23 @@ function handleImportedTransactions(rows) {
     setCurrentAccountId(result.targetAccountId);
   }
 
-  // Create a stable single toast ID
   const toastId = Date.now();
 
-  // Set toast content
+  // Build a slightly nicer message
+  let message;
   if (result.createdNew) {
-    setToast({
-      id: toastId,
-      variant: "success",
-      message: `New account detected and created: "${result.targetAccountName}".`,
-    });
+    message = `New account detected and created: "${result.targetAccountName}".`;
   } else {
-    setToast({
-      id: toastId,
-      variant: "info",
-      message: `Imported transactions into "${result.targetAccountName}".`,
-    });
+    message = `Imported transactions into "${result.targetAccountName}".`;
   }
+
+  setToast({
+    id: toastId,
+    variant: result.createdNew ? "success" : "info",
+    message,
+    accountId: result.targetAccountId || null,
+    createdNew: result.createdNew,
+  });
 
   // Auto-hide after 4 seconds
   setTimeout(() => {
@@ -609,44 +610,43 @@ function handleImportedTransactions(rows) {
 
       <main className="flex-1w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-6">
         {customizeMode && (
-         <CustomizationPanel
-           navOrder={navOrder}
-           setNavOrder={setNavOrder}
-           homePage={homePage}
-           setHomePage={(pageKey) => {
-             setHomePage(pageKey);
-             setCurrentPage(pageKey);
-           }}
-           dashboardSectionsOrder={dashboardSectionsOrder}
-           setDashboardSectionsOrder={setDashboardSectionsOrder}
-         />
+          <CustomizationPanel
+            navOrder={navOrder}
+            setNavOrder={setNavOrder}
+            homePage={homePage}
+            setHomePage={(pageKey) => {
+              setHomePage(pageKey);
+              setCurrentPage(pageKey);
+            }}
+            dashboardSectionsOrder={dashboardSectionsOrder}
+            setDashboardSectionsOrder={setDashboardSectionsOrder}
+          />
         )}
 
-      {currentPage === "dashboard" && (
-  <Dashboard
-    month={budget.month}
-    income={totalIncome}
-    fixed={totalFixed}
-    variable={totalVariable}
-    leftover={leftoverForGoals}
-    goals={goals}
-    transactions={transactions}
-    currentAccountBalance={currentAccountBalance}
-    totalBalance={totalBalance}
-    sectionsOrder={dashboardSectionsOrder}
-    onOpenGoal={(id) => {
-      setSelectedGoalId(id);
-      setCurrentPage("goalDetail");
-    }}
-    onTransactionsUpdate={handleImportedTransactions}
-  />
-)}
-
+        {currentPage === "dashboard" && (
+          <Dashboard
+            month={budget.month}
+            income={totalIncome}
+            fixed={totalFixed}
+            variable={totalVariable}
+            leftover={leftoverForGoals}
+            goals={goals}
+            transactions={transactions}
+            currentAccountBalance={currentAccountBalance}
+            totalBalance={totalBalance}
+            sectionsOrder={dashboardSectionsOrder}
+            onOpenGoal={(id) => {
+              setSelectedGoalId(id);
+              setCurrentPage("goalDetail");
+            }}
+            onTransactionsUpdate={handleImportedTransactions}
+          />
+        )}
 
         {currentPage === "balances" && (
           <BalancesDashboard
             accounts={accounts}
-            onSetAccountBalance={(accountId, newBalance) =>{
+            onSetAccountBalance={(accountId, newBalance) => {
               setAccounts((prev) =>
                 prev.map((acc) => {
                   if (acc.id !== accountId) return acc;
@@ -662,9 +662,9 @@ function handleImportedTransactions(rows) {
                   acc.id === accountId ? { ...acc, name: newName } : acc
                 )
               );
-             }}
-            />
-          )}
+            }}
+          />
+        )}
 
         {currentPage === "budget" && (
           <BudgetPage
@@ -681,17 +681,39 @@ function handleImportedTransactions(rows) {
         )}
 
         {currentPage === "transactions" && (
-          <TransactionsPage transactions={transactions} onUpdateTransaction={handleEditTransaction} onDeleteTransaction={handleDeleteTransaction} />
+          <TransactionsPage
+            transactions={transactions}
+            onUpdateTransaction={handleEditTransaction}
+            onDeleteTransaction={handleDeleteTransaction}
+          />
         )}
 
         {currentPage === "goalDetail" && (
           <GoalDetailPage goal={selectedGoal} />
         )}
       </main>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          actionLabel={toast.accountId ? "View account" : undefined}
+          onAction={
+            toast.accountId
+              ? () => {
+                  setCurrentAccountId(toast.accountId);
+                  setCurrentPage("balances");
+                  setToast(null);
+                }
+              : undefined
+          }
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
-
+    
 // ----- Reusable UI Components -----
 function NavButton({ label, active, onClick }) {
   return (
@@ -733,6 +755,53 @@ function NeonProgressBar({ value }) {
       >
         {clamped > 2 && (
           <div className="progress-shine shine" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Toast({ message, variant = "info", actionLabel, onAction, onClose }) {
+  const isSuccess = variant === "success";
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 max-w-xs sm:max-w-sm">
+      <div
+        className={`toast-enter flex items-start gap-3 rounded-xl border px-4 py-3 text-xs shadow-xl bg-[#05060F]/95 backdrop-blur
+        ${
+          isSuccess
+            ? "border-emerald-400/80 text-emerald-100"
+            : "border-cyan-400/80 text-cyan-100"
+        }`}
+      >
+        {/* Icon */}
+        <div className="mt-[2px] text-lg">
+          {isSuccess ? "✅" : "ℹ️"}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 space-y-1">
+          <p className="leading-snug">{message}</p>
+
+          {actionLabel && onAction && (
+            <button
+              onClick={onAction}
+              className="inline-flex items-center gap-1 text-[0.7rem] mt-1 px-2 py-1 rounded-full border border-cyan-400/70 text-cyan-100 hover:bg-cyan-500/10 hover:border-cyan-300 transition"
+            >
+              <span>{actionLabel}</span>
+              <span className="text-[0.75rem]">↗</span>
+            </button>
+          )}
+        </div>
+
+        {/* Close button */}
+        {onClose && (
+          <button
+            className="ml-1 text-[0.7rem] text-slate-500 hover:text-slate-200"
+            onClick={onClose}
+          >
+            ✕
+          </button>
         )}
       </div>
     </div>
