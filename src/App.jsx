@@ -1,5 +1,25 @@
 import React, { useState, useEffect } from "react";
 
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "balances", label: "Balances" },
+  { key: "budget", label: "Budget" },
+  { key: "transactions", label: "Transactions" },
+  { key: "goalDetail", label: "Goals" },
+];
+
+const NAV_LABELS = NAV_ITEMS.reduce((map, item) => {
+  map[item.key] = item.label;
+  return map;
+}, {});
+
+const DEFAULT_DASHBOARD_SECTIONS = [
+  "monthOverview",
+  "accountSnapshot",
+  "goals",
+  "csvImport",
+];
+
 // ----- Local Storage -----
 const STORAGE_KEY = "budgetAppState_v1";
 
@@ -159,7 +179,25 @@ function App() {
       (stored?.accounts && stored.accounts[0]?.id) ||
       "main"
   );
-  const [currentPage, setCurrentPage] = useState("dashboard");
+
+  // NEW: nav & layout customization
+  const [navOrder, setNavOrder] = useState(
+    stored?.navOrder && stored.navOrder.length
+      ? stored.navOrder
+      : NAV_ITEMS.map((n) => n.key)
+  );
+
+  const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
+
+  const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
+  stored?.dashboardSectionsOrder && stored.dashboardSectionsOrder.length
+    ? stored.dashboardSectionsOrder
+    : DEFAULT_DASHBOARD_SECTIONS
+);
+
+const [customizeMode, setCustomizeMode] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(homePage);
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || "japan"
   );
@@ -169,6 +207,42 @@ function App() {
     accounts.find((acc) => acc.id === currentAccountId) || accounts[0];
   const transactions = currentAccount ? currentAccount.transactions || [] : [];
 
+    // EDIT a single transaction in the current account
+  function handleEditTransaction(index, updatedFields) {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== currentAccountId) return acc;
+
+        const oldTxs = Array.isArray(acc.transactions)
+          ? acc.transactions
+          : [];
+
+        const newTxs = oldTxs.map((tx, i) =>
+          i === index ? { ...tx, ...updatedFields } : tx
+        );
+
+        return { ...acc, transactions: newTxs };
+      })
+    );
+  }
+
+  // DELETE a single transaction in the current account
+  function handleDeleteTransaction(index) {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== currentAccountId) return acc;
+
+        const oldTxs = Array.isArray(acc.transactions)
+          ? acc.transactions
+          : [];
+
+        const newTxs = oldTxs.filter((_, i) => i !== index);
+
+        return { ...acc, transactions: newTxs };
+      })
+    );
+  }
+
   const accountStarting =
     currentAccount && typeof currentAccount.startingBalance === "number"
       ? currentAccount.startingBalance
@@ -177,12 +251,22 @@ function App() {
   const accountNet = computeNetTransactions(currentAccount);
   const accountBalance = accountStarting + accountNet;
 
-    const totalBankBalance = accounts.reduce((sum, acc) => {
-    const starting =
-      typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
-    const net = computeNetTransactions(acc);
-    return sum + starting + net;
-  }, 0);
+  // --- compute balances for all accounts ---
+const accountRows = (accounts || []).map((acc) => {
+  const starting =
+    typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
+  const net = computeNetTransactions(acc);
+  const balance = starting + net;
+  return { id: acc.id, name: acc.name, balance };
+});
+
+const totalBalance = accountRows.reduce(
+  (sum, row) => sum + row.balance,
+  0
+);
+
+const currentAccountBalance =
+  accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
 
   // ---- Persist state to localStorage on changes ----
   useEffect(() => {
@@ -192,8 +276,11 @@ function App() {
       accounts,
       currentAccountId,
       selectedGoalId,
+      navOrder,
+      homePage,
+      dashboardSectionsOrder,
     });
-  }, [budget, goals, accounts, currentAccountId, selectedGoalId]);
+  }, [budget, goals, accounts, currentAccountId, selectedGoalId, navOrder, homePage, dashboardSectionsOrder,]);
 
   const totalIncome = sumAmounts(budget.incomeItems);
   const totalFixed = sumAmounts(budget.fixedExpenses);
@@ -300,38 +387,46 @@ function App() {
               </div>
             </div>
 
-            <nav className="flex gap-2 text-xs">
-              <NavButton
-                label="Dashboard"
-                active={currentPage === "dashboard"}
-                onClick={() => setCurrentPage("dashboard")}
-              />
-              <NavButton
-                label="Balances"
-                active={currentPage === "balances"}
-                onClick={() => setCurrentPage("balances")}
-              />
-              <NavButton
-                label="Budget"
-                active={currentPage === "budget"}
-                onClick={() => setCurrentPage("budget")}
-              />
-              <NavButton
-                label="Transactions"
-                active={currentPage === "transactions"}
-                onClick={() => setCurrentPage("transactions")}
-              />
-              <NavButton
-                label="Goal Detail"
-                active={currentPage === "goalDetail"}
-                onClick={() => setCurrentPage("goalDetail")}
-              />
-            </nav>
+           <nav className="flex items-center gap-2 text-xs">
+             {navOrder.map((pageKey) => (
+               <NavButton
+                 key={pageKey}
+                 label={NAV_LABELS[pageKey] || pageKey}
+                 active={currentPage === pageKey}
+                 onClick={() => setCurrentPage(pageKey)}
+               />
+             ))}
+           
+             <button
+               className={`ml-3 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
+                 customizeMode
+                   ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
+                   : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
+               }`}
+               onClick={() => setCustomizeMode((v) => !v)}
+             >
+               {customizeMode ? "Done" : "Customize"}
+             </button>
+           </nav>
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {customizeMode && (
+         <CustomizationPanel
+           navOrder={navOrder}
+           setNavOrder={setNavOrder}
+           homePage={homePage}
+           setHomePage={(pageKey) => {
+             setHomePage(pageKey);
+             setCurrentPage(pageKey);
+           }}
+           dashboardSectionsOrder={dashboardSectionsOrder}
+           setDashboardSectionsOrder={setDashboardSectionsOrder}
+         />
+        )}
+
         {currentPage === "dashboard" && (
           <Dashboard
             month={budget.month}
@@ -341,8 +436,8 @@ function App() {
             leftover={leftoverForGoals}
             goals={goals}
             transactions={transactions}
-            accountBalance={accountBalance}
-            totalBankBalance={totalBankBalance}
+            currentAccountBalance={currentAccountBalance}
+            totalBalance={totalBalance}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
@@ -396,7 +491,7 @@ function App() {
         )}
 
         {currentPage === "transactions" && (
-          <TransactionsPage transactions={transactions} />
+          <TransactionsPage transactions={transactions} onUpdateTransaction={handleEditTransaction} onDeleteTransaction={handleDeleteTransaction} />
         )}
 
         {currentPage === "goalDetail" && (
@@ -458,137 +553,177 @@ function Dashboard({
   leftover,
   goals,
   transactions = [],
-  accountBalance,
-  totalBankBalance,
   onOpenGoal,
   onTransactionsUpdate = () => {},
+  currentAccountBalance = 0,
+  totalBalance = 0,
+  sectionsOrder = DEFAULT_DASHBOARD_SECTIONS,
 }) {
   const allocatedPercent =
     income > 0 ? ((income - leftover) / income) * 100 : 0;
 
+  const order =
+    sectionsOrder && sectionsOrder.length
+      ? sectionsOrder
+      : DEFAULT_DASHBOARD_SECTIONS;
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">{month}</h1>
         <span className="text-xs text-slate-400">
           Overview of this month's money flow
         </span>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* Budget month overview */}
-        <Card title="MONTH OVERVIEW">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-            <Stat label="Income" value={income} accent="text-emerald-300" />
-            <Stat label="Fixed" value={fixed} accent="text-rose-300" />
-            <Stat label="Variable" value={variable} accent="text-amber-300" />
-            <Stat label="Leftover" value={leftover} accent="text-cyan-300" />
-        </div>
 
-        <div className="mt-4">
-          <p className="text-xs text-slate-400 mb-1">
-            Allocation this month
-          </p>
-          <NeonProgressBar value={allocatedPercent} />
-        </div>
-      </Card>
+      {/* Render sections in customizable order */}
+      {order.map((sectionKey) => {
+        switch (sectionKey) {
+          case "monthOverview":
+            return (
+              <Card key="monthOverview" title="MONTH OVERVIEW">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <Stat label="Income" value={income} accent="text-emerald-300" />
+                  <Stat label="Fixed" value={fixed} accent="text-rose-300" />
+                  <Stat label="Variable" value={variable} accent="text-amber-300" />
+                  <Stat label="Leftover" value={leftover} accent="text-cyan-300" />
+                </div>
 
-      {/* Bank money snapshot - current account + total cash */}
-      <Card title="ACCOUNT SNAPSHOT">
-         <div className="space-y-3 text-sm">
-            <div>
-              <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                Current account
-              </div>
-              <div className="text-2xl font-semibold text-cyan-300">
-                ${accountBalance?.toFixed(2)}
-              </div>
-              <p className="mt-1 text-[0.7rem] text-slate-400">
-                Based on starting balance plus imported transactions.
-              </p>
-            </div>
+                <div className="mt-4">
+                  <p className="text-xs text-slate-400 mb-1">
+                    Allocation this month
+                  </p>
+                  <NeonProgressBar
+                    value={income > 0 ? ((income - leftover) / income) * 100 : 0}
+                  />
+                </div>
+              </Card>
+            );
 
-            <div className="mt-3 border-t border-slate-800 pt-3">
-              <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                All accounts
-              </div>
-              <div className="text-lg font-semibold text-emerald-300">
-                ${totalBankBalance?.toFixed(2)}
-              </div>
-              <p className="mt-1 text-[0.7rem] text-slate-400">
-                Total estimated cash across all linked accounts.
-              </p>
-            </div>
-          </div>
-        </Card>
-      </div>
+          case "accountSnapshot":
+            return (
+              <Card key="accountSnapshot" title="ACCOUNT SNAPSHOT">
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                      Current account
+                    </div>
+                    <div className="mt-1 text-2xl font-semibold text-cyan-300">
+                      ${currentAccountBalance.toFixed(2)}
+                    </div>
+                    <p className="mt-1 text-[0.7rem] text-slate-500">
+                      Based on starting balance plus imported transactions.
+                    </p>
+                  </div>
 
-      <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
-        Goals
-      </h2>
+                  <hr className="border-slate-800" />
 
-      <div className="grid md:grid-cols-2 gap-3">
-        {goals.map((goal) => (
-          <GoalCard
-            key={goal.id}
-            goal={goal}
-            onClick={() => onOpenGoal(goal.id)}
-          />
-        ))}
-      </div>
+                  <div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                      All accounts
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-emerald-300">
+                      ${totalBalance.toFixed(2)}
+                    </div>
+                    <p className="mt-1 text-[0.7rem] text-slate-500">
+                      Total estimated cash across all linked accounts.
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            );
 
-      <button className="mt-2 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition">
-        + Add Goal
-      </button>
-
-      <Card title="BANK STATEMENT IMPORT (CSV)">
-        <BankImportCard
-          onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
-        />
-
-        {Array.isArray(transactions) && transactions.length > 0 && (
-          <div className="mt-4">
-            <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
-              Parsed Transactions
-            </h3>
-            <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-slate-900 text-slate-300">
-                  <tr>
-                    <th className="px-2 py-1">Date</th>
-                    <th className="px-2 py-1">Description</th>
-                    <th className="px-2 py-1">Category</th>
-                    <th className="px-2 py-1 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {transactions.map((tx, idx) => (
-                    <tr key={idx} className="hover:bg-slate-900/70">
-                      <td className="px-2 py-1 text-slate-300">
-                        {tx.date || "-"}
-                      </td>
-                      <td className="px-2 py-1 text-slate-200">
-                        {tx.description || "-"}
-                      </td>
-                      <td className="px-2 py-1 text-slate-300">
-                        {tx.category || "Other"}
-                      </td>
-                      <td
-                        className={`px-2 py-1 text-right ${
-                          tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
-                        }`}
-                      >
-                        {isNaN(tx.amount)
-                          ? "-"
-                          : `$${tx.amount.toFixed(2)}`}
-                      </td>
-                    </tr>
+          case "goals":
+            return (
+              <div key="goals" className="space-y-3">
+                <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
+                  Goals
+                </h2>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {goals.map((goal) => (
+                    <GoalCard
+                      key={goal.id}
+                      goal={goal}
+                      onClick={() => onOpenGoal(goal.id)}
+                    />
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </Card>
+                </div>
+                <button className="mt-1 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition">
+                  + Add Goal
+                </button>
+              </div>
+            );
+
+          case "csvImport":
+            return (
+              <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
+                <BankImportCard
+                  onTransactionsParsed={(rows) =>
+                    onTransactionsUpdate(rows)
+                  }
+                />
+
+                {Array.isArray(transactions) &&
+                  transactions.length > 0 && (
+                    <div className="mt-4">
+                      <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
+                        Parsed Transactions
+                      </h3>
+                      <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-900 text-slate-300">
+                            <tr>
+                              <th className="px-2 py-1">Date</th>
+                              <th className="px-2 py-1">
+                                Description
+                              </th>
+                              <th className="px-2 py-1">Category</th>
+                              <th className="px-2 py-1 text-right">
+                                Amount
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800">
+                            {transactions.map((tx, idx) => (
+                              <tr
+                                key={idx}
+                                className="hover:bg-slate-900/70"
+                              >
+                                <td className="px-2 py-1 text-slate-300">
+                                  {tx.date || "-"}
+                                </td>
+                                <td className="px-2 py-1 text-slate-200">
+                                  {tx.description || "-"}
+                                </td>
+                                <td className="px-2 py-1 text-slate-300">
+                                  {tx.category || "Other"}
+                                </td>
+                                <td
+                                  className={`px-2 py-1 text-right ${
+                                    tx.amount < 0
+                                      ? "text-rose-300"
+                                      : "text-emerald-300"
+                                  }`}
+                                >
+                                  {isNaN(tx.amount)
+                                    ? "-"
+                                    : `$${tx.amount.toFixed(2)}`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+              </Card>
+            );
+
+          default:
+            return null;
+        }
+      })}
     </div>
   );
 }
@@ -630,6 +765,135 @@ function GoalCard({ goal, onClick }) {
       </div>
       <NeonProgressBar value={progress} />
     </button>
+  );
+}
+
+function moveItem(array, index, direction) {
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= array.length) return array;
+  const copy = [...array];
+  const [item] = copy.splice(index, 1);
+  copy.splice(newIndex, 0, item);
+  return copy;
+}
+
+function CustomizationPanel({
+  navOrder,
+  setNavOrder,
+  homePage,
+  setHomePage,
+  dashboardSectionsOrder,
+  setDashboardSectionsOrder,
+}) {
+  const dashboardLabels = {
+    monthOverview: "Month overview",
+    accountSnapshot: "Account snapshot",
+    goals: "Goals",
+    csvImport: "Bank import + parsed transactions",
+  };
+
+  return (
+    <Card title="LAYOUT & NAVIGATION">
+      <div className="grid md:grid-cols-2 gap-4 text-xs">
+        {/* Nav order */}
+        <div>
+          <h3 className="text-[0.7rem] uppercase tracking-[0.18em] text-slate-400 mb-2">
+            Navigation buttons
+          </h3>
+          <p className="mb-2 text-slate-500">
+            Reorder the top buttons and pick which page opens first.
+          </p>
+          <div className="space-y-1">
+            {navOrder.map((key, index) => (
+              <div
+                key={key}
+                className="flex items-center justify-between bg-[#05060F] border border-slate-700/70 rounded-lg px-2 py-1"
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-1 text-slate-500 hover:text-cyan-200"
+                    onClick={() =>
+                      setNavOrder((prev) =>
+                        moveItem(prev, index, -1)
+                      )
+                    }
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="px-1 text-slate-500 hover:text-cyan-200"
+                    onClick={() =>
+                      setNavOrder((prev) =>
+                        moveItem(prev, index, 1)
+                      )
+                    }
+                  >
+                    ↓
+                  </button>
+                  <span className="text-slate-200">
+                    {NAV_LABELS[key] || key}
+                  </span>
+                </div>
+                <label className="flex items-center gap-1 text-[0.7rem] text-slate-400">
+                  <input
+                    type="radio"
+                    className="accent-cyan-400"
+                    checked={homePage === key}
+                    onChange={() => setHomePage(key)}
+                  />
+                  Home
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Dashboard sections */}
+        <div>
+          <h3 className="text-[0.7rem] uppercase tracking-[0.18em] text-slate-400 mb-2">
+            Dashboard sections
+          </h3>
+          <p className="mb-2 text-slate-500">
+            Drag-style reorder with arrows to decide what you see first on
+            the Dashboard.
+          </p>
+          <div className="space-y-1">
+            {dashboardSectionsOrder.map((key, index) => (
+              <div
+                key={key}
+                className="flex items-center justify-between bg-[#05060F] border border-slate-700/70 rounded-lg px-2 py-1"
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    className="px-1 text-slate-500 hover:text-cyan-200"
+                    onClick={() =>
+                      setDashboardSectionsOrder((prev) =>
+                        moveItem(prev, index, -1)
+                      )
+                    }
+                  >
+                    ↑
+                  </button>
+                  <button
+                    className="px-1 text-slate-500 hover:text-cyan-200"
+                    onClick={() =>
+                      setDashboardSectionsOrder((prev) =>
+                        moveItem(prev, index, 1)
+                      )
+                    }
+                  >
+                    ↓
+                  </button>
+                  <span className="text-slate-200">
+                    {dashboardLabels[key] || key}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -915,11 +1179,23 @@ function ListWithTotal({ items, total, onDelete }) {
 }
 
 // ----- Transactions Page -----
-function TransactionsPage({ transactions = [] }) {
+function TransactionsPage({
+  transactions = [],
+  onUpdateTransaction = () => {},
+  onDeleteTransaction = () => {},
+}) {
   const hasData = Array.isArray(transactions) && transactions.length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4
+      w-full 
+      max-w-full 
+      sm:max-w-3xl 
+      md:max-w-4xl 
+      lg:max-w-6xl 
+      xl:max-w-7xl 
+      mx-auto 
+      px-2 sm:px-4 md:px-6">
       <header className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">
           Transactions
@@ -938,7 +1214,13 @@ function TransactionsPage({ transactions = [] }) {
         )}
 
         {hasData && (
-          <div className="max-h-[480px] overflow-auto border border-slate-800 rounded-lg">
+          <div className="
+            w-full
+            max-h-[65vh]
+            overflow-auto
+            border border-slate-800
+            rounded-lg
+            text-[0.7rem] sm:text-xs">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-900 text-slate-300 sticky top-0">
                 <tr>
@@ -946,20 +1228,44 @@ function TransactionsPage({ transactions = [] }) {
                   <th className="px-2 py-1">Description</th>
                   <th className="px-2 py-1">Category</th>
                   <th className="px-2 py-1 text-right">Amount</th>
+                  <th className="px-2 py-1 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {transactions.map((tx, idx) => (
                   <tr key={idx} className="hover:bg-slate-900/70">
+                    {/* Date (read-only for now) */}
                     <td className="px-2 py-1 text-slate-300">
                       {tx.date || "-"}
                     </td>
+
+                    {/* Editable description */}
                     <td className="px-2 py-1 text-slate-200">
-                      {tx.description || "-"}
+                      <input
+                        className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-xs"
+                        value={tx.description || ""}
+                        onChange={(e) =>
+                          onUpdateTransaction(idx, {
+                            description: e.target.value,
+                          })
+                        }
+                      />
                     </td>
+
+                    {/* Editable category */}
                     <td className="px-2 py-1 text-slate-300">
-                      {tx.category || "Other"}
+                      <input
+                        className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-xs"
+                        value={tx.category || ""}
+                        onChange={(e) =>
+                          onUpdateTransaction(idx, {
+                            category: e.target.value,
+                          })
+                        }
+                      />
                     </td>
+
+                    {/* Amount (read-only for now) */}
                     <td
                       className={`px-2 py-1 text-right ${
                         tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
@@ -968,6 +1274,24 @@ function TransactionsPage({ transactions = [] }) {
                       {isNaN(tx.amount)
                         ? "-"
                         : `$${tx.amount.toFixed(2)}`}
+                    </td>
+
+                    {/* Delete button */}
+                    <td className="px-2 py-1 text-right">
+                      <button
+                        className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Delete this transaction from this account?"
+                            )
+                          ) {
+                            onDeleteTransaction(idx);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -979,6 +1303,7 @@ function TransactionsPage({ transactions = [] }) {
     </div>
   );
 }
+
 
 // ----- Goal Detail Page -----
 function GoalDetailPage({ goal }) {
