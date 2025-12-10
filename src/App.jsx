@@ -540,18 +540,21 @@ function Card({ title, children }) {
 }
 
 function NeonProgressBar({ value }) {
-  const clamped = Math.max(0, Math.min(100, value || 0));
+  const clamped = Math.max(0, Math.min(100, value ?? 0));
 
   return (
-    <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+    <div className="progress-bar">
       <div
-        className="h-full rounded-full shadow-[0_0_18px_rgba(34,211,238,0.7)] progress-sweep"
+        className="progress-bar-filled"
         style={{ width: `${clamped}%` }}
-      />
+      >
+        {clamped > 2 && (
+          <div className="progress-shine shine" />
+        )}
+      </div>
     </div>
   );
 }
-
 
 // ----- Dashboard -----
 function Dashboard({
