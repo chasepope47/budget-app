@@ -43,21 +43,21 @@
 /* move left → right inside the filled part, then back */
 @keyframes shine {
   0% {
-    transform: translateX(0);
+    left: 0;
     opacity: 0.15;
   }
   20% {
     opacity: 1;
   }
   50% {
-    transform: translateX(calc(100% - var(--shine-width)));
+    left: calc(100% - var(--shine-width));
     opacity: 1;
   }
   80% {
     opacity: 1;
   }
   100% {
-    transform: translateX(0);
+    left: 0;
     opacity: 0.15;
   }
 }
