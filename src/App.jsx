@@ -770,72 +770,71 @@ function handleImportedTransactions(rows) {
   return (
     <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
       <header className="border-b border-[#1f2937] bg-[#05060F]">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col">
             <span className="text-xs tracking-[0.2em] text-cyan-300">
-              BUDGET COMMAND CENTER
+              BUDGET CENTER
             </span>
             <span className="text-sm text-slate-400">
               Dark cyber budgeting with themed goals
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-end gap-3 md:flex-row md:items-center md:gap-6">
             {/* Account selector + balance */}
             <div className="flex flex-col items-end gap-1">
               <span className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
                 Account
               </span>
 
-             <div className="flex items-center gap-2">
-  <select
-    className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
-    value={currentAccountId}
-    onChange={(e) => setCurrentAccountId(e.target.value)}
-  >
-    {accounts.map((acct) => (
-      <option key={acct.id} value={acct.id}>
-        {acct.name}
-      </option>
-    ))}
-  </select>
+              <div className="flex items-center gap-2">
+                <select
+                  className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
+                  value={currentAccountId}
+                  onChange={(e) => setCurrentAccountId(e.target.value)}
+                >
+                  {accounts.map((acct) => (
+                    <option key={acct.id} value={acct.id}>
+                      {acct.name}
+                    </option>
+                  ))}
+                </select>
 
-  {/* CREATE ACCOUNT BUTTON */}
-  <button
-    className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
-    onClick={() => {
-      const name = window.prompt("New account name:");
-      if (!name) return;
-      const id =
-        name.toLowerCase().replace(/\s+/g, "-") +
-        "-" +
-        Date.now();
+                {/* CREATE ACCOUNT BUTTON */}
+                <button
+                  className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
+                  onClick={() => {
+                    const name = window.prompt("New account name:");
+                    if (!name) return;
+                    const id =
+                      name.toLowerCase().replace(/\s+/g, "-") +
+                      "-" +
+                      Date.now();
 
-      setAccounts((prev) => [
-        ...prev,
-        {
-          id,
-          name,
-          type: "checking",
-          startingBalance: 0,
-          transactions: [],
-        },
-      ]);
-      setCurrentAccountId(id);
-    }}
-  >
-    + New
-  </button>
+                    setAccounts((prev) => [
+                      ...prev,
+                      {
+                        id,
+                        name,
+                        type: "checking",
+                        startingBalance: 0,
+                        transactions: [],
+                      },
+                    ]);
+                    setCurrentAccountId(id);
+                  }}
+                >
+                  + New
+                </button>
 
-  {/* DELETE ACCOUNT BUTTON — ADD THIS */}
-  <button
-    className="text-xs px-2 py-1 rounded-md border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 transition"
-    onClick={() => handleDeleteAccount(currentAccountId)}
-  >
-    Delete
-  </button>
-</div>
-
+                {/* DELETE ACCOUNT BUTTON */}
+                <button
+                  className="text-xs px-2 py-1 rounded-md border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 transition"
+                  onClick={() => handleDeleteAccount(currentAccountId)}
+                >
+                  Delete
+                </button>
+              </div>
 
               <div className="flex items-center gap-2 text-[0.7rem] text-slate-400">
                 <span>
@@ -876,58 +875,37 @@ function handleImportedTransactions(rows) {
               </div>
             </div>
 
-           <nav className="flex items-center gap-2 text-xs">
-             {navOrder.map((pageKey) => (
-               <NavButton
-                 key={pageKey}
-                 label={NAV_LABELS[pageKey] || pageKey}
-                 active={currentPage === pageKey}
-                 onClick={() => setCurrentPage(pageKey)}
-               />
-             ))}
-           
-             <button
-               className={`ml-3 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
-                 customizeMode
-                   ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
-                   : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
-               }`}
-               onClick={() => setCustomizeMode((v) => !v)}
-             >
-               {customizeMode ? "Done" : "Customize"}
-             </button>
+            {/* SINGLE NAV BAR */}
+            <nav className="flex flex-wrap items-center justify-end gap-2 text-xs">
+              {navOrder.map((pageKey) => (
+                <NavButton
+                  key={pageKey}
+                  label={NAV_LABELS[pageKey] || pageKey}
+                  active={currentPage === pageKey}
+                  onClick={() => setCurrentPage(pageKey)}
+                />
+              ))}
 
-                        <nav className="flex items-center gap-2 text-xs">
-             {navOrder.map((pageKey) => (
-               <NavButton
-                 key={pageKey}
-                 label={NAV_LABELS[pageKey] || pageKey}
-                 active={currentPage === pageKey}
-                 onClick={() => setCurrentPage(pageKey)}
-               />
-             ))}
+              {/* CUSTOMIZE TOGGLE */}
+              <button
+                className={`ml-2 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
+                  customizeMode
+                    ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
+                    : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
+                }`}
+                onClick={() => setCustomizeMode((v) => !v)}
+              >
+                {customizeMode ? "Done" : "Customize"}
+              </button>
 
-             <button
-               className={`ml-3 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
-                 customizeMode
-                   ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
-                   : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
-               }`}
-               onClick={() => setCustomizeMode((v) => !v)}
-             >
-               {customizeMode ? "Done" : "Customize"}
-             </button>
-
-             {/* RESET DATA BUTTON */}
-             <button
-               className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
-               onClick={handleResetAllData}
-             >
-               Reset data
-             </button>
-           </nav>
-
-           </nav>
+              {/* RESET DATA BUTTON */}
+              <button
+                className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
+                onClick={handleResetAllData}
+              >
+                Reset data
+              </button>
+            </nav>
           </div>
         </div>
       </header>
