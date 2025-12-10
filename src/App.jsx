@@ -3,6 +3,7 @@ import "./App.css";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
 import { loadUserState, saveUserState } from "./userStateApi.js";
+import { supabase } from "./supabaseClient";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
@@ -565,6 +566,65 @@ const [customizeMode, setCustomizeMode] = useState(false);
     );
   }
 
+    function handleDeleteAccount(accountId) {
+    // Don't allow deleting if it's the only account
+    if (accounts.length <= 1) {
+      window.alert("You need at least one account. Create another one before deleting this.");
+      return;
+    }
+
+    const target = accounts.find((a) => a.id === accountId);
+    if (!target) return;
+
+    if (
+      !window.confirm(
+        `Delete account "${target.name}" and all its transactions? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    // Filter it out
+    const remaining = accounts.filter((a) => a.id !== accountId);
+    setAccounts(remaining);
+
+    // If we deleted the current account, switch to the first remaining one
+    if (currentAccountId === accountId && remaining.length > 0) {
+      setCurrentAccountId(remaining[0].id);
+    }
+  }
+
+    async function handleResetAllData() {
+    if (!user || !user.id) return;
+
+    const confirmed = window.confirm(
+      "This will reset your budget, goals, accounts, and transactions back to empty. Continue?"
+    );
+    if (!confirmed) return;
+
+    try {
+      // Delete this user's cloud state
+      await supabase.from("user_state").delete().eq("id", user.id);
+
+      // Clear local cache
+      window.localStorage.removeItem(STORAGE_KEY);
+
+      // Reset React state to your empty defaults
+      setBudget(EMPTY_BUDGET);
+      setGoals(EMPTY_GOALS);
+      setAccounts(EMPTY_ACCOUNTS);
+      setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
+      setSelectedGoalId(null);
+      setNavOrder(NAV_ITEMS.map((n) => n.key));
+      setHomePage("dashboard");
+      setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
+      setCurrentPage("dashboard");
+    } catch (err) {
+      console.error("Failed to reset data:", err);
+      window.alert("Something went wrong resetting your data. Try again.");
+    }
+  }
+
   const accountStarting =
     currentAccount && typeof currentAccount.startingBalance === "number"
       ? currentAccount.startingBalance
@@ -727,43 +787,55 @@ function handleImportedTransactions(rows) {
                 Account
               </span>
 
-              <div className="flex items-center gap-2">
-                <select
-                  className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
-                  value={currentAccountId}
-                  onChange={(e) => setCurrentAccountId(e.target.value)}
-                >
-                  {accounts.map((acct) => (
-                    <option key={acct.id} value={acct.id}>
-                      {acct.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
-                  onClick={() => {
-                    const name = window.prompt("New account name:");
-                    if (!name) return;
-                    const id =
-                      name.toLowerCase().replace(/\s+/g, "-") +
-                      "-" +
-                      Date.now();
-                    setAccounts((prev) => [
-                      ...prev,
-                      {
-                        id,
-                        name,
-                        type: "checking",
-                        startingBalance: 0,
-                        transactions: [],
-                      },
-                    ]);
-                    setCurrentAccountId(id);
-                  }}
-                >
-                  + New
-                </button>
-              </div>
+             <div className="flex items-center gap-2">
+  <select
+    className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
+    value={currentAccountId}
+    onChange={(e) => setCurrentAccountId(e.target.value)}
+  >
+    {accounts.map((acct) => (
+      <option key={acct.id} value={acct.id}>
+        {acct.name}
+      </option>
+    ))}
+  </select>
+
+  {/* CREATE ACCOUNT BUTTON */}
+  <button
+    className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
+    onClick={() => {
+      const name = window.prompt("New account name:");
+      if (!name) return;
+      const id =
+        name.toLowerCase().replace(/\s+/g, "-") +
+        "-" +
+        Date.now();
+
+      setAccounts((prev) => [
+        ...prev,
+        {
+          id,
+          name,
+          type: "checking",
+          startingBalance: 0,
+          transactions: [],
+        },
+      ]);
+      setCurrentAccountId(id);
+    }}
+  >
+    + New
+  </button>
+
+  {/* DELETE ACCOUNT BUTTON — ADD THIS */}
+  <button
+    className="text-xs px-2 py-1 rounded-md border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 transition"
+    onClick={() => handleDeleteAccount(currentAccountId)}
+  >
+    Delete
+  </button>
+</div>
+
 
               <div className="flex items-center gap-2 text-[0.7rem] text-slate-400">
                 <span>
@@ -824,6 +896,37 @@ function handleImportedTransactions(rows) {
              >
                {customizeMode ? "Done" : "Customize"}
              </button>
+
+                        <nav className="flex items-center gap-2 text-xs">
+             {navOrder.map((pageKey) => (
+               <NavButton
+                 key={pageKey}
+                 label={NAV_LABELS[pageKey] || pageKey}
+                 active={currentPage === pageKey}
+                 onClick={() => setCurrentPage(pageKey)}
+               />
+             ))}
+
+             <button
+               className={`ml-3 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
+                 customizeMode
+                   ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
+                   : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
+               }`}
+               onClick={() => setCustomizeMode((v) => !v)}
+             >
+               {customizeMode ? "Done" : "Customize"}
+             </button>
+
+             {/* RESET DATA BUTTON */}
+             <button
+               className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
+               onClick={handleResetAllData}
+             >
+               Reset data
+             </button>
+           </nav>
+
            </nav>
           </div>
         </div>
