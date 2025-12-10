@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import "./App.css";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
