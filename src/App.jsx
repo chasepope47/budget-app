@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
 import "./App.css";
-import { renderToStaticMarkup } from "react-dom/server";
 import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
 import { loadUserState, saveUserState } from "./userStateApi.js";
 import { supabase } from "./supabaseClient";
@@ -803,7 +802,7 @@ function handleImportedTransactions(rows) {
             </span>
           </div>
 
-         <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+<div className="flex flex-wrap items-center justify-end gap-2 text-xs">
   {navOrder.map((pageKey) => (
     <NavButton
       key={pageKey}
@@ -832,7 +831,19 @@ function handleImportedTransactions(rows) {
   >
     Reset data
   </button>
+
+  {/* SIGN OUT */}
+  <button
+    className="px-2 py-1 rounded-full border border-slate-600/70 text-slate-300 hover:bg-slate-700/40 text-[0.65rem] uppercase tracking-[0.16em]"
+    onClick={async () => {
+      await signOut();
+      window.location.reload(); // optional, but makes sure UI fully resets
+    }}
+  >
+    Sign out
+  </button>
 </div>
+
 
         </div>
       </header>
