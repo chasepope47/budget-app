@@ -314,7 +314,7 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState(null);
-  const [info, setInform] = React.useState(null);
+  const [info, setInfo] = React.useState(null);
   const [submitting, setSubmitting] = React.useState(false);
 
     async function handleSubmit(e) {
@@ -329,7 +329,9 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
 
       } else {
         // SIGN UP FLOW
-        const { user, session } = await onSignUp(email, password);
+        const result = await onSignUp(email, password);
+        const user = result?.user || null;
+        const session = result?.session || null;
 
         // If Supabase requires email confirmation, user exists but session === null
         if (user && !session) {
@@ -337,6 +339,9 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
             "Account created! Check your email and click the confirmation link. " +
             "After that, this page will automatically log you in."
           );
+          } else {
+          // In case email confirmation is off: they’ll usually be logged in immediately
+          setInfo("Account created!");
         }
       }
     } catch (err) {
