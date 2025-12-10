@@ -789,7 +789,7 @@ function handleImportedTransactions(rows) {
   const selectedGoal =
     goals.find((g) => g.id === selectedGoalId) || null;
 
-  return (
+    return (
     <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
       <header className="border-b border-[#1f2937] bg-[#05060F]">
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -802,49 +802,23 @@ function handleImportedTransactions(rows) {
             </span>
           </div>
 
-<div className="flex flex-wrap items-center justify-end gap-2 text-xs">
-  {navOrder.map((pageKey) => (
-    <NavButton
-      key={pageKey}
-      label={NAV_LABELS[pageKey] || pageKey}
-      active={currentPage === pageKey}
-      onClick={() => setCurrentPage(pageKey)}
-    />
-  ))}
+          <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+            {navOrder.map((pageKey) => (
+              <NavButton
+                key={pageKey}
+                label={NAV_LABELS[pageKey] || pageKey}
+                active={currentPage === pageKey}
+                onClick={() => setCurrentPage(pageKey)}
+              />
+            ))}
 
-  {/* CUSTOMIZE TOGGLE */}
-  <button
-    className={`ml-2 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
-      customizeMode
-        ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
-        : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
-    }`}
-    onClick={() => setCustomizeMode((v) => !v)}
-  >
-    {customizeMode ? "Done" : "Customize"}
-  </button>
-
-  {/* RESET DATA */}
-  <button
-    className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
-    onClick={handleResetAllData}
-  >
-    Reset data
-  </button>
-
-  {/* SIGN OUT */}
-  <button
-    className="px-2 py-1 rounded-full border border-slate-600/70 text-slate-300 hover:bg-slate-700/40 text-[0.65rem] uppercase tracking-[0.16em]"
-    onClick={async () => {
-      await signOut();
-      window.location.reload(); // optional, but makes sure UI fully resets
-    }}
-  >
-    Sign out
-  </button>
-</div>
-
-
+            <ActionsMenu
+              customizeMode={customizeMode}
+              setCustomizeMode={setCustomizeMode}
+              onReset={handleResetAllData}
+              onSignOut={signOut}
+            />
+          </div>
         </div>
       </header>
 
@@ -883,32 +857,32 @@ function handleImportedTransactions(rows) {
           />
         )}
 
-          {currentPage === "balances" && (
-           <BalancesDashboard
-             accounts={accounts}
-             currentAccountId={currentAccountId}
-             onChangeCurrentAccount={setCurrentAccountId}
-             onCreateAccount={handleCreateAccount}
-             onDeleteAccount={handleDeleteAccount}
-             onSetAccountBalance={(accountId, newBalance) => {
-               setAccounts((prev) =>
-                 prev.map((acc) => {
-                   if (acc.id !== accountId) return acc;
-                   const net = computeNetTransactions(acc);
-                   const startingBalance = newBalance - net;
-                   return { ...acc, startingBalance };
-                 })
-               );
-             }}
-             onRenameAccount={(accountId, newName) => {
-               setAccounts((prev) =>
-                 prev.map((acc) =>
-                   acc.id === accountId ? { ...acc, name: newName } : acc
-                 )
-               );
-             }}
-           />
-          )} 
+        {currentPage === "balances" && (
+          <BalancesDashboard
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            onChangeCurrentAccount={setCurrentAccountId}
+            onCreateAccount={handleCreateAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onSetAccountBalance={(accountId, newBalance) => {
+              setAccounts((prev) =>
+                prev.map((acc) => {
+                  if (acc.id !== accountId) return acc;
+                  const net = computeNetTransactions(acc);
+                  const startingBalance = newBalance - net;
+                  return { ...acc, startingBalance };
+                })
+              );
+            }}
+            onRenameAccount={(accountId, newName) => {
+              setAccounts((prev) =>
+                prev.map((acc) =>
+                  acc.id === accountId ? { ...acc, name: newName } : acc
+                )
+              );
+            }}
+          />
+        )}
 
         {currentPage === "budget" && (
           <BudgetPage
@@ -932,7 +906,7 @@ function handleImportedTransactions(rows) {
           />
         )}
 
-             {currentPage === "goalDetail" && selectedGoal && (
+        {currentPage === "goalDetail" && selectedGoal && (
           <GoalDetailPage goal={selectedGoal} />
         )}
 
@@ -943,7 +917,6 @@ function handleImportedTransactions(rows) {
             </p>
           </Card>
         )}
-
       </main>
 
       {toast && (
@@ -966,6 +939,7 @@ function handleImportedTransactions(rows) {
     </div>
   );
 }
+
     
 // ----- Reusable UI Components -----
 function NavButton({ label, active, onClick }) {
@@ -981,6 +955,88 @@ function NavButton({ label, active, onClick }) {
     >
       {label}
     </button>
+  );
+}
+
+function ActionsMenu({ customizeMode, setCustomizeMode, onReset, onSignOut }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      {/* Toggle button with animated 3-bar icon */}
+      <button
+        type="button"
+        className="flex items-center justify-center w-9 h-9 rounded-full border border-slate-600/70 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200 transition"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span className="relative flex flex-col justify-between w-4 h-3">
+          {/* Top bar */}
+          <span
+            className={`h-[2px] rounded-full bg-current transition-transform duration-200 ${
+              open ? "translate-y-[5px] rotate-45" : ""
+            }`}
+          />
+          {/* Middle bar */}
+          <span
+            className={`h-[2px] rounded-full bg-current transition-opacity duration-200 ${
+              open ? "opacity-0" : "opacity-100"
+            }`}
+          />
+          {/* Bottom bar */}
+          <span
+            className={`h-[2px] rounded-full bg-current transition-transform duration-200 ${
+              open ? "-translate-y-[5px] -rotate-45" : ""
+            }`}
+          />
+        </span>
+      </button>
+
+      {/* Dropdown menu */}
+      <div
+        className={`absolute right-0 mt-2 w-44 bg-[#0B0C14] border border-slate-700/70 rounded-lg shadow-lg z-50 text-xs origin-top-right transform transition-all duration-150 ${
+          open
+            ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
+            : "opacity-0 scale-95 -translate-y-1 pointer-events-none"
+        }`}
+      >
+        {/* Customize Layout */}
+        <button
+          type="button"
+          className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-slate-200"
+          onClick={() => {
+            setCustomizeMode((v) => !v);
+            setOpen(false);
+          }}
+        >
+          {customizeMode ? "Finish Customizing" : "Customize Layout"}
+        </button>
+
+        {/* Reset Data */}
+        <button
+          type="button"
+          className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-rose-300"
+          onClick={() => {
+            setOpen(false);
+            onReset();
+          }}
+        >
+          Reset Data
+        </button>
+
+        {/* Sign Out */}
+        <button
+          type="button"
+          className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-slate-200"
+          onClick={() => {
+            setOpen(false);
+            onSignOut();
+            window.location.reload();
+          }}
+        >
+          Sign Out
+        </button>
+      </div>
+    </div>
   );
 }
 
