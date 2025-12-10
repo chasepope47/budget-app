@@ -1191,7 +1191,6 @@ function ListWithTotal({ items, total, onDelete }) {
     </div>
   );
 }
-
 // ----- Transactions Page -----
 function TransactionsPage({
   transactions = [],
@@ -1206,6 +1205,10 @@ function TransactionsPage({
     minAmount: "",
     maxAmount: "",
   });
+
+  // --- SORT STATE ---
+  const [sortBy, setSortBy] = useState("date");       // "date" | "amount" | "description" | "category"
+  const [sortDirection, setSortDirection] = useState("desc"); // "asc" | "desc"
 
   const handleFilterChange = (field) => (event) => {
     setFilters((prev) => ({
@@ -1225,11 +1228,19 @@ function TransactionsPage({
   const hasActiveFilter =
     filters.query || filters.minAmount || filters.maxAmount;
 
-  // --- APPLY FILTERS ---
-  const filteredTransactions = useMemo(() => {
+  const toggleSortDirection = () => {
+    setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+  };
+
+  // --- APPLY FILTERS + SORT ---
+  const rowsToRender = useMemo(() => {
     if (!hasData) return [];
 
-    return transactions.filter((tx) => {
+    // First: attach original index so edits/deletes still map correctly
+    const withIndex = transactions.map((tx, index) => ({ tx, index }));
+
+    // Filter
+    const filtered = withIndex.filter(({ tx }) => {
       const q = filters.query.trim().toLowerCase();
       const amountNum = Number(tx.amount);
 
@@ -1263,9 +1274,34 @@ function TransactionsPage({
 
       return true;
     });
-  }, [transactions, filters, hasData]);
 
-  const rowsToRender = hasData ? filteredTransactions : [];
+    // Sort
+    const sorted = [...filtered].sort((a, b) => {
+      const A = a.tx;
+      const B = b.tx;
+
+      const dir = sortDirection === "asc" ? 1 : -1;
+
+      if (sortBy === "amount") {
+        const aAmt = Number(A.amount) || 0;
+        const bAmt = Number(B.amount) || 0;
+        return (aAmt - bAmt) * dir;
+      }
+
+      if (sortBy === "description" || sortBy === "category") {
+        const aStr = (A[sortBy] || "").toLowerCase();
+        const bStr = (B[sortBy] || "").toLowerCase();
+        return aStr.localeCompare(bStr) * dir;
+      }
+
+      // Default: date
+      const aDate = Date.parse(A.date) || 0;
+      const bDate = Date.parse(B.date) || 0;
+      return (aDate - bDate) * dir;
+    });
+
+    return sorted;
+  }, [transactions, filters, sortBy, sortDirection, hasData]);
 
   return (
     <div className="space-y-4 w-full">
@@ -1353,6 +1389,35 @@ function TransactionsPage({
           </div>
         )}
 
+        {/* SORT BAR */}
+        {hasData && (
+          <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 text-[0.7rem]">
+            <div className="flex items-center gap-2">
+              <span className="uppercase tracking-[0.18em] text-slate-500">
+                Sort by
+              </span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="h-8 rounded-md bg-slate-900/70 px-2 text-[0.7rem] text-slate-100 outline-none ring-1 ring-slate-700 focus:ring-2 focus:ring-cyan-500"
+              >
+                <option value="date">Date</option>
+                <option value="amount">Amount</option>
+                <option value="description">Description</option>
+                <option value="category">Category</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={toggleSortDirection}
+                className="h-8 px-3 rounded-md border border-slate-600 text-slate-200 hover:border-cyan-400 hover:text-cyan-200 transition"
+              >
+                {sortDirection === "asc" ? "Asc ↑" : "Desc ↓"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* No matches state */}
         {hasData && rowsToRender.length === 0 && (
           <p className="text-xs text-slate-400">
@@ -1377,8 +1442,8 @@ function TransactionsPage({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800">
-                  {rowsToRender.map((tx, idx) => (
-                    <tr key={idx} className="hover:bg-slate-900/70">
+                  {rowsToRender.map(({ tx, index }) => (
+                    <tr key={index} className="hover:bg-slate-900/70">
                       {/* Date (read-only for now) */}
                       <td className="px-2 py-1 text-slate-300 whitespace-nowrap">
                         {tx.date || "-"}
@@ -1390,7 +1455,7 @@ function TransactionsPage({
                           className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
                           value={tx.description || ""}
                           onChange={(e) =>
-                            onUpdateTransaction(idx, {
+                            onUpdateTransaction(index, {
                               description: e.target.value,
                             })
                           }
@@ -1403,7 +1468,7 @@ function TransactionsPage({
                           className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
                           value={tx.category || ""}
                           onChange={(e) =>
-                            onUpdateTransaction(idx, {
+                            onUpdateTransaction(index, {
                               category: e.target.value,
                             })
                           }
@@ -1431,7 +1496,7 @@ function TransactionsPage({
                                 "Delete this transaction from this account?"
                               )
                             ) {
-                              onDeleteTransaction(idx);
+                              onDeleteTransaction(index);
                             }
                           }}
                         >
