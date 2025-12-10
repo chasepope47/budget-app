@@ -540,33 +540,18 @@ function Card({ title, children }) {
 }
 
 function NeonProgressBar({ value }) {
-  const clamped = Math.max(0, Math.min(100, value));
+  const clamped = Math.max(0, Math.min(100, value || 0));
+
   return (
     <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-      {/* Filled portion */}
       <div
-        className="h-full bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.8)]"
+        className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.8)] progress-sweep"
         style={{ width: `${clamped}%` }}
       />
-
-      {/* Sweeping highlight that stays inside the filled portion */}
-      {clamped > 0 && (
-        <div
-           className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden"
-          style={{ width: `${clamped}%` }} // limit sweep to the filled % of the bar
-        >
-          <div
-            className="h-full w-1/3 progress-sweep"
-            style={{
-              background:
-                "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)",
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 }
+
 
 // ----- Dashboard -----
 function Dashboard({
