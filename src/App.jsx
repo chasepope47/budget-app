@@ -412,7 +412,7 @@ const currentAccountBalance =
         </div>
       </header>
 
-      <main className="flex-1 max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <main className="flex-1w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-6">
         {customizeMode && (
          <CustomizationPanel
            navOrder={navOrder}
@@ -1187,16 +1187,8 @@ function TransactionsPage({
   const hasData = Array.isArray(transactions) && transactions.length > 0;
 
   return (
-    <div className="space-y-4
-      w-full 
-      max-w-full 
-      sm:max-w-3xl 
-      md:max-w-4xl 
-      lg:max-w-6xl 
-      xl:max-w-7xl 
-      mx-auto 
-      px-2 sm:px-4 md:px-6">
-      <header className="flex items-center justify-between">
+    <div className="space-y-4 w-full">
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
         <h1 className="text-lg font-semibold text-slate-100">
           Transactions
         </h1>
@@ -1214,89 +1206,87 @@ function TransactionsPage({
         )}
 
         {hasData && (
-          <div className="
-            w-full
-            max-h-[65vh]
-            overflow-auto
-            border border-slate-800
-            rounded-lg
-            text-[0.7rem] sm:text-xs">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-900 text-slate-300 sticky top-0">
-                <tr>
-                  <th className="px-2 py-1">Date</th>
-                  <th className="px-2 py-1">Description</th>
-                  <th className="px-2 py-1">Category</th>
-                  <th className="px-2 py-1 text-right">Amount</th>
-                  <th className="px-2 py-1 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {transactions.map((tx, idx) => (
-                  <tr key={idx} className="hover:bg-slate-900/70">
-                    {/* Date (read-only for now) */}
-                    <td className="px-2 py-1 text-slate-300">
-                      {tx.date || "-"}
-                    </td>
-
-                    {/* Editable description */}
-                    <td className="px-2 py-1 text-slate-200">
-                      <input
-                        className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-xs"
-                        value={tx.description || ""}
-                        onChange={(e) =>
-                          onUpdateTransaction(idx, {
-                            description: e.target.value,
-                          })
-                        }
-                      />
-                    </td>
-
-                    {/* Editable category */}
-                    <td className="px-2 py-1 text-slate-300">
-                      <input
-                        className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-xs"
-                        value={tx.category || ""}
-                        onChange={(e) =>
-                          onUpdateTransaction(idx, {
-                            category: e.target.value,
-                          })
-                        }
-                      />
-                    </td>
-
-                    {/* Amount (read-only for now) */}
-                    <td
-                      className={`px-2 py-1 text-right ${
-                        tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
-                      }`}
-                    >
-                      {isNaN(tx.amount)
-                        ? "-"
-                        : `$${tx.amount.toFixed(2)}`}
-                    </td>
-
-                    {/* Delete button */}
-                    <td className="px-2 py-1 text-right">
-                      <button
-                        className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              "Delete this transaction from this account?"
-                            )
-                          ) {
-                            onDeleteTransaction(idx);
-                          }
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </td>
+          // horizontal scroll on very small screens
+          <div className="w-full overflow-x-auto">
+            {/* vertical scroll inside, with max height based on viewport */}
+            <div className="min-w-[640px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
+              <table className="w-full text-[0.7rem] sm:text-xs text-left">
+                <thead className="bg-slate-900 text-slate-300 sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1">Date</th>
+                    <th className="px-2 py-1">Description</th>
+                    <th className="px-2 py-1">Category</th>
+                    <th className="px-2 py-1 text-right">Amount</th>
+                    <th className="px-2 py-1 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {transactions.map((tx, idx) => (
+                    <tr key={idx} className="hover:bg-slate-900/70">
+                      {/* Date (read-only for now) */}
+                      <td className="px-2 py-1 text-slate-300 whitespace-nowrap">
+                        {tx.date || "-"}
+                      </td>
+
+                      {/* Editable description */}
+                      <td className="px-2 py-1 text-slate-200">
+                        <input
+                          className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
+                          value={tx.description || ""}
+                          onChange={(e) =>
+                            onUpdateTransaction(idx, {
+                              description: e.target.value,
+                            })
+                          }
+                        />
+                      </td>
+
+                      {/* Editable category */}
+                      <td className="px-2 py-1 text-slate-300">
+                        <input
+                          className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
+                          value={tx.category || ""}
+                          onChange={(e) =>
+                            onUpdateTransaction(idx, {
+                              category: e.target.value,
+                            })
+                          }
+                        />
+                      </td>
+
+                      {/* Amount (read-only for now) */}
+                      <td
+                        className={`px-2 py-1 text-right whitespace-nowrap ${
+                          tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
+                        }`}
+                      >
+                        {isNaN(tx.amount)
+                          ? "-"
+                          : `$${tx.amount.toFixed(2)}`}
+                      </td>
+
+                      {/* Delete button */}
+                      <td className="px-2 py-1 text-right">
+                        <button
+                          className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                "Delete this transaction from this account?"
+                              )
+                            ) {
+                              onDeleteTransaction(idx);
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </Card>
