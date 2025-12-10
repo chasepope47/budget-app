@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
 import "./App.css";
 import { renderToStaticMarkup } from "react-dom/server";
+import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
+import { loadUserState, saveUserState } from "./userStateApi.js";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
@@ -307,7 +309,134 @@ function importTransactionsWithDetection(
   };
 }
 
+function AuthScreen({ onSignIn, onSignUp, loading }) {
+  const [mode, setMode] = React.useState("signin"); // or "signup"
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState(null);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      if (mode === "signin") {
+        await onSignIn(email, password);
+      } else {
+        await onSignUp(email, password);
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#05060A] text-slate-100">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#05060A] text-slate-100 px-4">
+      <div className="w-full max-w-sm border border-slate-800 rounded-xl p-6 bg-[#05060F]">
+        <h1 className="text-xl font-semibold mb-4 text-center">
+          Budget App Login
+        </h1>
+
+        <div className="flex justify-center gap-2 mb-4 text-xs">
+          <button
+            type="button"
+            className={`px-3 py-1 rounded-full border ${
+              mode === "signin"
+                ? "border-emerald-400 text-emerald-300"
+                : "border-slate-700 text-slate-400"
+            }`}
+            onClick={() => setMode("signin")}
+          >
+            Sign In
+          </button>
+          <button
+            type="button"
+            className={`px-3 py-1 rounded-full border ${
+              mode === "signup"
+                ? "border-emerald-400 text-emerald-300"
+                : "border-slate-700 text-slate-400"
+            }`}
+            onClick={() => setMode("signup")}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="text-left text-xs space-y-1">
+            <label className="block text-slate-300">Email</label>
+            <input
+              type="email"
+              required
+              className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm text-slate-100"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div className="text-left text-xs space-y-1">
+            <label className="block text-slate-300">Password</label>
+            <input
+              type="password"
+              required
+              className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm text-slate-100"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {error && (
+            <p className="text-xs text-red-400 whitespace-pre-wrap">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full mt-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-sm font-medium py-1.5 disabled:opacity-60"
+          >
+            {submitting
+              ? "Working..."
+              : mode === "signin"
+              ? "Sign In"
+              : "Create Account"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+   const {
+    user,
+    authLoading,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut,
+  } = useSupabaseAuth();
+
+  // If not logged in, show the auth screen instead of the app
+  if (!user) {
+    return (
+      <AuthScreen
+        loading={authLoading}
+        onSignIn={signInWithEmail}
+        onSignUp={signUpWithEmail}
+      />
+    );
+  }
+
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
 
@@ -467,9 +596,39 @@ function handleImportedTransactions(rows) {
   }, 4000);
 }
 
-  // ---- Persist state to localStorage on changes ----
+  // After login, try to load cloud state and overwrite local if it exists
   useEffect(() => {
-    saveStoredState({
+    if (!user || !user.id) return;
+
+    (async () => {
+      const remote = await loadUserState(user.id);
+      if (!remote) return;
+
+      try {
+        if (remote.budget) setBudget(remote.budget);
+        if (remote.goals) setGoals(remote.goals);
+        if (remote.accounts)
+          setAccounts(normalizeAccounts(remote.accounts));
+        if (remote.currentAccountId)
+          setCurrentAccountId(remote.currentAccountId);
+        if (remote.selectedGoalId)
+          setSelectedGoalId(remote.selectedGoalId);
+        if (remote.navOrder) setNavOrder(remote.navOrder);
+        if (remote.homePage) {
+          setHomePage(remote.homePage);
+          setCurrentPage(remote.homePage);
+        }
+        if (remote.dashboardSectionsOrder)
+          setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+      } catch (err) {
+        console.error("Failed to apply remote user state", err);
+      }
+    })();
+  }, [user?.id]);
+
+   // ---- Persist state to localStorage + Supabase on changes ----
+  useEffect(() => {
+    const state = {
       budget,
       goals,
       accounts,
@@ -478,8 +637,28 @@ function handleImportedTransactions(rows) {
       navOrder,
       homePage,
       dashboardSectionsOrder,
-    });
-  }, [budget, goals, accounts, currentAccountId, selectedGoalId, navOrder, homePage, dashboardSectionsOrder,]);
+    };
+
+    // Still keep localStorage for offline cache
+    saveStoredState(state);
+
+    // Also push to Supabase if logged in
+    if (user && user.id) {
+      saveUserState(user.id, state).catch((err) =>
+        console.error("Failed to save user state to Supabase:", err)
+      );
+    }
+  }, [
+    user,
+    budget,
+    goals,
+    accounts,
+    currentAccountId,
+    selectedGoalId,
+    navOrder,
+    homePage,
+    dashboardSectionsOrder,
+  ]);
 
   const totalIncome = sumAmounts(budget.incomeItems);
   const totalFixed = sumAmounts(budget.fixedExpenses);
@@ -611,7 +790,7 @@ function handleImportedTransactions(rows) {
         </div>
       </header>
 
-      <main className="flex-1w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-6">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-6">
         {customizeMode && (
           <CustomizationPanel
             navOrder={navOrder}
