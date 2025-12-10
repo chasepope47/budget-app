@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import "./App.css";
+import { renderToStaticMarkup } from "react-dom/server";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
@@ -268,8 +269,12 @@ function importTransactionsWithDetection(
           }
         : acc
     );
+
+    const matched = (accounts || []).find((a) => a.id === targetId);
+
     return {
       targetAccountId: targetId,
+      targetAccountName: matched?.name || "Account",
       accounts: nextAccounts,
       createdNew: false,
     };
@@ -293,6 +298,7 @@ function importTransactionsWithDetection(
 
   return {
     targetAccountId: newId,
+    targetAccountName: name,
     accounts: [...(accounts || []), newAccount],
     createdNew: true,
   };
@@ -343,6 +349,9 @@ const [customizeMode, setCustomizeMode] = useState(false);
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || "japan"
   );
+
+  const [toast, setToast] = useState(null);
+  // toast shape: { id, message, variant}
 
   // ---- current account + balance ----
   const currentAccount =
@@ -409,8 +418,7 @@ const totalBalance = accountRows.reduce(
 
 const currentAccountBalance =
   accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
-
-  // ---- CSV import with automatic account detection ----
+// ---- CSV import with automatic account detection ----
 function handleImportedTransactions(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return;
 
@@ -428,6 +436,31 @@ function handleImportedTransactions(rows) {
   ) {
     setCurrentAccountId(result.targetAccountId);
   }
+
+  // Create a stable single toast ID
+  const toastId = Date.now();
+
+  // Set toast content
+  if (result.createdNew) {
+    setToast({
+      id: toastId,
+      variant: "success",
+      message: `New account detected and created: "${result.targetAccountName}".`,
+    });
+  } else {
+    setToast({
+      id: toastId,
+      variant: "info",
+      message: `Imported transactions into "${result.targetAccountName}".`,
+    });
+  }
+
+  // Auto-hide after 4 seconds
+  setTimeout(() => {
+    setToast((current) =>
+      current && current.id === toastId ? null : current
+    );
+  }, 4000);
 }
 
   // ---- Persist state to localStorage on changes ----
