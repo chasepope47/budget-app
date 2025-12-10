@@ -7,7 +7,7 @@ import { supabase } from "./supabaseClient";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard" },
-  { key: "balances", label: "Balances" },
+  { key: "balances", label: "Accounts" },
   { key: "budget", label: "Budget" },
   { key: "transactions", label: "Transactions" },
   { key: "goalDetail", label: "Goals" },
@@ -566,6 +566,29 @@ const [customizeMode, setCustomizeMode] = useState(false);
     );
   }
 
+  function handleCreateAccount() {
+    const name = window.prompt("New account name:");
+    if (!name) return;
+
+    const id =
+      name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") +
+      "-" +
+      Date.now();
+
+    setAccounts((prev) => [
+      ...prev,
+      {
+        id,
+        name,
+        type: "checking",
+        startingBalance: 0,
+        transactions: [],
+      },
+    ]);
+
+    setCurrentAccountId(id);
+  }
+
     function handleDeleteAccount(accountId) {
     // Don't allow deleting if it's the only account
     if (accounts.length <= 1) {
@@ -780,133 +803,37 @@ function handleImportedTransactions(rows) {
             </span>
           </div>
 
-                    <div className="flex flex-col items-end gap-3 md:flex-row md:items-center md:gap-6">
-            {/* Account selector + balance */}
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
-                Account
-              </span>
+         <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+  {navOrder.map((pageKey) => (
+    <NavButton
+      key={pageKey}
+      label={NAV_LABELS[pageKey] || pageKey}
+      active={currentPage === pageKey}
+      onClick={() => setCurrentPage(pageKey)}
+    />
+  ))}
 
-              <div className="flex items-center gap-2">
-                <select
-                  className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
-                  value={currentAccountId}
-                  onChange={(e) => setCurrentAccountId(e.target.value)}
-                >
-                  {accounts.map((acct) => (
-                    <option key={acct.id} value={acct.id}>
-                      {acct.name}
-                    </option>
-                  ))}
-                </select>
+  {/* CUSTOMIZE TOGGLE */}
+  <button
+    className={`ml-2 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
+      customizeMode
+        ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
+        : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
+    }`}
+    onClick={() => setCustomizeMode((v) => !v)}
+  >
+    {customizeMode ? "Done" : "Customize"}
+  </button>
 
-                {/* CREATE ACCOUNT BUTTON */}
-                <button
-                  className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
-                  onClick={() => {
-                    const name = window.prompt("New account name:");
-                    if (!name) return;
-                    const id =
-                      name.toLowerCase().replace(/\s+/g, "-") +
-                      "-" +
-                      Date.now();
+  {/* RESET DATA */}
+  <button
+    className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
+    onClick={handleResetAllData}
+  >
+    Reset data
+  </button>
+</div>
 
-                    setAccounts((prev) => [
-                      ...prev,
-                      {
-                        id,
-                        name,
-                        type: "checking",
-                        startingBalance: 0,
-                        transactions: [],
-                      },
-                    ]);
-                    setCurrentAccountId(id);
-                  }}
-                >
-                  + New
-                </button>
-
-                {/* DELETE ACCOUNT BUTTON */}
-                <button
-                  className="text-xs px-2 py-1 rounded-md border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 transition"
-                  onClick={() => handleDeleteAccount(currentAccountId)}
-                >
-                  Delete
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 text-[0.7rem] text-slate-400">
-                <span>
-                  Balance:{" "}
-                  <span className="text-cyan-300 font-semibold">
-                    ${accountBalance.toFixed(2)}
-                  </span>
-                </span>
-                <button
-                  className="underline decoration-dotted hover:text-cyan-300"
-                  onClick={() => {
-                    const current =
-                      currentAccount &&
-                      typeof currentAccount.startingBalance === "number"
-                        ? currentAccount.startingBalance
-                        : 0;
-                    const input = window.prompt(
-                      "Set starting balance for this account (e.g. 1234.56):",
-                      current
-                    );
-                    if (input == null) return;
-                    const value = Number(input);
-                    if (Number.isNaN(value)) {
-                      alert("That didn’t look like a number.");
-                      return;
-                    }
-                    setAccounts((prev) =>
-                      prev.map((acc) =>
-                        acc.id === currentAccountId
-                          ? { ...acc, startingBalance: value }
-                          : acc
-                      )
-                    );
-                  }}
-                >
-                  Set balance
-                </button>
-              </div>
-            </div>
-
-            {/* SINGLE NAV BAR */}
-            <nav className="flex flex-wrap items-center justify-end gap-2 text-xs">
-              {navOrder.map((pageKey) => (
-                <NavButton
-                  key={pageKey}
-                  label={NAV_LABELS[pageKey] || pageKey}
-                  active={currentPage === pageKey}
-                  onClick={() => setCurrentPage(pageKey)}
-                />
-              ))}
-
-              {/* CUSTOMIZE TOGGLE */}
-              <button
-                className={`ml-2 px-2 py-1 rounded-full border text-[0.65rem] uppercase tracking-[0.16em] ${
-                  customizeMode
-                    ? "border-fuchsia-400 bg-fuchsia-500/10 text-fuchsia-200"
-                    : "border-slate-600/60 text-slate-300 hover:border-cyan-400/60 hover:text-cyan-200"
-                }`}
-                onClick={() => setCustomizeMode((v) => !v)}
-              >
-                {customizeMode ? "Done" : "Customize"}
-              </button>
-
-              {/* RESET DATA BUTTON */}
-              <button
-                className="px-2 py-1 rounded-full border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 text-[0.65rem] uppercase tracking-[0.16em]"
-                onClick={handleResetAllData}
-              >
-                Reset data
-              </button>
-            </nav>
-          </div>
         </div>
       </header>
 
@@ -945,28 +872,32 @@ function handleImportedTransactions(rows) {
           />
         )}
 
-        {currentPage === "balances" && (
-          <BalancesDashboard
-            accounts={accounts}
-            onSetAccountBalance={(accountId, newBalance) => {
-              setAccounts((prev) =>
-                prev.map((acc) => {
-                  if (acc.id !== accountId) return acc;
-                  const net = computeNetTransactions(acc);
-                  const startingBalance = newBalance - net;
-                  return { ...acc, startingBalance };
-                })
-              );
-            }}
-            onRenameAccount={(accountId, newName) => {
-              setAccounts((prev) =>
-                prev.map((acc) =>
-                  acc.id === accountId ? { ...acc, name: newName } : acc
-                )
-              );
-            }}
-          />
-        )}
+          {currentPage === "balances" && (
+           <BalancesDashboard
+             accounts={accounts}
+             currentAccountId={currentAccountId}
+             onChangeCurrentAccount={setCurrentAccountId}
+             onCreateAccount={handleCreateAccount}
+             onDeleteAccount={handleDeleteAccount}
+             onSetAccountBalance={(accountId, newBalance) => {
+               setAccounts((prev) =>
+                 prev.map((acc) => {
+                   if (acc.id !== accountId) return acc;
+                   const net = computeNetTransactions(acc);
+                   const startingBalance = newBalance - net;
+                   return { ...acc, startingBalance };
+                 })
+               );
+             }}
+             onRenameAccount={(accountId, newName) => {
+               setAccounts((prev) =>
+                 prev.map((acc) =>
+                   acc.id === accountId ? { ...acc, name: newName } : acc
+                 )
+               );
+             }}
+           />
+          )} 
 
         {currentPage === "budget" && (
           <BudgetPage
@@ -1120,6 +1051,7 @@ function Toast({ message, variant = "info", actionLabel, onAction, onClose }) {
 }
 
 // ----- Dashboard -----
+// ----- Dashboard -----
 function Dashboard({
   month,
   income,
@@ -1169,9 +1101,7 @@ function Dashboard({
                   <p className="text-xs text-slate-400 mb-1">
                     Allocation this month
                   </p>
-                  <NeonProgressBar
-                    value={income > 0 ? ((income - leftover) / income) * 100 : 0}
-                  />
+                  <NeonProgressBar value={allocatedPercent} />
                 </div>
               </Card>
             );
@@ -1234,64 +1164,54 @@ function Dashboard({
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
                 <BankImportCard
-                  onTransactionsParsed={(rows) =>
-                    onTransactionsUpdate(rows)
-                  }
+                  onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
                 />
 
-                {Array.isArray(transactions) &&
-                  transactions.length > 0 && (
-                    <div className="mt-4">
-                      <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
-                        Parsed Transactions
-                      </h3>
-                      <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
-                        <table className="w-full text-xs text-left">
-                          <thead className="bg-slate-900 text-slate-300">
-                            <tr>
-                              <th className="px-2 py-1">Date</th>
-                              <th className="px-2 py-1">
-                                Description
-                              </th>
-                              <th className="px-2 py-1">Category</th>
-                              <th className="px-2 py-1 text-right">
-                                Amount
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800">
-                            {transactions.map((tx, idx) => (
-                              <tr
-                                key={idx}
-                                className="hover:bg-slate-900/70"
+                {Array.isArray(transactions) && transactions.length > 0 && (
+                  <div className="mt-4">
+                    <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
+                      Parsed Transactions
+                    </h3>
+                    <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-900 text-slate-300">
+                          <tr>
+                            <th className="px-2 py-1">Date</th>
+                            <th className="px-2 py-1">Description</th>
+                            <th className="px-2 py-1">Category</th>
+                            <th className="px-2 py-1 text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800">
+                          {transactions.map((tx, idx) => (
+                            <tr key={idx} className="hover:bg-slate-900/70">
+                              <td className="px-2 py-1 text-slate-300">
+                                {tx.date || "-"}
+                              </td>
+                              <td className="px-2 py-1 text-slate-200">
+                                {tx.description || "-"}
+                              </td>
+                              <td className="px-2 py-1 text-slate-300">
+                                {tx.category || "Other"}
+                              </td>
+                              <td
+                                className={`px-2 py-1 text-right ${
+                                  tx.amount < 0
+                                    ? "text-rose-300"
+                                    : "text-emerald-300"
+                                }`}
                               >
-                                <td className="px-2 py-1 text-slate-300">
-                                  {tx.date || "-"}
-                                </td>
-                                <td className="px-2 py-1 text-slate-200">
-                                  {tx.description || "-"}
-                                </td>
-                                <td className="px-2 py-1 text-slate-300">
-                                  {tx.category || "Other"}
-                                </td>
-                                <td
-                                  className={`px-2 py-1 text-right ${
-                                    tx.amount < 0
-                                      ? "text-rose-300"
-                                      : "text-emerald-300"
-                                  }`}
-                                >
-                                  {isNaN(tx.amount)
-                                    ? "-"
-                                    : `$${tx.amount.toFixed(2)}`}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                                {isNaN(tx.amount)
+                                  ? "-"
+                                  : `$${tx.amount.toFixed(2)}`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
+                  </div>
+                )}
               </Card>
             );
 
@@ -1472,7 +1392,15 @@ function CustomizationPanel({
   );
 }
 
-function BalancesDashboard({ accounts = [], onSetAccountBalance, onRenameAccount = () => {}, }) {
+function BalancesDashboard({
+  accounts = [],
+  currentAccountId,
+  onChangeCurrentAccount = () => {},
+  onCreateAccount = () => {},
+  onDeleteAccount = () => {},
+  onSetAccountBalance,
+  onRenameAccount = () => {},
+}) {
   const rows = (accounts || []).map((acc) => {
     const starting =
       typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
@@ -1483,137 +1411,222 @@ function BalancesDashboard({ accounts = [], onSetAccountBalance, onRenameAccount
 
   const totalBalance = rows.reduce((sum, r) => sum + r.balance, 0);
 
-              return (
-                <div className="space-y-6">
-                  {/* Header */}
-                  <div className="flex items-center justify-between">
-                    <h1 className="text-lg font-semibold text-slate-100">
-                      Account Balances
-                    </h1>
-                    <span className="text-xs text-slate-400">
-                      Estimated money across all your accounts
-                    </span>
-                  </div>
-            
-                  {/* Total card (similar vibe to Month Overview / Remaining for Goals) */}
-                  <Card title="TOTAL ESTIMATED CASH">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-[0.7rem] uppercase tracking-[0.2em] text-slate-500">
-                          Across all accounts
-                        </div>
-                        <div className="mt-1 text-3xl font-semibold text-cyan-300">
-                          ${totalBalance.toFixed(2)}
-                        </div>
-                      </div>
-                    </div>
-                    {rows.length > 0 && (
-                      <div className="mt-4">
-                        <NeonProgressBar value={100} />
-                        <p className="mt-1 text-[0.7rem] text-slate-500">
-                          Based on starting balances + imported transactions.
-                        </p>
-                      </div>
-                    )}
-                    {rows.length === 0 && (
-                      <p className="mt-2 text-xs text-slate-400">
-                        No accounts yet. Add one from the header to start tracking.
-                      </p>
-                    )}
-                  </Card>
-            
-                  {/* Account cards – styled like Goal cards / Budget sections */}
-                  {rows.length > 0 && (
-                    <>
-                      <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
-                        Accounts
-                      </h2>
-            
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {rows.map((row) => {
-                          const share =
-                            totalBalance > 0
-                              ? Math.max(0, Math.min(100, (row.balance / totalBalance) * 100))
-                              : 0;
-            
-                        return (
-              <section
-                key={row.id}
-                className="bg-[#090a11] border border-slate-800 rounded-xl p-4 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition"
+  const currentRow =
+    rows.find((r) => r.id === currentAccountId) || rows[0] || null;
+
+  return (
+    <div className="space-y-6">
+      {/* Header + account controls */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-100">
+            Accounts
+          </h1>
+          <span className="text-xs text-slate-400">
+            Manage your accounts, balances, and estimated totals
+          </span>
+        </div>
+
+        {/* Account selector + actions */}
+        {accounts.length > 0 && (
+          <div className="flex flex-col items-end gap-1">
+            <span className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
+              Current account
+            </span>
+
+            <div className="flex items-center gap-2">
+              <select
+                className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
+                value={currentAccountId}
+                onChange={(e) => onChangeCurrentAccount(e.target.value)}
               >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                      {row.type || "checking"}
-                    </div>
-                    <input
-                      className="mt-0.5 bg-transparent border-b border-slate-700 text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-400"
-                      value={row.name}
-                      onChange={(e) => onRenameAccount(row.id, e.target.value)}
-                    />
-                  </div>
-            
-                  <div className="text-right">
-                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                      Balance
-                    </div>
-                    <div className="text-lg font-semibold text-cyan-300">
-                      ${row.balance.toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-            
-                <div className="text-[0.7rem] text-slate-400 mb-2">
-                  <span className="mr-3">
-                    Start:{" "}
-                    <span className="text-slate-200">
-                      ${row.starting.toFixed(2)}
-                    </span>
+                {accounts.map((acct) => (
+                  <option key={acct.id} value={acct.id}>
+                    {acct.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* CREATE ACCOUNT BUTTON */}
+              <button
+                className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
+                onClick={onCreateAccount}
+              >
+                + New
+              </button>
+
+              {/* DELETE ACCOUNT BUTTON */}
+              <button
+                className="text-xs px-2 py-1 rounded-md border border-rose-500/70 text-rose-300 hover:bg-rose-500/10 transition"
+                onClick={() => onDeleteAccount(currentAccountId)}
+              >
+                Delete
+              </button>
+            </div>
+
+            {currentRow && (
+              <div className="flex items-center gap-2 text-[0.7rem] text-slate-400">
+                <span>
+                  Balance:{" "}
+                  <span className="text-cyan-300 font-semibold">
+                    ${currentRow.balance.toFixed(2)}
                   </span>
-                  <span>
-                    Net tx:{" "}
-                    <span
-                      className={
-                        row.net < 0 ? "text-rose-300" : "text-emerald-300"
-                      }
+                </span>
+                <button
+                  className="underline decoration-dotted hover:text-cyan-300"
+                  onClick={() => {
+                    const input = window.prompt(
+                      `Set starting balance for "${currentRow.name}" (e.g. 1234.56):`,
+                      currentRow.starting.toFixed(2)
+                    );
+                    if (input == null) return;
+                    const value = Number(input);
+                    if (Number.isNaN(value)) {
+                      alert("That didn’t look like a number.");
+                      return;
+                    }
+                    onSetAccountBalance(currentRow.id, value + currentRow.net);
+                  }}
+                >
+                  Set starting balance
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Total card */}
+      <Card title="TOTAL ESTIMATED CASH">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[0.7rem] uppercase tracking-[0.2em] text-slate-500">
+              Across all accounts
+            </div>
+            <div className="mt-1 text-3xl font-semibold text-cyan-300">
+              ${totalBalance.toFixed(2)}
+            </div>
+          </div>
+        </div>
+        {rows.length > 0 && (
+          <div className="mt-4">
+            <NeonProgressBar value={100} />
+            <p className="mt-1 text-[0.7rem] text-slate-500">
+              Based on starting balances + imported transactions.
+            </p>
+          </div>
+        )}
+        {rows.length === 0 && (
+          <p className="mt-2 text-xs text-slate-400">
+            No accounts yet. Add one to start tracking.
+          </p>
+        )}
+      </Card>
+
+      {/* Account cards */}
+      {rows.length > 0 && (
+        <>
+          <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
+            Accounts
+          </h2>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {rows.map((row) => {
+              const share =
+                totalBalance > 0
+                  ? Math.max(0, Math.min(100, (row.balance / totalBalance) * 100))
+                  : 0;
+
+              const isCurrent = row.id === currentAccountId;
+
+              return (
+                <section
+                  key={row.id}
+                  className={`bg-[#090a11] border rounded-xl p-4 transition cursor-pointer ${
+                    isCurrent
+                      ? "border-cyan-400/80 shadow-[0_0_18px_rgba(34,211,238,0.45)]"
+                      : "border-slate-800 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)]"
+                  }`}
+                  onClick={() => onChangeCurrentAccount(row.id)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                        {row.type || "checking"}
+                      </div>
+                      <input
+                        className="mt-0.5 bg-transparent border-b border-slate-700 text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-400"
+                        value={row.name}
+                        onChange={(e) =>
+                          onRenameAccount(row.id, e.target.value)
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                        Balance
+                      </div>
+                      <div className="text-lg font-semibold text-cyan-300">
+                        ${row.balance.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[0.7rem] text-slate-400 mb-2">
+                    <span className="mr-3">
+                      Start:{" "}
+                      <span className="text-slate-200">
+                        ${row.starting.toFixed(2)}
+                      </span>
+                    </span>
+                    <span>
+                      Net tx:{" "}
+                      <span
+                        className={
+                          row.net < 0 ? "text-rose-300" : "text-emerald-300"
+                        }
+                      >
+                        {row.net < 0 ? "-" : ""}
+                        ${Math.abs(row.net).toFixed(2)}
+                      </span>
+                    </span>
+                  </div>
+
+                  <NeonProgressBar value={share} />
+                  <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
+                    <span>{share.toFixed(1)}% of total cash</span>
+                    <button
+                      className="text-cyan-300 underline decoration-dotted hover:text-cyan-200"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const input = window.prompt(
+                          `Set current balance for "${row.name}" (e.g. 1234.56):`,
+                          row.balance.toFixed(2)
+                        );
+                        if (input == null) return;
+                        const value = Number(input);
+                        if (Number.isNaN(value)) {
+                          alert("That didn't look like a number.");
+                          return;
+                        }
+                        onSetAccountBalance(row.id, value);
+                      }}
                     >
-                      {row.net < 0 ? "-" : ""}
-                      ${Math.abs(row.net).toFixed(2)}
-                    </span>
-                  </span>
-                </div>
-            
-                <NeonProgressBar value={share} />
-                <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
-                  <span>{share.toFixed(1)}% of total cash</span>
-                  <button
-                    className="text-cyan-300 underline decoration-dotted hover:text-cyan-200"
-                    onClick={() => {
-                      const input = window.prompt(
-                        `Set current balance for "${row.name}" (e.g. 1234.56):`,
-                        row.balance.toFixed(2)
-                      );
-                      if (input == null) return;
-                      const value = Number(input);
-                      if (Number.isNaN(value)) {
-                        alert("That didn't look like a number.");
-                        return;
-                      }
-                      onSetAccountBalance(row.id, value);
-                    }}
-                  >
-                    Set estimated balance
+                      Set estimated balance
                   </button>
                 </div>
               </section>
             );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
+          })}
+        </div>
+      </>
+    )}
+  </div>
+);
 }
+
 
 // ----- Budget Page -----
 function BudgetPage({ month, budget, totals, onBudgetChange }) {
