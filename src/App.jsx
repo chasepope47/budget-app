@@ -117,6 +117,17 @@ function sumAmounts(items) {
   return items.reduce((sum, item) => sum + item.amount, 0);
 }
 
+
+function computeNetTransactions(account) {
+  const txs = Array.isArray(account?.transactions)
+    ? account.transactions
+    : [];
+  return txs.reduce(
+    (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
+    0
+  );
+}
+
 function normalizeAccounts(accs) {
   return (accs || []).map((acc) => ({
     ...acc,
@@ -163,16 +174,17 @@ function App() {
       ? currentAccount.startingBalance
       : 0;
 
-  const accountNet = Array.isArray(transactions)
-    ? transactions.reduce(
-        (sum, tx) =>
-          sum + (typeof tx.amount === "number" ? tx.amount : 0),
-        0
-      )
-    : 0;
-
+  const accountNet = computeNetTransactions(currentAccount);
   const accountBalance = accountStarting + accountNet;
 
+    const totalBankBalance = accounts.reduce((sum, acc) => {
+    const starting =
+      typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
+    const net = computeNetTransactions(acc);
+    return sum + starting + net;
+  }, 0);
+
+  // ---- Persist state to localStorage on changes ----
   useEffect(() => {
     saveStoredState({
       budget,
@@ -295,6 +307,11 @@ function App() {
                 onClick={() => setCurrentPage("dashboard")}
               />
               <NavButton
+                label="Balances"
+                active={currentPage === "balances"}
+                onClick={() => setCurrentPage("balances")}
+              />
+              <NavButton
                 label="Budget"
                 active={currentPage === "budget"}
                 onClick={() => setCurrentPage("budget")}
@@ -324,6 +341,8 @@ function App() {
             leftover={leftoverForGoals}
             goals={goals}
             transactions={transactions}
+            accountBalance={accountBalance}
+            totalBankBalance={totalBankBalance}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
@@ -345,6 +364,22 @@ function App() {
             }
           />
         )}
+
+        {currentPage === "balances" && (
+          <BalancesDashboard
+            accounts={accounts}
+            onSetAccountBalance={(accountId, newBalance) =>{
+              setAccounts((prev) =>
+                prev.map((acc) => {
+                  if (acc.id !== accountId) return acc;
+                  const net = computeNetTransactions(acc);
+                  const startingBalance = newBalance - net;
+                  return { ...acc, startingBalance };
+                })
+              );
+            }}
+            />
+          )}
 
         {currentPage === "budget" && (
           <BudgetPage
@@ -423,6 +458,8 @@ function Dashboard({
   leftover,
   goals,
   transactions = [],
+  accountBalance,
+  totalBankBalance,
   onOpenGoal,
   onTransactionsUpdate = () => {},
 }) {
@@ -437,13 +474,14 @@ function Dashboard({
           Overview of this month's money flow
         </span>
       </div>
-
-      <Card title="MONTH OVERVIEW">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <Stat label="Income" value={income} accent="text-emerald-300" />
-          <Stat label="Fixed" value={fixed} accent="text-rose-300" />
-          <Stat label="Variable" value={variable} accent="text-amber-300" />
-          <Stat label="Leftover" value={leftover} accent="text-cyan-300" />
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Budget month overview */}
+        <Card title="MONTH OVERVIEW">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <Stat label="Income" value={income} accent="text-emerald-300" />
+            <Stat label="Fixed" value={fixed} accent="text-rose-300" />
+            <Stat label="Variable" value={variable} accent="text-amber-300" />
+            <Stat label="Leftover" value={leftover} accent="text-cyan-300" />
         </div>
 
         <div className="mt-4">
@@ -453,6 +491,36 @@ function Dashboard({
           <NeonProgressBar value={allocatedPercent} />
         </div>
       </Card>
+
+      {/* Bank money snapshot - current account + total cash */}
+      <Card title="ACCOUNT SNAPSHOT">
+         <div className="space-y-3 text-sm">
+            <div>
+              <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                Current account
+              </div>
+              <div className="text-2xl font-semibold text-cyan-300">
+                ${accountBalance?.toFixed(2)}
+              </div>
+              <p className="mt-1 text-[0.7rem] text-slate-400">
+                Based on starting balance plus imported transactions.
+              </p>
+            </div>
+
+            <div className="mt-3 border-t border-slate-800 pt-3">
+              <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                All accounts
+              </div>
+              <div className="text-lg font-semibold text-emerald-300">
+                ${totalBankBalance?.toFixed(2)}
+              </div>
+              <p className="mt-1 text-[0.7rem] text-slate-400">
+                Total estimated cash across all linked accounts.
+              </p>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
         Goals
@@ -562,6 +630,148 @@ function GoalCard({ goal, onClick }) {
       </div>
       <NeonProgressBar value={progress} />
     </button>
+  );
+}
+
+function BalancesDashboard({ accounts = [], onSetAccountBalance }) {
+  const rows = (accounts || []).map((acc) => {
+    const starting =
+      typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
+    const net = computeNetTransactions(acc);
+    const balance = starting + net;
+    return { ...acc, starting, net, balance };
+  });
+
+  const totalBalance = rows.reduce((sum, r) => sum + r.balance, 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-slate-100">
+          Account Balances
+        </h1>
+        <span className="text-xs text-slate-400">
+          Estimated money across all your accounts
+        </span>
+      </div>
+
+      {/* Total card (similar vibe to Month Overview / Remaining for Goals) */}
+      <Card title="TOTAL ESTIMATED CASH">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[0.7rem] uppercase tracking-[0.2em] text-slate-500">
+              Across all accounts
+            </div>
+            <div className="mt-1 text-3xl font-semibold text-cyan-300">
+              ${totalBalance.toFixed(2)}
+            </div>
+          </div>
+        </div>
+        {rows.length > 0 && (
+          <div className="mt-4">
+            <NeonProgressBar value={100} />
+            <p className="mt-1 text-[0.7rem] text-slate-500">
+              Based on starting balances + imported transactions.
+            </p>
+          </div>
+        )}
+        {rows.length === 0 && (
+          <p className="mt-2 text-xs text-slate-400">
+            No accounts yet. Add one from the header to start tracking.
+          </p>
+        )}
+      </Card>
+
+      {/* Account cards – styled like Goal cards / Budget sections */}
+      {rows.length > 0 && (
+        <>
+          <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
+            Accounts
+          </h2>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {rows.map((row) => {
+              const share =
+                totalBalance > 0
+                  ? Math.max(0, Math.min(100, (row.balance / totalBalance) * 100))
+                  : 0;
+
+              return (
+                <section
+                  key={row.id}
+                  className="bg-[#090a11] border border-slate-800 rounded-xl p-4 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                        {row.type || "checking"}
+                      </div>
+                      <div className="text-sm font-medium text-slate-100">
+                        {row.name}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                        Balance
+                      </div>
+                      <div className="text-lg font-semibold text-cyan-300">
+                        ${row.balance.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[0.7rem] text-slate-400 mb-2">
+                    <span className="mr-3">
+                      Start:{" "}
+                      <span className="text-slate-200">
+                        ${row.starting.toFixed(2)}
+                      </span>
+                    </span>
+                    <span>
+                      Net tx:{" "}
+                      <span
+                        className={
+                          row.net < 0 ? "text-rose-300" : "text-emerald-300"
+                        }
+                      >
+                        {row.net < 0 ? "-" : ""}
+                        ${Math.abs(row.net).toFixed(2)}
+                      </span>
+                    </span>
+                  </div>
+
+                  <NeonProgressBar value={share} />
+                  <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
+                    <span>
+                      {share.toFixed(1)}% of total cash
+                    </span>
+                    <button
+                      className="text-cyan-300 underline decoration-dotted hover:text-cyan-200"
+                      onClick={() => {
+                        const input = window.prompt(
+                          `Set current balance for "${row.name}" (e.g. 1234.56):`,
+                          row.balance.toFixed(2)
+                        );
+                        if (input == null) return;
+                        const value = Number(input);
+                        if (Number.isNaN(value)) {
+                          alert("That didn't look like a number.");
+                          return;
+                        }
+                        onSetAccountBalance(row.id, value);
+                      }}
+                    >
+                      Set estimated balance
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
