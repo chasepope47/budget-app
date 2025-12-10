@@ -473,6 +473,13 @@ const currentAccountBalance =
                 })
               );
             }}
+            onRenameAccount={(accountId, newName) => {
+              setAccounts((prev) =>
+                prev.map((acc) =>
+                  acc.id === accountId ? { ...acc, name: newName } : acc
+                )
+              );
+             }}
             />
           )}
 
@@ -536,10 +543,27 @@ function NeonProgressBar({ value }) {
   const clamped = Math.max(0, Math.min(100, value));
   return (
     <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+      {/* Filled portion */}
       <div
         className="h-full bg-gradient-to-r from-cyan-300 via-fuchsia-400 to-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.8)]"
         style={{ width: `${clamped}%` }}
       />
+
+      {/* Sweeping highlight that stays inside the filled portion */}
+      {clamped > 0 && (
+        <div
+           className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden"
+          style={{ width: `${clamped}%` }} // limit sweep to the filled % of the bar
+        >
+          <div
+            className="h-full w-1/3 progress-sweep"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, rgba(255,255,255,0.9), transparent)",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -897,7 +921,7 @@ function CustomizationPanel({
   );
 }
 
-function BalancesDashboard({ accounts = [], onSetAccountBalance }) {
+function BalancesDashboard({ accounts = [], onSetAccountBalance, onRenameAccount = () => {}, }) {
   const rows = (accounts || []).map((acc) => {
     const starting =
       typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
@@ -908,129 +932,130 @@ function BalancesDashboard({ accounts = [], onSetAccountBalance }) {
 
   const totalBalance = rows.reduce((sum, r) => sum + r.balance, 0);
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-100">
-          Account Balances
-        </h1>
-        <span className="text-xs text-slate-400">
-          Estimated money across all your accounts
-        </span>
-      </div>
-
-      {/* Total card (similar vibe to Month Overview / Remaining for Goals) */}
-      <Card title="TOTAL ESTIMATED CASH">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-[0.7rem] uppercase tracking-[0.2em] text-slate-500">
-              Across all accounts
-            </div>
-            <div className="mt-1 text-3xl font-semibold text-cyan-300">
-              ${totalBalance.toFixed(2)}
-            </div>
-          </div>
-        </div>
-        {rows.length > 0 && (
-          <div className="mt-4">
-            <NeonProgressBar value={100} />
-            <p className="mt-1 text-[0.7rem] text-slate-500">
-              Based on starting balances + imported transactions.
-            </p>
-          </div>
-        )}
-        {rows.length === 0 && (
-          <p className="mt-2 text-xs text-slate-400">
-            No accounts yet. Add one from the header to start tracking.
-          </p>
-        )}
-      </Card>
-
-      {/* Account cards – styled like Goal cards / Budget sections */}
-      {rows.length > 0 && (
-        <>
-          <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
-            Accounts
-          </h2>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            {rows.map((row) => {
-              const share =
-                totalBalance > 0
-                  ? Math.max(0, Math.min(100, (row.balance / totalBalance) * 100))
-                  : 0;
-
               return (
-                <section
-                  key={row.id}
-                  className="bg-[#090a11] border border-slate-800 rounded-xl p-4 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                        {row.type || "checking"}
-                      </div>
-                      <div className="text-sm font-medium text-slate-100">
-                        {row.name}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                        Balance
-                      </div>
-                      <div className="text-lg font-semibold text-cyan-300">
-                        ${row.balance.toFixed(2)}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-[0.7rem] text-slate-400 mb-2">
-                    <span className="mr-3">
-                      Start:{" "}
-                      <span className="text-slate-200">
-                        ${row.starting.toFixed(2)}
-                      </span>
-                    </span>
-                    <span>
-                      Net tx:{" "}
-                      <span
-                        className={
-                          row.net < 0 ? "text-rose-300" : "text-emerald-300"
-                        }
-                      >
-                        {row.net < 0 ? "-" : ""}
-                        ${Math.abs(row.net).toFixed(2)}
-                      </span>
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <h1 className="text-lg font-semibold text-slate-100">
+                      Account Balances
+                    </h1>
+                    <span className="text-xs text-slate-400">
+                      Estimated money across all your accounts
                     </span>
                   </div>
-
-                  <NeonProgressBar value={share} />
-                  <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
-                    <span>
-                      {share.toFixed(1)}% of total cash
+            
+                  {/* Total card (similar vibe to Month Overview / Remaining for Goals) */}
+                  <Card title="TOTAL ESTIMATED CASH">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[0.7rem] uppercase tracking-[0.2em] text-slate-500">
+                          Across all accounts
+                        </div>
+                        <div className="mt-1 text-3xl font-semibold text-cyan-300">
+                          ${totalBalance.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                    {rows.length > 0 && (
+                      <div className="mt-4">
+                        <NeonProgressBar value={100} />
+                        <p className="mt-1 text-[0.7rem] text-slate-500">
+                          Based on starting balances + imported transactions.
+                        </p>
+                      </div>
+                    )}
+                    {rows.length === 0 && (
+                      <p className="mt-2 text-xs text-slate-400">
+                        No accounts yet. Add one from the header to start tracking.
+                      </p>
+                    )}
+                  </Card>
+            
+                  {/* Account cards – styled like Goal cards / Budget sections */}
+                  {rows.length > 0 && (
+                    <>
+                      <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
+                        Accounts
+                      </h2>
+            
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {rows.map((row) => {
+                          const share =
+                            totalBalance > 0
+                              ? Math.max(0, Math.min(100, (row.balance / totalBalance) * 100))
+                              : 0;
+            
+                        return (
+              <section
+                key={row.id}
+                className="bg-[#090a11] border border-slate-800 rounded-xl p-4 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition"
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div>
+                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                      {row.type || "checking"}
+                    </div>
+                    <input
+                      className="mt-0.5 bg-transparent border-b border-slate-700 text-sm font-medium text-slate-100 focus:outline-none focus:border-cyan-400"
+                      value={row.name}
+                      onChange={(e) => onRenameAccount(row.id, e.target.value)}
+                    />
+                  </div>
+            
+                  <div className="text-right">
+                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                      Balance
+                    </div>
+                    <div className="text-lg font-semibold text-cyan-300">
+                      ${row.balance.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+            
+                <div className="text-[0.7rem] text-slate-400 mb-2">
+                  <span className="mr-3">
+                    Start:{" "}
+                    <span className="text-slate-200">
+                      ${row.starting.toFixed(2)}
                     </span>
-                    <button
-                      className="text-cyan-300 underline decoration-dotted hover:text-cyan-200"
-                      onClick={() => {
-                        const input = window.prompt(
-                          `Set current balance for "${row.name}" (e.g. 1234.56):`,
-                          row.balance.toFixed(2)
-                        );
-                        if (input == null) return;
-                        const value = Number(input);
-                        if (Number.isNaN(value)) {
-                          alert("That didn't look like a number.");
-                          return;
-                        }
-                        onSetAccountBalance(row.id, value);
-                      }}
+                  </span>
+                  <span>
+                    Net tx:{" "}
+                    <span
+                      className={
+                        row.net < 0 ? "text-rose-300" : "text-emerald-300"
+                      }
                     >
-                      Set estimated balance
-                    </button>
-                  </div>
-                </section>
-              );
+                      {row.net < 0 ? "-" : ""}
+                      ${Math.abs(row.net).toFixed(2)}
+                    </span>
+                  </span>
+                </div>
+            
+                <NeonProgressBar value={share} />
+                <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
+                  <span>{share.toFixed(1)}% of total cash</span>
+                  <button
+                    className="text-cyan-300 underline decoration-dotted hover:text-cyan-200"
+                    onClick={() => {
+                      const input = window.prompt(
+                        `Set current balance for "${row.name}" (e.g. 1234.56):`,
+                        row.balance.toFixed(2)
+                      );
+                      if (input == null) return;
+                      const value = Number(input);
+                      if (Number.isNaN(value)) {
+                        alert("That didn't look like a number.");
+                        return;
+                      }
+                      onSetAccountBalance(row.id, value);
+                    }}
+                  >
+                    Set estimated balance
+                  </button>
+                </div>
+              </section>
+            );
             })}
           </div>
         </>

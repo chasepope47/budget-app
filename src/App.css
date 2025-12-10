@@ -40,3 +40,22 @@
 .read-the-docs {
   color: #888;
 }
+
+@keyframes sweep-glow {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(300%);
+    opacity: 0;
+  }
+}
+
+/* This will be used on the moving highlight */
+.progress-sweep {
+  animation: sweep-glow 2.4s ease-in-out infinite;
+}
