@@ -23,8 +23,33 @@ function saveStoredState(state) {
   }
 }
 
+function migrateStoredState(stored) {
+  if (!stored) return null;
+
+  // If accounts already exist, just return as-is
+  if (stored.accounts && Array.isArray(stored.accounts)) {
+    return stored;
+  }
+
+  // If only old "transactions" exist, wrap them in a default account
+  const defaultAccount = {
+    id: "main",
+    name: "Main Account",
+    type: "checking",
+    transactions: Array.isArray(stored.transactions)
+      ? stored.transactions
+      : [],
+  };
+
+  return {
+    ...stored,
+    accounts: [defaultAccount],
+    currentAccountId: stored.currentAccountId || "main",
+  };
+}
+
 function mergeTransactions(existing, incoming) {
-  // create a simple key like: "2025-01-01|STARBUCKS|-5.75"
+  // create a simple key like: "2025-01-01|starbucks|-5.75"
   const makeKey = (tx) =>
     `${(tx.date || "").trim()}|${(tx.description || "")
       .trim()
@@ -93,19 +118,44 @@ function sumAmounts(items) {
 }
 
 function App() {
-  const stored = loadStoredState();
+  const rawStored = loadStoredState();
+  const stored = migrateStoredState(rawStored);
 
   const [budget, setBudget] = useState(stored?.budget || sampleBudget);
   const [goals, setGoals] = useState(stored?.goals || sampleGoals);
-const [transactions, setTransactions] = useState(stored?.transactions || []);
+  const [accounts, setAccounts] = useState(
+    stored?.accounts || [
+      {
+        id: "main",
+        name: "Main Account",
+        type: "checking",
+        transactions: [],
+      },
+    ]
+  );
+  const [currentAccountId, setCurrentAccountId] = useState(
+    stored?.currentAccountId ||
+      (stored?.accounts && stored.accounts[0]?.id) ||
+      "main"
+  );
   const [currentPage, setCurrentPage] = useState("dashboard");
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || "japan"
   );
 
+  const currentAccount =
+    accounts.find((acc) => acc.id === currentAccountId) || accounts[0];
+  const transactions = currentAccount ? currentAccount.transactions || [] : [];
+
   useEffect(() => {
-    saveStoredState({ budget, goals, transactions, selectedGoalId });
-  }, [budget, goals, transactions, selectedGoalId]);
+    saveStoredState({
+      budget,
+      goals,
+      accounts,
+      currentAccountId,
+      selectedGoalId,
+    });
+  }, [budget, goals, accounts, currentAccountId, selectedGoalId]);
 
   const totalIncome = sumAmounts(budget.incomeItems);
   const totalFixed = sumAmounts(budget.fixedExpenses);
@@ -113,12 +163,12 @@ const [transactions, setTransactions] = useState(stored?.transactions || []);
   const leftoverForGoals = totalIncome - totalFixed - totalVariable;
 
   const selectedGoal =
-    sampleGoals.find((g) => g.id === selectedGoalId) || sampleGoals[0];
+    goals.find((g) => g.id === selectedGoalId) || goals[0];
 
   return (
     <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
       <header className="border-b border-[#1f2937] bg-[#05060F]">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex flex-col">
             <span className="text-xs tracking-[0.2em] text-cyan-300">
               BUDGET COMMAND CENTER
@@ -128,28 +178,68 @@ const [transactions, setTransactions] = useState(stored?.transactions || []);
             </span>
           </div>
 
-          <nav className="flex gap-2 text-xs">
-            <NavButton
-              label="Dashboard"
-              active={currentPage === "dashboard"}
-              onClick={() => setCurrentPage("dashboard")}
-            />
-            <NavButton
-              label="Budget"
-              active={currentPage === "budget"}
-              onClick={() => setCurrentPage("budget")}
-            />
-            <NavButton
-              label="Transactions"
-              active={currentPage === "transactions"}
-              onClick={() => setCurrentPage("transactions")}
-            />
-            <NavButton
-              label="Goal Detail"
-              active={currentPage === "goalDetail"}
-              onClick={() => setCurrentPage("goalDetail")}
-            />
-          </nav>
+          <div className="flex items-center gap-4">
+            {/* Account selector */}
+            <div className="flex flex-col items-end">
+              <span className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
+                Account
+              </span>
+              <div className="flex items-center gap-2">
+                <select
+                  className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
+                  value={currentAccountId}
+                  onChange={(e) => setCurrentAccountId(e.target.value)}
+                >
+                  {accounts.map((acct) => (
+                    <option key={acct.id} value={acct.id}>
+                      {acct.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="text-xs px-2 py-1 rounded-md border border-cyan-500/70 text-cyan-200 hover:bg-cyan-500/10 transition"
+                  onClick={() => {
+                    const name = window.prompt("New account name:");
+                    if (!name) return;
+                    const id =
+                      name.toLowerCase().replace(/\s+/g, "-") +
+                      "-" +
+                      Date.now();
+                    setAccounts((prev) => [
+                      ...prev,
+                      { id, name, type: "checking", transactions: [] },
+                    ]);
+                    setCurrentAccountId(id);
+                  }}
+                >
+                  + New
+                </button>
+              </div>
+            </div>
+
+            <nav className="flex gap-2 text-xs">
+              <NavButton
+                label="Dashboard"
+                active={currentPage === "dashboard"}
+                onClick={() => setCurrentPage("dashboard")}
+              />
+              <NavButton
+                label="Budget"
+                active={currentPage === "budget"}
+                onClick={() => setCurrentPage("budget")}
+              />
+              <NavButton
+                label="Transactions"
+                active={currentPage === "transactions"}
+                onClick={() => setCurrentPage("transactions")}
+              />
+              <NavButton
+                label="Goal Detail"
+                active={currentPage === "goalDetail"}
+                onClick={() => setCurrentPage("goalDetail")}
+              />
+            </nav>
+          </div>
         </div>
       </header>
 
@@ -167,7 +257,21 @@ const [transactions, setTransactions] = useState(stored?.transactions || []);
               setSelectedGoalId(id);
               setCurrentPage("goalDetail");
             }}
-            onTransactionsUpdate={(rows) => setTransactions((prev) => mergeTransactions(prev, rows))}
+            onTransactionsUpdate={(rows) =>
+              setAccounts((prev) =>
+                prev.map((account) =>
+                  account.id === currentAccountId
+                    ? {
+                        ...account,
+                        transactions: mergeTransactions(
+                          account.transactions || [],
+                          rows
+                        ),
+                      }
+                    : account
+                )
+              )
+            }
           />
         )}
 
@@ -240,8 +344,19 @@ function NeonProgressBar({ value }) {
 }
 
 // ----- Dashboard -----
-function Dashboard({ month, income, fixed, variable, leftover, goals, transactions = [], onOpenGoal, onTransactionsUpdate = () => {}, }) {
-  const allocatedPercent = income > 0 ? ((income - leftover) / income) * 100 : 0;
+function Dashboard({
+  month,
+  income,
+  fixed,
+  variable,
+  leftover,
+  goals,
+  transactions = [],
+  onOpenGoal,
+  onTransactionsUpdate = () => {},
+}) {
+  const allocatedPercent =
+    income > 0 ? ((income - leftover) / income) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -381,11 +496,13 @@ function GoalCard({ goal, onClick }) {
 
 // ----- Budget Page -----
 function BudgetPage({ month, budget, totals, onBudgetChange }) {
-    function handleAddItem(sectionKey) {
+  function handleAddItem(sectionKey) {
     const name = window.prompt(`New ${sectionKey} item name:`);
     if (!name) return;
 
-    const amountInput = window.prompt(`Amount for "${name}" (numbers only):`);
+    const amountInput = window.prompt(
+      `Amount for "${name}" (numbers only):`
+    );
     const amount = Number(amountInput);
     if (isNaN(amount)) {
       alert("That didn't look like a valid number.");
@@ -418,7 +535,13 @@ function BudgetPage({ month, budget, totals, onBudgetChange }) {
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="INCOME">
-          <ListWithTotal items={budget.incomeItems} total={totals.income} onDelete={(index) => handleDeleteItem("incomeItems", index)} />
+          <ListWithTotal
+            items={budget.incomeItems}
+            total={totals.income}
+            onDelete={(index) =>
+              handleDeleteItem("incomeItems", index)
+            }
+          />
           <button
             className="mt-3 px-3 py-1.5 text-xs rounded-md border border-emerald-400/70 text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 transition"
             onClick={() => handleAddItem("incomeItems")}
@@ -428,7 +551,13 @@ function BudgetPage({ month, budget, totals, onBudgetChange }) {
         </Card>
 
         <Card title="FIXED EXPENSES">
-          <ListWithTotal items={budget.fixedExpenses} total={totals.fixed} onDelete={(index) => handleDeleteItem("fixedExpenses", index)} />
+          <ListWithTotal
+            items={budget.fixedExpenses}
+            total={totals.fixed}
+            onDelete={(index) =>
+              handleDeleteItem("fixedExpenses", index)
+            }
+          />
           <button
             className="mt-3 px-3 py-1.5 text-xs rounded-md border border-rose-400/70 text-rose-200 bg-rose-500/10 hover:bg-rose-500/20 transition"
             onClick={() => handleAddItem("fixedExpenses")}
@@ -438,7 +567,13 @@ function BudgetPage({ month, budget, totals, onBudgetChange }) {
         </Card>
 
         <Card title="VARIABLE SPENDING">
-          <ListWithTotal items={budget.variableExpenses} total={totals.variable}  onDelete={(index) => handleDeleteItem("variableExpenses", index)} />
+          <ListWithTotal
+            items={budget.variableExpenses}
+            total={totals.variable}
+            onDelete={(index) =>
+              handleDeleteItem("variableExpenses", index)
+            }
+          />
           <button
             className="mt-3 px-3 py-1.5 text-xs rounded-md border border-amber-400/70 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 transition"
             onClick={() => handleAddItem("variableExpenses")}
@@ -473,17 +608,19 @@ function ListWithTotal({ items, total, onDelete }) {
           className="flex items-center justify-between text-slate-200 gap-2"
         >
           <div className="flex-1 flex justify-between">
-          <span>{item.name}</span>
-          <span className="text-slate-300">${item.amount.toFixed(2)}</span>
-        </div>
-        {onDelete && (
-          <button
-            className="text-[0.65rem] text-slate-500 hover:text-rose-400"
-            onClick={() => onDelete(index)}
-          >
-            X
-          </button>
-        )}
+            <span>{item.name}</span>
+            <span className="text-slate-300">
+              ${item.amount.toFixed(2)}
+            </span>
+          </div>
+          {onDelete && (
+            <button
+              className="text-[0.65rem] text-slate-500 hover:text-rose-400"
+              onClick={() => onDelete(index)}
+            >
+              ✕
+            </button>
+          )}
         </div>
       ))}
       <div className="mt-2 pt-2 border-t border-slate-700 flex items-center justify-between text-xs">
@@ -514,7 +651,8 @@ function TransactionsPage({ transactions = [] }) {
       <Card title="ALL TRANSACTIONS">
         {!hasData && (
           <p className="text-xs text-slate-400">
-            No transactions yet. Import a CSV on the Dashboard to see them here.
+            No transactions yet. Import a CSV on the Dashboard to see them
+            here.
           </p>
         )}
 
@@ -599,7 +737,8 @@ function GoalDetailPage({ goal }) {
           </span>
         </p>
         <p className="mt-1 text-xs text-slate-400">
-          Later we'll calculate this based on your income, expenses and due date.
+          Later we'll calculate this based on your income, expenses and due
+          date.
         </p>
 
         <div className="mt-3 flex gap-2">
@@ -614,6 +753,7 @@ function GoalDetailPage({ goal }) {
     </div>
   );
 }
+
 function BankImportCard({ onTransactionsParsed }) {
   const [error, setError] = useState("");
   const [fileName, setFileName] = useState("");
@@ -780,7 +920,14 @@ const HEADER_ALIASES = {
     "narrative",
   ],
   debit: ["debit", "withdrawal", "outflow", "money out", "charge"],
-  credit: ["credit", "deposit", "inflow", "money in", "payment", "credit amount"],
+  credit: [
+    "credit",
+    "deposit",
+    "inflow",
+    "money in",
+    "payment",
+    "credit amount",
+  ],
   amount: ["amount", "amt", "transaction amount", "value"],
 };
 
@@ -826,7 +973,10 @@ function parseCsvTransactions(text) {
   const header = normalizeHeaderRow(lines[0]);
 
   const dateIndex = findHeaderIndex(header, HEADER_ALIASES.date);
-  const descIndex = findHeaderIndex(header, HEADER_ALIASES.description);
+  const descIndex = findHeaderIndex(
+    header,
+    HEADER_ALIASES.description
+  );
   const amountIndex = findHeaderIndex(header, HEADER_ALIASES.amount);
   const debitIndex = findHeaderIndex(header, HEADER_ALIASES.debit);
   const creditIndex = findHeaderIndex(header, HEADER_ALIASES.credit);
@@ -849,8 +999,10 @@ function parseCsvTransactions(text) {
       amount = parseAmountCell(cols[amountIndex]);
     } else if (debitIndex >= 0 || creditIndex >= 0) {
       // separate Debit/Credit columns
-      const debit = debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
-      const credit = creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
+      const debit =
+        debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
+      const credit =
+        creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
       // convention: money in = positive, money out = negative
       amount = credit - debit;
     }
