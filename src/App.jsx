@@ -137,6 +137,26 @@ const sampleGoals = [
   },
 ];
 
+// Empty starting data for real users
+const EMPTY_BUDGET = {
+  month: "January 2026", // or later: dynamically compute current month
+  incomeItems: [],
+  fixedExpenses: [],
+  variableExpenses: [],
+};
+
+const EMPTY_GOALS = [];
+
+const EMPTY_ACCOUNTS = [
+  {
+    id: "main",
+    name: "Main Account",
+    type: "checking",
+    startingBalance: 0,
+    transactions: [],
+  },
+];
+
 function sumAmounts(items) {
   return items.reduce((sum, item) => sum + item.amount, 0);
 }
@@ -465,20 +485,13 @@ function App() {
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
 
-  const [budget, setBudget] = useState(stored?.budget || sampleBudget);
-  const [goals, setGoals] = useState(stored?.goals || sampleGoals);
+  // Start with empty data if nothing stored yet
+  const [budget, setBudget] = useState(stored?.budget || EMPTY_BUDGET);
+  const [goals, setGoals] = useState(stored?.goals || EMPTY_GOALS);
   const [accounts, setAccounts] = useState(
-    normalizeAccounts(
-      stored?.accounts || [
-        {
-          id: "main",
-          name: "Main Account",
-          type: "checking",
-          transactions: [],
-        },
-      ]
-    )
+    normalizeAccounts(stored?.accounts || EMPTY_ACCOUNTS)
   );
+
   const [currentAccountId, setCurrentAccountId] = useState(
     stored?.currentAccountId ||
       (stored?.accounts && stored.accounts[0]?.id) ||
@@ -503,9 +516,10 @@ function App() {
 const [customizeMode, setCustomizeMode] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(homePage);
-  const [selectedGoalId, setSelectedGoalId] = useState(
-    stored?.selectedGoalId || "japan"
+   const [selectedGoalId, setSelectedGoalId] = useState(
+    stored?.selectedGoalId || (stored?.goals?.[0]?.id ?? null)
   );
+
 
   const [toast, setToast] = useState(null);
   // toast shape: { id, message, variant}
@@ -691,7 +705,7 @@ function handleImportedTransactions(rows) {
   const leftoverForGoals = totalIncome - totalFixed - totalVariable;
 
   const selectedGoal =
-    goals.find((g) => g.id === selectedGoalId) || goals[0];
+    goals.find((g) => g.id === selectedGoalId) || null;
 
   return (
     <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
@@ -895,9 +909,18 @@ function handleImportedTransactions(rows) {
           />
         )}
 
-        {currentPage === "goalDetail" && (
+             {currentPage === "goalDetail" && selectedGoal && (
           <GoalDetailPage goal={selectedGoal} />
         )}
+
+        {currentPage === "goalDetail" && !selectedGoal && (
+          <Card title="GOAL DETAILS">
+            <p className="text-xs text-slate-400">
+              No goals yet. Add a goal from the Dashboard to see details here.
+            </p>
+          </Card>
+        )}
+
       </main>
 
       {toast && (
