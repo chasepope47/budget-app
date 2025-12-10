@@ -117,6 +117,14 @@ function sumAmounts(items) {
   return items.reduce((sum, item) => sum + item.amount, 0);
 }
 
+function normalizeAccounts(accs) {
+  return (accs || []).map((acc) => ({
+    ...acc,
+    startingBalance:
+      typeof acc.startingBalance === "number" ? acc.startingBalance : 0,
+  }));
+}
+
 function App() {
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
@@ -124,14 +132,16 @@ function App() {
   const [budget, setBudget] = useState(stored?.budget || sampleBudget);
   const [goals, setGoals] = useState(stored?.goals || sampleGoals);
   const [accounts, setAccounts] = useState(
-    stored?.accounts || [
-      {
-        id: "main",
-        name: "Main Account",
-        type: "checking",
-        transactions: [],
-      },
-    ]
+    normalizeAccounts(
+      stored?.accounts || [
+        {
+          id: "main",
+          name: "Main Account",
+          type: "checking",
+          transactions: [],
+        },
+      ]
+    )
   );
   const [currentAccountId, setCurrentAccountId] = useState(
     stored?.currentAccountId ||
@@ -143,9 +153,25 @@ function App() {
     stored?.selectedGoalId || "japan"
   );
 
+  // ---- current account + balance ----
   const currentAccount =
     accounts.find((acc) => acc.id === currentAccountId) || accounts[0];
   const transactions = currentAccount ? currentAccount.transactions || [] : [];
+
+  const accountStarting =
+    currentAccount && typeof currentAccount.startingBalance === "number"
+      ? currentAccount.startingBalance
+      : 0;
+
+  const accountNet = Array.isArray(transactions)
+    ? transactions.reduce(
+        (sum, tx) =>
+          sum + (typeof tx.amount === "number" ? tx.amount : 0),
+        0
+      )
+    : 0;
+
+  const accountBalance = accountStarting + accountNet;
 
   useEffect(() => {
     saveStoredState({
@@ -179,11 +205,12 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Account selector */}
-            <div className="flex flex-col items-end">
+            {/* Account selector + balance */}
+            <div className="flex flex-col items-end gap-1">
               <span className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
                 Account
               </span>
+
               <div className="flex items-center gap-2">
                 <select
                   className="bg-[#05060F] border border-slate-700 text-xs rounded-md px-2 py-1 text-slate-100"
@@ -207,12 +234,56 @@ function App() {
                       Date.now();
                     setAccounts((prev) => [
                       ...prev,
-                      { id, name, type: "checking", transactions: [] },
+                      {
+                        id,
+                        name,
+                        type: "checking",
+                        startingBalance: 0,
+                        transactions: [],
+                      },
                     ]);
                     setCurrentAccountId(id);
                   }}
                 >
                   + New
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-[0.7rem] text-slate-400">
+                <span>
+                  Balance:{" "}
+                  <span className="text-cyan-300 font-semibold">
+                    ${accountBalance.toFixed(2)}
+                  </span>
+                </span>
+                <button
+                  className="underline decoration-dotted hover:text-cyan-300"
+                  onClick={() => {
+                    const current =
+                      currentAccount &&
+                      typeof currentAccount.startingBalance === "number"
+                        ? currentAccount.startingBalance
+                        : 0;
+                    const input = window.prompt(
+                      "Set starting balance for this account (e.g. 1234.56):",
+                      current
+                    );
+                    if (input == null) return;
+                    const value = Number(input);
+                    if (Number.isNaN(value)) {
+                      alert("That didn’t look like a number.");
+                      return;
+                    }
+                    setAccounts((prev) =>
+                      prev.map((acc) =>
+                        acc.id === currentAccountId
+                          ? { ...acc, startingBalance: value }
+                          : acc
+                      )
+                    );
+                  }}
+                >
+                  Set balance
                 </button>
               </div>
             </div>
