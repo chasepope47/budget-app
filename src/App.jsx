@@ -752,6 +752,9 @@ function App() {
             transactions={transactions}
             currentAccountBalance={currentAccountBalance}
             totalBalance={totalBalance}
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            onChangeCurrentAccount={setCurrentAccountId}
             sectionsOrder={dashboardSectionsOrder}
             onOpenGoal={(id) => {
               setSelectedGoalId(id);

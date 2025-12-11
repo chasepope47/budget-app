@@ -21,11 +21,14 @@ function Dashboard({
   leftover,
   goals,
   transactions = [],
-  onOpenGoal,
+  accounts = [],
+  currentAccountId,
+  onChangeCurrentAccount = () => {},
+  onOpenGoal = () => {},
   onTransactionsUpdate = () => {},
   currentAccountBalance = 0,
   totalBalance = 0,
-  sectionsOrder,
+  sectionsOrder = DEFAULT_DASHBOARD_SECTIONS,
 }) {
   const allocatedPercent =
     income > 0 ? ((income - leftover) / income) * 100 : 0;
@@ -45,9 +48,12 @@ function Dashboard({
         </span>
       </div>
 
-      {/* Sections in customizable order */}
+      {/* Render sections based on custom order */}
       {order.map((sectionKey) => {
         switch (sectionKey) {
+          // ----------------------------------------
+          // MONTH OVERVIEW
+          // ----------------------------------------
           case "monthOverview":
             return (
               <Card key="monthOverview" title="MONTH OVERVIEW">
@@ -59,47 +65,70 @@ function Dashboard({
                 </div>
 
                 <div className="mt-4">
-                  <p className="text-xs text-slate-400 mb-1">
-                    Allocation this month
-                  </p>
+                  <p className="text-xs text-slate-400 mb-1">Allocation this month</p>
                   <NeonProgressBar value={allocatedPercent} />
                 </div>
               </Card>
             );
 
+          // ----------------------------------------
+          // ACCOUNT SNAPSHOT
+          // ----------------------------------------
           case "accountSnapshot":
             return (
               <Card key="accountSnapshot" title="ACCOUNT SNAPSHOT">
-                <div className="space-y-4 text-sm">
-                  <div>
-                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
                       Current account
+                    </span>
+
+                    {/* Account Picker */}
+                    <select
+                      className="mt-1 bg-[#05060F] border border-slate-700 rounded-md px-2 py-1 text-[0.75rem] text-slate-100"
+                      value={currentAccountId}
+                      onChange={(e) => onChangeCurrentAccount(e.target.value)}
+                    >
+                      {(accounts || []).map((acc) => (
+                        <option key={acc.id} value={acc.id}>
+                          {acc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
+                      Balance
                     </div>
-                    <div className="mt-1 text-2xl font-semibold text-cyan-300">
+                    <div className="text-2xl font-semibold text-cyan-300">
                       ${currentAccountBalance.toFixed(2)}
                     </div>
-                    <p className="mt-1 text-[0.7rem] text-slate-500">
-                      Based on starting balance plus imported transactions.
-                    </p>
-                  </div>
-
-                  <hr className="border-slate-800" />
-
-                  <div>
-                    <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
-                      All accounts
+                    <div className="text-[0.7rem] text-slate-500">
+                      of ${totalBalance.toFixed(2)} total
                     </div>
-                    <div className="mt-1 text-xl font-semibold text-emerald-300">
-                      ${totalBalance.toFixed(2)}
-                    </div>
-                    <p className="mt-1 text-[0.7rem] text-slate-500">
-                      Total estimated cash across all linked accounts.
-                    </p>
                   </div>
+                </div>
+
+                <hr className="my-3 border-slate-800" />
+
+                <div>
+                  <div className="text-[0.65rem] uppercase tracking-[0.2em] text-slate-500">
+                    All accounts
+                  </div>
+                  <div className="mt-1 text-xl font-semibold text-emerald-300">
+                    ${totalBalance.toFixed(2)}
+                  </div>
+                  <p className="mt-1 text-[0.7rem] text-slate-500">
+                    Total estimated cash across all linked accounts.
+                  </p>
                 </div>
               </Card>
             );
 
+          // ----------------------------------------
+          // GOALS
+          // ----------------------------------------
           case "goals":
             return (
               <div key="goals" className="space-y-3">
@@ -115,16 +144,19 @@ function Dashboard({
                     />
                   ))}
                 </div>
+
                 <button className="mt-1 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition">
                   + Add Goal
                 </button>
               </div>
             );
 
+          // ----------------------------------------
+          // CSV IMPORT
+          // ----------------------------------------
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
-                {/* CSV upload → payload { rows, sourceName } → bubble up */}
                 <BankImportCard onTransactionsParsed={onTransactionsUpdate} />
 
                 {Array.isArray(transactions) && transactions.length > 0 && (
@@ -132,6 +164,7 @@ function Dashboard({
                     <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
                       Parsed Transactions
                     </h3>
+
                     <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
                       <table className="w-full text-xs text-left">
                         <thead className="bg-slate-900 text-slate-300">
@@ -142,6 +175,7 @@ function Dashboard({
                             <th className="px-2 py-1 text-right">Amount</th>
                           </tr>
                         </thead>
+
                         <tbody className="divide-y divide-slate-800">
                           {transactions.map((tx, idx) => (
                             <tr key={idx} className="hover:bg-slate-900/70">
@@ -156,7 +190,8 @@ function Dashboard({
                               </td>
                               <td
                                 className={`px-2 py-1 text-right ${
-                                  typeof tx.amount === "number" && tx.amount < 0
+                                  typeof tx.amount === "number" &&
+                                  tx.amount < 0
                                     ? "text-rose-300"
                                     : "text-emerald-300"
                                 }`}
