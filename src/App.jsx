@@ -867,7 +867,7 @@ function App() {
             <span>
               Total Balance:{" "}
               <span className="font-mono text-emerald-300">
-                ${totalBalance.toFixed(2)}
+                ${(Number.isFinite(totalBalance) ? totalBalance : 0).toFixed(2)}
               </span>
             </span>
           </div>
