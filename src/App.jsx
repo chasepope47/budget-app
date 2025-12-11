@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./App.css";
 import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
 import { loadUserState, saveUserState } from "./userStateApi.js";
@@ -511,6 +511,8 @@ function App() {
     resetPassword,
   } = useSupabaseAuth();
 
+  const applyingRemoteRef = useRef(false);
+
   // If not logged in, show the auth screen instead of the app
   if (!user) {
     return (
@@ -758,7 +760,7 @@ function handleImportedTransactions(rows) {
   }, 4000);
 }
 
-  // After login, try to load cloud state and overwrite local if it exists
+  // After login, load cloud state once and overwrite local if it exists
   useEffect(() => {
     if (!user || !user.id) return;
 
@@ -786,7 +788,60 @@ function handleImportedTransactions(rows) {
         console.error("Failed to apply remote user state", err);
       }
     })();
-  }, [user?.id]);
+  }, [user && user.id]);
+
+  // Realtime sync: if user_state row changes in Supabase, apply it here
+  useEffect(() => {
+    if (!user || !user.id) return;
+
+    const channel = supabase
+      .channel(`user_state_realtime_${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_state",
+          filter: `id=eq.${user.id}`,
+        },
+        (payload) => {
+          const remote = payload.new?.state;
+          if (!remote) return;
+
+          // Tell the saver effect "this came from Supabase"
+          applyingRemoteRef.current = true;
+
+          try {
+            if (remote.budget) setBudget(remote.budget);
+            if (remote.goals) setGoals(remote.goals);
+            if (remote.accounts)
+              setAccounts(normalizeAccounts(remote.accounts));
+            if (remote.currentAccountId)
+              setCurrentAccountId(remote.currentAccountId);
+            if (remote.selectedGoalId)
+              setSelectedGoalId(remote.selectedGoalId);
+            if (remote.navOrder) setNavOrder(remote.navOrder);
+            if (remote.homePage) {
+              setHomePage(remote.homePage);
+              setCurrentPage((current) =>
+                current === "dashboard" || current === remote.homePage
+                  ? remote.homePage
+                  : current
+              );
+            }
+            if (remote.dashboardSectionsOrder)
+              setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+          } catch (err) {
+            console.error("Failed to apply realtime user state:", err);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user && user.id]);
 
    // ---- Persist state to localStorage + Supabase on changes ----
   useEffect(() => {
@@ -806,6 +861,12 @@ function handleImportedTransactions(rows) {
 
     // Also push to Supabase if logged in
     if (user && user.id) {
+      // If this change just came FROM Supabase, don't write it back
+      if (applyingRemoteRef.current) {
+        applyingRemoteRef.current = false;
+        return;
+      }
+
       saveUserState(user.id, state).catch((err) =>
         console.error("Failed to save user state to Supabase:", err)
       );
