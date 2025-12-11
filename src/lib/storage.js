@@ -1,5 +1,6 @@
 // src/lib/storage.js
-const STORAGE_KEY = "budgetAppState_v1";
+
+export const STORAGE_KEY = "budgetAppState_v1";
 
 export function loadStoredState() {
   if (typeof window === "undefined") return null;

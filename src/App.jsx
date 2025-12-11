@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+// App.jsx
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./App.css";
 
 import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
@@ -8,18 +9,30 @@ import { supabase } from "./supabaseClient";
 // Components
 import NavButton from "./components/NavButton.jsx";
 import ActionsMenu from "./components/ActionsMenu.jsx";
+import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
-import CustomizationPanel from "./components/CustomizationPanel.jsx";
-
-// Lib
-import { sumAmounts, computeNetTransactions, normalizeAccounts, importTransactionsWithDetection,} from "./lib/accounts.js";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
-import BalancesDashboard from "./pages/BalancesPage.jsx";
+import BalancesDashboard from "./pages/BalancesDashboard.jsx";
 import BudgetPage from "./pages/BudgetPage.jsx";
 import TransactionsPage from "./pages/TransactionsPage.jsx";
 import GoalDetailPage from "./pages/GoalDetailPage.jsx";
+
+// Libs
+import {
+  STORAGE_KEY,
+  loadStoredState,
+  saveStoredState,
+  migrateStoredState,
+} from "./lib/storage.js";
+
+import {
+  sumAmounts,
+  computeNetTransactions,
+  normalizeAccounts,
+  mergeTransactions,
+} from "./lib/accounts.js";
 
 // ----- Navigation -----
 const NAV_ITEMS = [
@@ -42,264 +55,290 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "csvImport",
 ];
 
-// ----- Local Storage -----
-const STORAGE_KEY = "budgetAppState_v1";
-
-function loadStoredState() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (err) {
-    console.error("Failed to load stored state", err);
-    return null;
-  }
-}
-
-function saveStoredState(state) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (err) {
-    console.error("Failed to save state", err);
-  }
-}
-
-function migrateStoredState(stored) {
-  if (!stored) return null;
-
-  // If accounts already exist, just return as-is
-  if (stored.accounts && Array.isArray(stored.accounts)) {
-    return stored;
-  }
-
-  // If only old "transactions" exist, wrap them in a default account
-  const defaultAccount = {
-    id: "main",
-    name: "Main Account",
-    type: "checking",
-    startingBalance: 0,
-    transactions: Array.isArray(stored.transactions)
-      ? stored.transactions
-      : [],
-  };
-
-  return {
-    ...stored,
-    accounts: [defaultAccount],
-    currentAccountId: stored.currentAccountId || "main",
-  };
-}
-
-// ----- Helpers -----
-function mergeTransactions(existing, incoming) {
-  // create a simple key like: "2025-01-01|starbucks|-5.75"
-  const makeKey = (tx) =>
-    `${(tx.date || "").trim()}|${(tx.description || "")
-      .trim()
-      .toLowerCase()}|${isNaN(tx.amount) ? "NaN" : tx.amount}`;
-
-  const seen = new Set(existing.map((tx) => makeKey(tx)));
-  const merged = [...existing];
-
-  for (const tx of incoming) {
-    const key = makeKey(tx);
-    if (!seen.has(key)) {
-      merged.push(tx);
-      seen.add(key);
-    }
-  }
-
-  return merged;
-}
-
-// ----- Empty Defaults -----
+// ----- Defaults -----
 const EMPTY_BUDGET = {
-  month: "January 2026",
-  incomeItems: [],
-  fixedExpenses: [],
-  variableExpenses: [],
+  month: "2025-01",
+  income: 5000,
+  fixed: [
+    { id: "rent", label: "Rent / Mortgage", amount: 1500 },
+    { id: "utilities", label: "Utilities & Internet", amount: 250 },
+    { id: "insurance", label: "Insurance", amount: 180 },
+  ],
+  variable: [
+    { id: "groceries", label: "Groceries", amount: 500 },
+    { id: "gas", label: "Gas & Transport", amount: 250 },
+    { id: "fun", label: "Fun / Eating Out", amount: 300 },
+  ],
 };
 
-const EMPTY_GOALS = [];
+const EMPTY_GOALS = [
+  {
+    id: "emergency",
+    name: "Emergency Fund",
+    target: 3000,
+    current: 600,
+    description: "3–6 months of core expenses to keep you safe.",
+  },
+  {
+    id: "debt",
+    name: "Crush Debt",
+    target: 5000,
+    current: 1200,
+    description: "Throw extra at your highest interest debt.",
+  },
+];
 
 const EMPTY_ACCOUNTS = [
   {
     id: "main",
-    name: "Main Account",
+    name: "Main Checking",
     type: "checking",
-    startingBalance: 0,
+    startingBalance: 2500,
     transactions: [],
   },
 ];
 
-// ----- Auth Screen -----
-function AuthScreen({ onSignIn, onSignUp, onResetPassword, loading }) {
-  const [mode, setMode] = React.useState("signin"); // or "signup"
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
-  const [error, setError] = React.useState(null);
-  const [info, setInfo] = React.useState(null);
-  const [submitting, setSubmitting] = React.useState(false);
-  const [resetSubmitting, setResetSubmitting] = React.useState(false);
+// ----- Helpers -----
+function computeTotals(budget) {
+  const fixedTotal = sumAmounts(budget.fixed || []);
+  const variableTotal = sumAmounts(budget.variable || []);
+  const leftover = (budget.income || 0) - fixedTotal - variableTotal;
+  return { fixedTotal, variableTotal, leftover };
+}
 
-  async function handleForgotPasswordClick() {
-    setError(null);
-    setInfo(null);
+/**
+ * When migrating from an older version where transactions were global,
+ * move them into the main account.
+ */
+function moveGlobalTransactionsToAccounts(stored) {
+  if (!stored) return stored;
 
-    if (!email) {
-      setError("Please enter your email first, then click 'Forgot password?'.");
-      return;
-    }
+  if (Array.isArray(stored.transactions) && stored.transactions.length) {
+    const defaultAccount = {
+      id: "main",
+      name: "Main Checking",
+      type: "checking",
+      startingBalance: 0,
+      transactions: Array.isArray(stored.transactions)
+        ? stored.transactions
+        : [],
+    };
 
-    if (!onResetPassword) return;
-
-    setResetSubmitting(true);
-    try {
-      await onResetPassword(email);
-      setInfo(
-        "If an account exists with that email, a reset link has been sent. " +
-          "Check your inbox and follow the instructions there."
-      );
-    } catch (err) {
-      setError(err.message || "Failed to start password reset.");
-    } finally {
-      setResetSubmitting(false);
-    }
+    return {
+      ...stored,
+      accounts: [defaultAccount],
+      currentAccountId: stored.currentAccountId || "main",
+    };
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    setError(null);
-    setInfo(null);
-    setSubmitting(true);
+  return stored;
+}
 
-    try {
-      if (mode === "signin") {
-        await onSignIn(email, password);
+// ---- CSV Parsing Helpers ----
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
       } else {
-        // SIGN UP FLOW
-        const result = await onSignUp(email, password);
-        const user = result?.user || null;
-        const session = result?.session || null;
-
-        if (user && !session) {
-          setInfo(
-            "Account created! Check your email and click the confirmation link. " +
-              "After that, this page will automatically log you in."
-          );
-        } else {
-          setInfo("Account created!");
-        }
+        inQuotes = !inQuotes;
       }
-    } catch (err) {
-      setError(err.message || "Something went wrong.");
-    } finally {
-      setSubmitting(false);
+    } else if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function parseDateFlexible(value) {
+  if (!value) return null;
+
+  // Already ISO-like?
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parts = value.split(/[\/\-]/).map((p) => p.trim());
+  if (parts.length === 3) {
+    const [a, b, c] = parts.map((p) => parseInt(p, 10));
+
+    // If first is 4-digit year: Y-M-D
+    if (String(parts[0]).length === 4) {
+      const year = a;
+      const m = b;
+      const d = c;
+      if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+        return `${year.toString().padStart(4, "0")}-${m
+          .toString()
+          .padStart(2, "0")}-${d.toString().padStart(2, "0")}`;
+      }
+    }
+
+    // If last is 4-digit year: m/d/Y or d/m/Y
+    if (String(parts[2]).length === 4) {
+      const year = c;
+      const first = a;
+      const second = b;
+
+      // Try m/d/Y
+      if (first >= 1 && first <= 12 && second >= 1 && second <= 31) {
+        return `${year.toString().padStart(4, "0")}-${first
+          .toString()
+          .padStart(2, "0")}-${second.toString().padStart(2, "0")}`;
+      }
+
+      // Try d/m/Y
+      if (second >= 1 && second <= 12 && first >= 1 && first <= 31) {
+        return `${year.toString().padStart(4, "0")}-${second
+          .toString()
+          .padStart(2, "0")}-${first.toString().padStart(2, "0")}`;
+      }
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05060A] text-slate-100">
-        <p>Loading...</p>
-      </div>
-    );
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = parsed.getMonth() + 1;
+    const day = parsed.getDate();
+    return `${year.toString().padStart(4, "0")}-${month
+      .toString()
+      .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[#05060A] text-slate-100 px-4">
-      <div className="w-full max-w-sm border border-slate-800 rounded-xl p-6 bg-[#05060F]">
-        <h1 className="text-xl font-semibold mb-4 text-center">
-          Budget App Login
-        </h1>
+  return null;
+}
 
-        <div className="flex justify-center gap-2 mb-4 text-xs">
-          <button
-            type="button"
-            className={`px-3 py-1 rounded-full border ${
-              mode === "signin"
-                ? "border-emerald-400 text-emerald-300"
-                : "border-slate-700 text-slate-400"
-            }`}
-            onClick={() => setMode("signin")}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            className={`px-3 py-1 rounded-full border ${
-              mode === "signup"
-                ? "border-emerald-400 text-emerald-300"
-                : "border-slate-700 text-slate-400"
-            }`}
-            onClick={() => setMode("signup")}
-          >
-            Sign Up
-          </button>
-        </div>
+function parseCsvToRows(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="text-left text-xs space-y-1">
-            <label className="block text-slate-300">Email</label>
-            <input
-              type="email"
-              required
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm text-slate-100"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
+  if (!lines.length) return [];
 
-          <div className="text-left text-xs space-y-1">
-            <label className="block text-slate-300">Password</label>
-            <input
-              type="password"
-              required
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-2 py-1 text-sm text-slate-100"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-
-          {mode === "signin" && (
-            <div className="flex justify-end -mt-1">
-              <button
-                type="button"
-                onClick={handleForgotPasswordClick}
-                disabled={resetSubmitting}
-                className="text-[0.7rem] text-cyan-300 hover:text-cyan-200 disabled:opacity-60"
-              >
-                {resetSubmitting ? "Sending reset link..." : "Forgot password?"}
-              </button>
-            </div>
-          )}
-
-          {error && (
-            <p className="text-xs text-red-400 whitespace-pre-wrap">{error}</p>
-          )}
-
-          {info && (
-            <p className="text-xs text-emerald-300 whitespace-pre-wrap mt-1">
-              {info}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full mt-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-900 text-sm font-medium py-1.5 disabled:opacity-60"
-          >
-            {submitting
-              ? "Working..."
-              : mode === "signin"
-              ? "Sign In"
-              : "Create Account"}
-          </button>
-        </form>
-      </div>
-    </div>
+  const headerLine = lines[0];
+  const headerCells = parseCsvLine(headerLine).map((h) =>
+    h.trim().toLowerCase()
   );
+
+  const headerKeywords = ["date", "amount", "description", "memo", "name"];
+  const hasHeaderKeywords = headerCells.some((h) =>
+    headerKeywords.some((kw) => h.includes(kw))
+  );
+
+  const dataLines = hasHeaderKeywords ? lines.slice(1) : lines;
+
+  return dataLines.map((line) => parseCsvLine(line));
+}
+
+function detectColumnIndexes(firstRow) {
+  const cells = firstRow.map((c) => c.trim().toLowerCase());
+
+  let dateIdx = -1;
+  let amountIdx = -1;
+  let descIdx = -1;
+
+  cells.forEach((cell, index) => {
+    if (dateIdx === -1 && /date|posted/.test(cell)) {
+      dateIdx = index;
+    }
+    if (amountIdx === -1 && /amount|amt|value/.test(cell)) {
+      amountIdx = index;
+    }
+    if (
+      descIdx === -1 &&
+      /description|memo|details|name|payee|merchant/.test(cell)
+    ) {
+      descIdx = index;
+    }
+  });
+
+  if (dateIdx === -1) dateIdx = 0;
+  if (amountIdx === -1) amountIdx = 1;
+  if (descIdx === -1) descIdx = 2;
+
+  return { dateIdx, amountIdx, descIdx };
+}
+
+function parseCsvToTransactions(text) {
+  const rows = parseCsvToRows(text);
+  if (!rows.length) return [];
+
+  const { dateIdx, amountIdx, descIdx } = detectColumnIndexes(rows[0]);
+
+  const result = [];
+
+  for (const row of rows) {
+    if (!row || !row.length) continue;
+
+    const dateRaw = row[dateIdx] ?? "";
+    const amountRaw = row[amountIdx] ?? "";
+    const descRaw = row[descIdx] ?? "";
+
+    const date = parseDateFlexible(dateRaw);
+
+    const amountNum = parseFloat(
+      String(amountRaw)
+        .replace(/[$,]/g, "")
+        .replace(/\s+/g, "")
+    );
+    if (Number.isNaN(amountNum)) continue;
+
+    const description = descRaw || "(no description)";
+
+    result.push({
+      id: `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      date: date || "",
+      amount: amountNum,
+      description,
+    });
+  }
+
+  return result;
+}
+
+function guessAccountTypeFromRows(rows = []) {
+  if (!rows.length) return "checking";
+  let negatives = 0;
+  let positives = 0;
+  for (const tx of rows) {
+    if (typeof tx.amount !== "number") continue;
+    if (tx.amount < 0) negatives++;
+    else if (tx.amount > 0) positives++;
+  }
+  if (negatives === 0 && positives === 0) return "checking";
+  const ratio = negatives / (negatives + positives);
+  return ratio >= 0.7 ? "credit" : "checking";
+}
+
+const KNOWN_BANK_KEYWORDS = [
+  { match: "chase", label: "Chase" },
+  { match: "capitalone", label: "Capital One" },
+  { match: "wells", label: "Wells Fargo" },
+  { match: "boa", label: "Bank of America" },
+  { match: "navyfederal", label: "Navy Federal" },
+  { match: "usaa", label: "USAA" },
+  { match: "discover", label: "Discover" },
+  { match: "amex", label: "American Express" },
+];
+
+function guessBankNameFromText(text = "") {
+  const lower = text.toLowerCase();
+  for (const { match, label } of KNOWN_BANK_KEYWORDS) {
+    if (lower.includes(match)) return label;
+  }
+  return null;
 }
 
 // ----- Main App -----
@@ -313,26 +352,28 @@ function App() {
     resetPassword,
   } = useSupabaseAuth();
 
-  // NEW: profile + theme + realtime flags
-  const [profile, setProfile] = useState(null);
-  const [theme, setTheme] = useState(() => {
-    const rawStored = loadStoredState();
-    return rawStored?.theme || "dark";
-  });
-
+  // flags/refs for syncing
   const applyingRemoteRef = useRef(false);
-  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const saveTimeoutRef = useRef(null);
+  const initialStoredRef = useRef(null);
 
-   const rawStored = loadStoredState();
-  const stored = migrateStoredState(rawStored);
+  // Load local state once
+  if (initialStoredRef.current === null) {
+    const rawStored = loadStoredState();
+    const withTxMigration = moveGlobalTransactionsToAccounts(rawStored);
+    initialStoredRef.current = migrateStoredState(withTxMigration);
+  }
+  const stored = initialStoredRef.current;
 
-  // Start with empty data if nothing stored yet
+  // Theme per user (G)
+  const [theme, setTheme] = useState(stored?.theme || "dark");
+
+  // Core app state
   const [budget, setBudget] = useState(stored?.budget || EMPTY_BUDGET);
   const [goals, setGoals] = useState(stored?.goals || EMPTY_GOALS);
   const [accounts, setAccounts] = useState(
     normalizeAccounts(stored?.accounts || EMPTY_ACCOUNTS)
   );
-
   const [currentAccountId, setCurrentAccountId] = useState(
     stored?.currentAccountId ||
       (stored?.accounts && stored.accounts[0]?.id) ||
@@ -344,43 +385,76 @@ function App() {
       ? stored.navOrder
       : NAV_ITEMS.map((n) => n.key)
   );
-
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
-
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
-    stored?.dashboardSectionsOrder && stored.dashboardSectionsOrder.length
+    stored?.dashboardSectionsOrder &&
+      Array.isArray(stored.dashboardSectionsOrder) &&
+      stored.dashboardSectionsOrder.length
       ? stored.dashboardSectionsOrder
       : DEFAULT_DASHBOARD_SECTIONS
   );
-
   const [customizeMode, setCustomizeMode] = useState(false);
-
   const [currentPage, setCurrentPage] = useState(
     stored?.homePage || "dashboard"
   );
-
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || (stored?.goals?.[0]?.id ?? null)
   );
-
   const [toast, setToast] = useState(null);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
 
-  // Current account + transactions
-  const currentAccount =
-    accounts.find((acc) => acc.id === currentAccountId) || accounts[0];
-  const transactions = currentAccount ? currentAccount.transactions || [] : [];
+  // Derived things
+  const totals = useMemo(() => computeTotals(budget), [budget]);
 
-    function applyRemoteState(remote) {
+  const accountsById = useMemo(() => {
+    const map = {};
+    for (const acc of accounts) {
+      map[acc.id] = acc;
+    }
+    return map;
+  }, [accounts]);
+
+  const accountRows = useMemo(() => {
+    return accounts.map((acc) => {
+      const starting =
+        typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
+      const net = computeNetTransactions(acc);
+      const balance = starting + net;
+      return { id: acc.id, name: acc.name, balance };
+    });
+  }, [accounts]);
+
+  const totalBalance = useMemo(
+    () => accountRows.reduce((sum, row) => sum + row.balance, 0),
+    [accountRows]
+  );
+
+  const currentAccountBalance =
+    accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
+
+  const currentGoal =
+    goals.find((g) => g.id === selectedGoalId) || goals[0] || null;
+
+  const activeMonth = budget.month || EMPTY_BUDGET.month;
+
+  let pageTitle = NAV_LABELS[currentPage] || "Dashboard";
+  if (currentPage === "goalDetail" && currentGoal) {
+    pageTitle = currentGoal.name;
+  }
+
+  // --- Apply remote state helper (C) ---
+  function applyRemoteState(remote) {
     if (!remote) return;
+
+    applyingRemoteRef.current = true;
+
     try {
       if (remote.budget) setBudget(remote.budget);
       if (remote.goals) setGoals(remote.goals);
       if (remote.accounts)
-        setAccounts(normalizeAccounts(remote.accounts));
-      if (remote.currentAccountId)
-        setCurrentAccountId(remote.currentAccountId);
-      if (remote.selectedGoalId)
-        setSelectedGoalId(remote.selectedGoalId);
+        setAccounts(normalizeAccounts(remote.accounts || []));
+      if (remote.currentAccountId) setCurrentAccountId(remote.currentAccountId);
+      if (remote.selectedGoalId) setSelectedGoalId(remote.selectedGoalId);
       if (remote.navOrder) setNavOrder(remote.navOrder);
       if (remote.homePage) {
         setHomePage(remote.homePage);
@@ -394,185 +468,7 @@ function App() {
     }
   }
 
-  // --- Transaction editing ---
-  function handleEditTransaction(index, updatedFields) {
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id !== currentAccountId) return acc;
-
-        const oldTxs = Array.isArray(acc.transactions)
-          ? acc.transactions
-          : [];
-
-        const newTxs = oldTxs.map((tx, i) =>
-          i === index ? { ...tx, ...updatedFields } : tx
-        );
-
-        return { ...acc, transactions: newTxs };
-      })
-    );
-  }
-
-  function handleDeleteTransaction(index) {
-    setAccounts((prev) =>
-      prev.map((acc) => {
-        if (acc.id !== currentAccountId) return acc;
-
-        const oldTxs = Array.isArray(acc.transactions)
-          ? acc.transactions
-          : [];
-
-        const newTxs = oldTxs.filter((_, i) => i !== index);
-
-        return { ...acc, transactions: newTxs };
-      })
-    );
-  }
-
-  // --- Account management ---
-  function handleCreateAccount() {
-    const name = window.prompt("New account name:");
-    if (!name) return;
-
-    const id =
-      name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") +
-      "-" +
-      Date.now();
-
-    setAccounts((prev) => [
-      ...prev,
-      {
-        id,
-        name,
-        type: "checking",
-        startingBalance: 0,
-        transactions: [],
-      },
-    ]);
-
-    setCurrentAccountId(id);
-  }
-
-  function handleDeleteAccount(accountId) {
-    if (accounts.length <= 1) {
-      window.alert(
-        "You need at least one account. Create another one before deleting this."
-      );
-      return;
-    }
-
-    const target = accounts.find((a) => a.id === accountId);
-    if (!target) return;
-
-    if (
-      !window.confirm(
-        `Delete account "${target.name}" and all its transactions? This cannot be undone.`
-      )
-    ) {
-      return;
-    }
-
-    const remaining = accounts.filter((a) => a.id !== accountId);
-    setAccounts(remaining);
-
-    if (currentAccountId === accountId && remaining.length > 0) {
-      setCurrentAccountId(remaining[0].id);
-    }
-  }
-
-  async function handleResetAllData() {
-    if (!user || !user.id) return;
-
-    const confirmed = window.confirm(
-      "This will reset your budget, goals, accounts, and transactions back to empty. Continue?"
-    );
-    if (!confirmed) return;
-
-    try {
-      // Delete this user's cloud state
-      await supabase.from("user_state").delete().eq("id", user.id);
-
-      // Clear local cache
-      window.localStorage.removeItem(STORAGE_KEY);
-
-      // Reset React state
-      setBudget(EMPTY_BUDGET);
-      setGoals(EMPTY_GOALS);
-      setAccounts(EMPTY_ACCOUNTS);
-      setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
-      setSelectedGoalId(null);
-      setNavOrder(NAV_ITEMS.map((n) => n.key));
-      setHomePage("dashboard");
-      setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
-      setCurrentPage("dashboard");
-    } catch (err) {
-      console.error("Failed to reset data:", err);
-      window.alert("Something went wrong resetting your data. Try again.");
-    }
-  }
-
-  // --- Balances ---
-  const accountStarting =
-    currentAccount && typeof currentAccount.startingBalance === "number"
-      ? currentAccount.startingBalance
-      : 0;
-
-  const accountNet = computeNetTransactions(currentAccount);
-  const accountBalance = accountStarting + accountNet;
-
-  const accountRows = (accounts || []).map((acc) => {
-    const starting =
-      typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
-    const net = computeNetTransactions(acc);
-    const balance = starting + net;
-    return { id: acc.id, name: acc.name, balance };
-  });
-
-  const totalBalance = accountRows.reduce((sum, row) => sum + row.balance, 0);
-
-  const currentAccountBalance =
-    accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
-
-  // --- CSV import with automatic account detection ---
- function handleImportedTransactions(payload) {
-  const { rows, sourceName = "" } = payload || {};
-  if (!Array.isArray(rows) || rows.length === 0) return;
-
-  const result = importTransactionsWithDetection(
-    accounts,
-    currentAccountId,
-    rows,
-    sourceName
-  );
-
-  setAccounts(result.accounts);
-
-  if (result.targetAccountId && result.targetAccountId !== currentAccountId) {
-    setCurrentAccountId(result.targetAccountId);
-  }
-
-  const toastId = Date.now();
-  const message = result.createdNew
-    ? `New account detected and created: "${result.targetAccountName}".`
-    : `Imported transactions into "${result.targetAccountName}".`;
-
-  setToast({
-    id: toastId,
-    variant: result.createdNew ? "success" : "info",
-    message,
-    accountId: result.targetAccountId || null,
-    createdNew: result.createdNew,
-  });
-
-  setTimeout(() => {
-    setToast((current) =>
-      current && current.id === toastId ? null : current
-    );
-  }, 4000);
-}
-
-
-  // ---- Realtime subscription: keep state in sync across devices ----
+  // ---- Realtime subscription: keep state in sync across devices (C) ----
   useEffect(() => {
     if (!user || !user.id) return;
 
@@ -587,35 +483,9 @@ function App() {
           filter: `id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("🔄️ Realtime update received:", payload);
           const remote = payload.new?.state;
           if (!remote) return;
-
-          applyingRemoteRef.current = true;
-
-          try {
-            if (remote.budget) setBudget(remote.budget);
-            if (remote.goals) setGoals(remote.goals);
-            if (remote.accounts)
-              setAccounts(normalizeAccounts(remote.accounts));
-            if (remote.currentAccountId)
-              setCurrentAccountId(remote.currentAccountId);
-            if (remote.selectedGoalId)
-              setSelectedGoalId(remote.selectedGoalId);
-            if (remote.navOrder) setNavOrder(remote.navOrder);
-            if (remote.homePage) {
-              setHomePage(remote.homePage);
-              setCurrentPage((current) =>
-                current === "dashboard" || current === remote.homePage
-                  ? remote.homePage
-                  : current
-              );
-            }
-            if (remote.dashboardSectionsOrder)
-              setDashboardSectionsOrder(remote.dashboardSectionsOrder);
-          } catch (err) {
-            console.error("Failed to apply realtime user state:", err);
-          }
+          applyRemoteState(remote);
         }
       )
       .subscribe();
@@ -625,36 +495,19 @@ function App() {
     };
   }, [user?.id]);
 
-  // ---- Initial load: pull saved cloud state once after login ----
+  // ---- Initial load from Supabase user_state ----
   useEffect(() => {
     if (!user || !user.id) return;
 
     let cancelled = false;
 
     (async () => {
-      const remote = await loadUserState(user.id);
-      if (!remote || cancelled) return;
-
-      applyingRemoteRef.current = true;
-
       try {
-        if (remote.budget) setBudget(remote.budget);
-        if (remote.goals) setGoals(remote.goals);
-        if (remote.accounts)
-          setAccounts(normalizeAccounts(remote.accounts));
-        if (remote.currentAccountId)
-          setCurrentAccountId(remote.currentAccountId);
-        if (remote.selectedGoalId)
-          setSelectedGoalId(remote.selectedGoalId);
-        if (remote.navOrder) setNavOrder(remote.navOrder);
-        if (remote.homePage) {
-          setHomePage(remote.homePage);
-          setCurrentPage(remote.homePage);
-        }
-        if (remote.dashboardSectionsOrder)
-          setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+        const remote = await loadUserState(user.id);
+        if (!remote || cancelled) return;
+        applyRemoteState(remote);
       } catch (err) {
-        console.error("Failed to apply remote user state", err);
+        console.error("Failed to load remote user state", err);
       }
     })();
 
@@ -663,7 +516,7 @@ function App() {
     };
   }, [user?.id]);
 
-  // ---- Persist state to localStorage + Supabase on changes ----
+  // ---- Persist state with debounce (F + G) ----
   useEffect(() => {
     const state = {
       budget,
@@ -674,17 +527,26 @@ function App() {
       navOrder,
       homePage,
       dashboardSectionsOrder,
+      theme,
     };
 
-    // Local storage cache
+    // Always keep localStorage up-to-date
     saveStoredState(state);
 
-    if (user && user.id) {
-      if (applyingRemoteRef.current) {
-        applyingRemoteRef.current = false;
-        return;
-      }
+    if (!user || !user.id) return;
 
+    // If we're just applying a remote update, skip saving back
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      return;
+    }
+
+    // Debounce Supabase writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
       saveUserState(user.id, state)
         .then(() => {
           setLastSavedAt(new Date().toLocaleTimeString());
@@ -692,7 +554,13 @@ function App() {
         .catch((err) =>
           console.error("Failed to save user state to Supabase:", err)
         );
-    }
+    }, 600); // ~0.6s debounce
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [
     user,
     budget,
@@ -703,15 +571,204 @@ function App() {
     navOrder,
     homePage,
     dashboardSectionsOrder,
+    theme,
   ]);
 
-  const totalIncome = sumAmounts(budget.incomeItems);
-  const totalFixed = sumAmounts(budget.fixedExpenses);
-  const totalVariable = sumAmounts(budget.variableExpenses);
-  const leftoverForGoals = totalIncome - totalFixed - totalVariable;
+  // ---------- Handlers ----------
 
-  const selectedGoal =
-    goals.find((g) => g.id === selectedGoalId) || null;
+  function handleBudgetChange(nextBudget) {
+    setBudget(nextBudget);
+  }
+
+  function handleSetHomePage(pageKey) {
+    setHomePage(pageKey);
+    setCurrentPage(pageKey);
+    setToast({
+      message: `Home page set to ${NAV_LABELS[pageKey] || pageKey}.`,
+      variant: "success",
+    });
+  }
+
+  function handleNavReorder(nextOrder) {
+    setNavOrder(nextOrder);
+  }
+
+  function handleDashboardSectionsReorder(nextOrder) {
+    setDashboardSectionsOrder(nextOrder);
+  }
+
+  function handleCreateAccountFromCsv({ bankName, accountType, transactions }) {
+    const id =
+      bankName?.toLowerCase().replace(/\s+/g, "-").slice(0, 20) ||
+      `acc-${Date.now()}`;
+
+    const newAccount = {
+      id,
+      name: bankName || "Imported Account",
+      type: accountType || "checking",
+      startingBalance: 0,
+      transactions,
+    };
+
+    setAccounts((prev) => [...prev, newAccount]);
+    setCurrentAccountId(id);
+
+    setToast({
+      message: `Created account "${newAccount.name}" with ${transactions.length} transactions.`,
+      accountId: id,
+      variant: "success",
+    });
+  }
+
+  function handleImportIntoExistingAccount(accountId, transactions) {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== accountId) return acc;
+        const merged = mergeTransactions(
+          Array.isArray(acc.transactions) ? acc.transactions : [],
+          transactions
+        );
+        return { ...acc, transactions: merged };
+      })
+    );
+
+    const accName = accountsById[accountId]?.name || "Selected account";
+
+    setToast({
+      message: `Imported ${transactions.length} transactions into "${accName}".`,
+      accountId,
+      variant: "success",
+    });
+  }
+
+  function handleCsvImported(transactions, rawText) {
+    const nonZero = transactions.filter(
+      (tx) => typeof tx.amount === "number" && tx.amount !== 0
+    );
+    if (!nonZero.length) {
+      setToast({
+        message: "No valid transactions found in this file.",
+        variant: "info",
+      });
+      return;
+    }
+
+    const accountType = guessAccountTypeFromRows(nonZero);
+    const bankName = guessBankNameFromText(rawText) || "Imported Account";
+
+    const hasOnlyDefaultAccount =
+      accounts.length === 1 && accounts[0].id === "main";
+    const defaultHasNoTransactions =
+      hasOnlyDefaultAccount &&
+      (!accounts[0].transactions || accounts[0].transactions.length === 0);
+
+    if (defaultHasNoTransactions) {
+      handleImportIntoExistingAccount("main", nonZero);
+      return;
+    }
+
+    const createNew = window.confirm(
+      `Detected ${nonZero.length} transactions. Create a new "${bankName}" ${accountType} account for this file?\n\nPress OK to create a new account.\nPress Cancel to import into your currently selected account.`
+    );
+
+    if (createNew) {
+      handleCreateAccountFromCsv({
+        bankName,
+        accountType,
+        transactions: nonZero,
+      });
+    } else {
+      handleImportIntoExistingAccount(currentAccountId, nonZero);
+    }
+  }
+
+  function handleUpdateTransaction(index, updatedFields) {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== currentAccountId) return acc;
+        const oldTxs = Array.isArray(acc.transactions) ? acc.transactions : [];
+        const newTxs = oldTxs.map((tx, i) =>
+          i === index ? { ...tx, ...updatedFields } : tx
+        );
+        return { ...acc, transactions: newTxs };
+      })
+    );
+  }
+
+  function handleDeleteTransaction(index) {
+    setAccounts((prev) =>
+      prev.map((acc) => {
+        if (acc.id !== currentAccountId) return acc;
+        const oldTxs = Array.isArray(acc.transactions) ? acc.transactions : [];
+        const newTxs = oldTxs.filter((_, i) => i !== index);
+        return { ...acc, transactions: newTxs };
+      })
+    );
+  }
+
+  function handleSetAccountBalance(accountId, newBalance) {
+    setAccounts((prev) =>
+      prev.map((acc) =>
+        acc.id === accountId ? { ...acc, startingBalance: newBalance } : acc
+      )
+    );
+  }
+
+  function handleRenameAccount(accountId, newName) {
+    setAccounts((prev) =>
+      prev.map((acc) =>
+        acc.id === accountId ? { ...acc, name: newName } : acc
+      )
+    );
+  }
+
+  function handleCreateEmptyAccount() {
+    const baseIndex = accounts.length + 1;
+    const id = `acc-${Date.now()}`;
+    const newAccount = {
+      id,
+      name: `Account ${baseIndex}`,
+      type: "checking",
+      startingBalance: 0,
+      transactions: [],
+    };
+    setAccounts((prev) => [...prev, newAccount]);
+    setCurrentAccountId(id);
+
+    setToast({
+      message: `Created account "${newAccount.name}".`,
+      accountId: id,
+      variant: "success",
+    });
+  }
+
+  async function handleResetAllData() {
+    if (!user || !user.id) return;
+
+    const confirmed = window.confirm(
+      "This will reset your budget, goals, accounts, and transactions back to empty. Continue?"
+    );
+    if (!confirmed) return;
+
+    try {
+      await supabase.from("user_state").delete().eq("id", user.id);
+      window.localStorage.removeItem(STORAGE_KEY);
+
+      setBudget(EMPTY_BUDGET);
+      setGoals(EMPTY_GOALS);
+      setAccounts(EMPTY_ACCOUNTS);
+      setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
+      setSelectedGoalId(null);
+      setNavOrder(NAV_ITEMS.map((n) => n.key));
+      setHomePage("dashboard");
+      setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
+      setCurrentPage("dashboard");
+      setTheme("dark");
+    } catch (err) {
+      console.error("Failed to reset data:", err);
+      window.alert("Something went wrong resetting your data. Try again.");
+    }
+  }
 
   // ---- Auth gate ----
   if (!user) {
@@ -727,8 +784,14 @@ function App() {
 
   // ---- App layout ----
   return (
-    <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
-      <header className="border-b border-[#1f2937] bg-[#05060F]">
+    <div
+      className={`min-h-screen flex flex-col ${
+        theme === "dark"
+          ? "bg-[#05060A] text-slate-100"
+          : "bg-slate-50 text-slate-900"
+      }`}
+    >
+      <header className="border-b border-[#1f2937] bg-[#05060F]/90 backdrop-blur flex-none">
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col">
             <span className="text-xs tracking-[0.2em] text-cyan-300">
@@ -737,9 +800,25 @@ function App() {
             <span className="text-sm text-slate-400">
               Dark cyber budgeting with themed goals
             </span>
+            {lastSavedAt && (
+              <span className="text-[10px] text-slate-500 mt-1">
+                Last saved at {lastSavedAt}
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+            {/* Theme toggle (G) */}
+            <button
+              type="button"
+              onClick={() =>
+                setTheme((prev) => (prev === "dark" ? "light" : "dark"))
+              }
+              className="px-2 py-1 rounded border border-slate-600/70 bg-black/20 hover:bg-black/40"
+            >
+              {theme === "dark" ? "Dark mode" : "Light mode"}
+            </button>
+
             {navOrder.map((pageKey) => (
               <NavButton
                 key={pageKey}
@@ -759,42 +838,76 @@ function App() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-6">
-        {customizeMode && (
-          <CustomizationPanel
-            navOrder={navOrder}
-            setNavOrder={setNavOrder}
-            homePage={homePage}
-            setHomePage={(pageKey) => {
-              setHomePage(pageKey);
-              setCurrentPage(pageKey);
-            }}
-            dashboardSectionsOrder={dashboardSectionsOrder}
-            setDashboardSectionsOrder={setDashboardSectionsOrder}
-            navLabels={NAV_LABELS}
-          />
-        )}
+      <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-4 space-y-3">
+        {/* Page Header */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col">
+            <h1 className="text-base font-semibold text-slate-50">
+              {pageTitle}
+            </h1>
+            <p className="text-xs text-slate-400">
+              {currentPage === "dashboard" &&
+                "Overview of your month, accounts, goals, and imports."}
+              {currentPage === "balances" &&
+                "View and edit your account balances and see net worth."}
+              {currentPage === "budget" &&
+                "Adjust your monthly budget categories and income."}
+              {currentPage === "transactions" &&
+                "Review, edit, and clean up imported transactions."}
+              {currentPage === "goalDetail" &&
+                "Drill into a single financial goal and its progress."}
+            </p>
+          </div>
 
+          <div className="flex flex-col items-end text-xs text-slate-400">
+            <span>
+              Month:{" "}
+              <span className="font-mono text-slate-100">{activeMonth}</span>
+            </span>
+            <span>
+              Total Balance:{" "}
+              <span className="font-mono text-emerald-300">
+                ${totalBalance.toFixed(2)}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {/* Content */}
         {currentPage === "dashboard" && (
           <Dashboard
-            month={budget.month}
-            income={totalIncome}
-            fixed={totalFixed}
-            variable={totalVariable}
-            leftover={leftoverForGoals}
+            month={activeMonth}
+            income={budget.income}
+            fixed={budget.fixed}
+            variable={budget.variable}
+            leftover={totals.leftover}
             goals={goals}
-            transactions={transactions}
-            currentAccountBalance={currentAccountBalance}
-            totalBalance={totalBalance}
+            transactions={
+              accountsById[currentAccountId]?.transactions || []
+            }
             accounts={accounts}
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
-            sectionsOrder={dashboardSectionsOrder}
-            onOpenGoal={(id) => {
-              setSelectedGoalId(id);
+            onOpenGoal={(goalId) => {
+              setSelectedGoalId(goalId);
               setCurrentPage("goalDetail");
             }}
-            onTransactionsUpdate={handleImportedTransactions}
+            onTransactionsUpdate={(updatedTransactions) => {
+              setAccounts((prev) =>
+                prev.map((acc) =>
+                  acc.id === currentAccountId
+                    ? { ...acc, transactions: updatedTransactions }
+                    : acc
+                )
+              );
+            }}
+            currentAccountBalance={currentAccountBalance}
+            totalBalance={totalBalance}
+            sectionsOrder={dashboardSectionsOrder}
+            onSectionsReorder={handleDashboardSectionsReorder}
+            customizeMode={customizeMode}
+            // BankImportCard calls this with (parsedRows, rawText)
+            onCsvImported={handleCsvImported}
           />
         )}
 
@@ -803,60 +916,62 @@ function App() {
             accounts={accounts}
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
-            onCreateAccount={handleCreateAccount}
-            onDeleteAccount={handleDeleteAccount}
-            onSetAccountBalance={(accountId, newBalance) => {
-              setAccounts((prev) =>
-                prev.map((acc) => {
-                  if (acc.id !== accountId) return acc;
-                  const net = computeNetTransactions(acc);
-                  const startingBalance = newBalance - net;
-                  return { ...acc, startingBalance };
-                })
+            onCreateAccount={handleCreateEmptyAccount}
+            onDeleteAccount={(accountIdToDelete) => {
+              const count = accounts.length;
+              if (count <= 1) {
+                window.alert(
+                  "You need at least one account. Create another one before deleting this."
+                );
+                return;
+              }
+
+              const confirmed = window.confirm(
+                "Are you sure you want to delete this account? Its transactions will be lost."
               );
-            }}
-            onRenameAccount={(accountId, newName) => {
+              if (!confirmed) return;
+
               setAccounts((prev) =>
-                prev.map((acc) =>
-                  acc.id === accountId ? { ...acc, name: newName } : acc
-                )
+                prev.filter((acc) => acc.id !== accountIdToDelete)
               );
+
+              if (currentAccountId === accountIdToDelete) {
+                const remaining = accounts.filter(
+                  (acc) => acc.id !== accountIdToDelete
+                );
+                if (remaining.length) {
+                  setCurrentAccountId(remaining[0].id);
+                } else {
+                  setCurrentAccountId(null);
+                }
+              }
             }}
+            onSetAccountBalance={handleSetAccountBalance}
+            onRenameAccount={handleRenameAccount}
           />
         )}
 
         {currentPage === "budget" && (
           <BudgetPage
-            month={budget.month}
+            month={activeMonth}
             budget={budget}
-            totals={{
-              income: totalIncome,
-              fixed: totalFixed,
-              variable: totalVariable,
-              leftover: leftoverForGoals,
-            }}
-            onBudgetChange={(newBudget) => setBudget(newBudget)}
+            totals={totals}
+            onBudgetChange={handleBudgetChange}
           />
         )}
 
         {currentPage === "transactions" && (
           <TransactionsPage
-            transactions={transactions}
-            onUpdateTransaction={handleEditTransaction}
+            transactions={
+              accountsById[currentAccountId]?.transactions || []
+            }
+            onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
           />
         )}
 
-        {currentPage === "goalDetail" && selectedGoal && (
-          <GoalDetailPage goal={selectedGoal} />
-        )}
-
-        {currentPage === "goalDetail" && !selectedGoal && (
-          <div>
-            <p className="text-xs text-slate-400">
-              No goals yet. Add a goal from the Dashboard to see details here.
-            </p>
-          </div>
+        {currentPage === "goalDetail" && (
+          <GoalDetailPage goal={currentGoal} />
         )}
       </main>
 
@@ -876,12 +991,6 @@ function App() {
           }
           onClose={() => setToast(null)}
         />
-      )}
-
-      {lastSavedAt && (
-        <div className="text-[0.6rem] text-slate-500 text-right px-3 pb-2">
-          Last cloud save: {lastSavedAt}
-        </div>
       )}
     </div>
   );
