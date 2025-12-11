@@ -11,6 +11,9 @@ import ActionsMenu from "./components/ActionsMenu.jsx";
 import Toast from "./components/Toast.jsx";
 import CustomizationPanel from "./components/CustomizationPanel.jsx";
 
+// Lib
+import { sumAmounts, computeNetTransactions, normalizeAccounts, importTransactionsWithDetection,} from "./lib/accounts.js";
+
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
 import BalancesDashboard from "./pages/BalancesPage.jsx";
@@ -108,28 +111,6 @@ function mergeTransactions(existing, incoming) {
   }
 
   return merged;
-}
-
-function sumAmounts(items) {
-  return items.reduce((sum, item) => sum + item.amount, 0);
-}
-
-function computeNetTransactions(account) {
-  const txs = Array.isArray(account?.transactions)
-    ? account.transactions
-    : [];
-  return txs.reduce(
-    (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
-    0
-  );
-}
-
-function normalizeAccounts(accs) {
-  return (accs || []).map((acc) => ({
-    ...acc,
-    startingBalance:
-      typeof acc.startingBalance === "number" ? acc.startingBalance : 0,
-  }));
 }
 
 function buildDescriptionSet(transactions = []) {
@@ -263,39 +244,6 @@ function detectTargetAccountForImport(
   return null;
 }
 
-function importTransactionsWithDetection(
-  accounts = [],
-  currentAccountId,
-  importedRows = [],
-  sourceName = ""
-) {
-  const targetId = detectTargetAccountForImport(
-    accounts,
-    currentAccountId,
-    importedRows
-  );
-
-  // Case 1: matched an existing account
-  if (targetId) {
-    const nextAccounts = (accounts || []).map((acc) =>
-      acc.id === targetId
-        ? {
-            ...acc,
-            transactions: mergeTransactions(acc.transactions || [], importedRows),
-          }
-        : acc
-    );
-
-    const matched = (accounts || []).find((a) => a.id === targetId);
-
-    return {
-      targetAccountId: targetId,
-      targetAccountName: matched?.name || "Account",
-      accounts: nextAccounts,
-      createdNew: false,
-    };
-  }
-
   // Case 2: no good match → create a new account
   const type = guessAccountTypeFromRows(importedRows);
   const name = guessAccountNameFromRows(importedRows, sourceName);
@@ -311,14 +259,6 @@ function importTransactionsWithDetection(
     startingBalance: 0,
     transactions: importedRows,
   };
-
-  return {
-    targetAccountId: newId,
-    targetAccountName: name,
-    accounts: [...(accounts || []), newAccount],
-    createdNew: true,
-  };
-}
 
 // ----- Empty Defaults -----
 const EMPTY_BUDGET = {
@@ -707,49 +647,43 @@ function App() {
     accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
 
   // --- CSV import with automatic account detection ---
-  function handleImportedTransactions(payload) {
-    const { rows, sourceName = "" } = payload || {};
-    if (!Array.isArray(rows) || rows.length === 0) return;
+ function handleImportedTransactions(payload) {
+  const { rows, sourceName = "" } = payload || {};
+  if (!Array.isArray(rows) || rows.length === 0) return;
 
-    const result = importTransactionsWithDetection(
-      accounts,
-      currentAccountId,
-      rows,
-      sourceName
-    );
+  const result = importTransactionsWithDetection(
+    accounts,
+    currentAccountId,
+    rows,
+    sourceName
+  );
 
-    setAccounts(result.accounts);
+  setAccounts(result.accounts);
 
-    if (
-      result.targetAccountId &&
-      result.targetAccountId !== currentAccountId
-    ) {
-      setCurrentAccountId(result.targetAccountId);
-    }
-
-    const toastId = Date.now();
-
-    let message;
-    if (result.createdNew) {
-      message = `New account detected and created: "${result.targetAccountName}".`;
-    } else {
-      message = `Imported transactions into "${result.targetAccountName}".`;
-    }
-
-    setToast({
-      id: toastId,
-      variant: result.createdNew ? "success" : "info",
-      message,
-      accountId: result.targetAccountId || null,
-      createdNew: result.createdNew,
-    });
-
-    setTimeout(() => {
-      setToast((current) =>
-        current && current.id === toastId ? null : current
-      );
-    }, 4000);
+  if (result.targetAccountId && result.targetAccountId !== currentAccountId) {
+    setCurrentAccountId(result.targetAccountId);
   }
+
+  const toastId = Date.now();
+  const message = result.createdNew
+    ? `New account detected and created: "${result.targetAccountName}".`
+    : `Imported transactions into "${result.targetAccountName}".`;
+
+  setToast({
+    id: toastId,
+    variant: result.createdNew ? "success" : "info",
+    message,
+    accountId: result.targetAccountId || null,
+    createdNew: result.createdNew,
+  });
+
+  setTimeout(() => {
+    setToast((current) =>
+      current && current.id === toastId ? null : current
+    );
+  }, 4000);
+}
+
 
   // ---- Realtime subscription: keep state in sync across devices ----
   useEffect(() => {

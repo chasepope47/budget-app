@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
@@ -36,6 +37,7 @@ function Dashboard({
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">{month}</h1>
         <span className="text-xs text-slate-400">
@@ -43,6 +45,7 @@ function Dashboard({
         </span>
       </div>
 
+      {/* Sections in customizable order */}
       {order.map((sectionKey) => {
         switch (sectionKey) {
           case "monthOverview":
@@ -121,9 +124,8 @@ function Dashboard({
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
-                <BankImportCard
-                  onTransactionsParsed={(payload) => onTransactionsUpdate(payload)}
-                />
+                {/* CSV upload → payload { rows, sourceName } → bubble up */}
+                <BankImportCard onTransactionsParsed={onTransactionsUpdate} />
 
                 {Array.isArray(transactions) && transactions.length > 0 && (
                   <div className="mt-4">

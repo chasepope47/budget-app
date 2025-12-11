@@ -1,6 +1,7 @@
 // src/lib/accounts.js
 import { normalizeKey, KNOWN_BANKS } from "./csv.js";
 
+// ----- Basic helpers -----
 export function sumAmounts(items) {
   return items.reduce((sum, item) => sum + item.amount, 0);
 }
@@ -24,6 +25,7 @@ export function normalizeAccounts(accs) {
 }
 
 export function mergeTransactions(existing, incoming) {
+  // key like "2025-01-01|starbucks|-5.75"
   const makeKey = (tx) =>
     `${(tx.date || "").trim()}|${(tx.description || "")
       .trim()
@@ -43,6 +45,7 @@ export function mergeTransactions(existing, incoming) {
   return merged;
 }
 
+// ----- Account detection helpers -----
 function buildDescriptionSet(transactions = []) {
   const set = new Set();
   (transactions || []).forEach((tx) => {
@@ -53,10 +56,7 @@ function buildDescriptionSet(transactions = []) {
   return set;
 }
 
-// We now rely on KNOWN_BANKS + normalizeKey from csv.js
-// KNOWN_BANKS is an array like: [{ key: "chase", label: "Chase" }, ...]
-
-// Heuristic account type from rows
+// Guess checking vs credit from transaction signs
 function guessAccountTypeFromRows(rows = []) {
   if (!rows.length) return "checking";
   let negatives = 0;
@@ -71,11 +71,13 @@ function guessAccountTypeFromRows(rows = []) {
   return ratio >= 0.7 ? "credit" : "checking";
 }
 
+// Guess a friendly name for a new account
 function guessAccountNameFromRows(rows = [], sourceName = "") {
   // --- 1. Try to detect bank from the file name using KNOWN_BANKS ---
   const sourceKey = normalizeKey(sourceName);
   if (sourceKey) {
     for (const bank of KNOWN_BANKS) {
+      // KNOWN_BANKS entries can be { key, label } or { match, label }
       const matchKey = (bank.key || bank.match || "").toLowerCase();
       if (matchKey && sourceKey.includes(matchKey)) {
         return `${bank.label} Account`;
@@ -118,6 +120,7 @@ function guessAccountNameFromRows(rows = [], sourceName = "") {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) + " Account";
 }
 
+// ----- Main import helpers -----
 export function detectTargetAccountForImport(
   accounts = [],
   currentAccountId,
@@ -127,7 +130,7 @@ export function detectTargetAccountForImport(
     (acc) => Array.isArray(acc.transactions) && acc.transactions.length > 0
   );
 
-  // If no account has transactions, treat this as a new account
+  // If no account has existing transactions yet, treat this as a new account
   if (!withTransactions.length) {
     return null;
   }
@@ -178,7 +181,7 @@ export function importTransactionsWithDetection(
     importedRows
   );
 
-  // Case 1: matched an existing account
+  // Case 1: We matched an existing account
   if (targetId) {
     const nextAccounts = (accounts || []).map((acc) =>
       acc.id === targetId
@@ -199,7 +202,7 @@ export function importTransactionsWithDetection(
     };
   }
 
-  // Case 2: create a new account
+  // Case 2: No good match → create a new account
   const type = guessAccountTypeFromRows(importedRows);
   const name = guessAccountNameFromRows(importedRows, sourceName);
   const newId =
