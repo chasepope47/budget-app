@@ -760,37 +760,7 @@ function handleImportedTransactions(rows) {
   }, 4000);
 }
 
-  // After login, load cloud state once and overwrite local if it exists
-  useEffect(() => {
-    if (!user || !user.id) return;
-
-    (async () => {
-      const remote = await loadUserState(user.id);
-      if (!remote) return;
-
-      try {
-        if (remote.budget) setBudget(remote.budget);
-        if (remote.goals) setGoals(remote.goals);
-        if (remote.accounts)
-          setAccounts(normalizeAccounts(remote.accounts));
-        if (remote.currentAccountId)
-          setCurrentAccountId(remote.currentAccountId);
-        if (remote.selectedGoalId)
-          setSelectedGoalId(remote.selectedGoalId);
-        if (remote.navOrder) setNavOrder(remote.navOrder);
-        if (remote.homePage) {
-          setHomePage(remote.homePage);
-          setCurrentPage(remote.homePage);
-        }
-        if (remote.dashboardSectionsOrder)
-          setDashboardSectionsOrder(remote.dashboardSectionsOrder);
-      } catch (err) {
-        console.error("Failed to apply remote user state", err);
-      }
-    })();
-  }, [user && user.id]);
-
-  // Realtime sync: if user_state row changes in Supabase, apply it here
+    // Realtime subscription: keep state in sync across devices
   useEffect(() => {
     if (!user || !user.id) return;
 
@@ -808,7 +778,8 @@ function handleImportedTransactions(rows) {
           const remote = payload.new?.state;
           if (!remote) return;
 
-          // Tell the saver effect "this came from Supabase"
+          // Mark that this change came from Supabase,
+          // so the saving effect doesn't immediately write it back.
           applyingRemoteRef.current = true;
 
           try {
@@ -841,7 +812,46 @@ function handleImportedTransactions(rows) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user && user.id]);
+  }, [user?.id]);
+
+  // Initial load: pull the saved cloud state once after login
+  useEffect(() => {
+    if (!user || !user.id) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const remote = await loadUserState(user.id);
+      if (!remote || cancelled) return;
+
+      // Also mark this as "remote-driven" so we don't immediately save it back
+      applyingRemoteRef.current = true;
+
+      try {
+        if (remote.budget) setBudget(remote.budget);
+        if (remote.goals) setGoals(remote.goals);
+        if (remote.accounts)
+          setAccounts(normalizeAccounts(remote.accounts));
+        if (remote.currentAccountId)
+          setCurrentAccountId(remote.currentAccountId);
+        if (remote.selectedGoalId)
+          setSelectedGoalId(remote.selectedGoalId);
+        if (remote.navOrder) setNavOrder(remote.navOrder);
+        if (remote.homePage) {
+          setHomePage(remote.homePage);
+          setCurrentPage(remote.homePage);
+        }
+        if (remote.dashboardSectionsOrder)
+          setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+      } catch (err) {
+        console.error("Failed to apply remote user state", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
    // ---- Persist state to localStorage + Supabase on changes ----
   useEffect(() => {
