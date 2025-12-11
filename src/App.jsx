@@ -513,18 +513,6 @@ function App() {
 
   const applyingRemoteRef = useRef(false);
 
-  // If not logged in, show the auth screen instead of the app
-  if (!user) {
-    return (
-      <AuthScreen
-        loading={authLoading}
-        onSignIn={signInWithEmail}
-        onSignUp={signUpWithEmail}
-        onResetPassword={resetPassword}
-      />
-    );
-  }
-
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
 
@@ -900,6 +888,18 @@ function handleImportedTransactions(rows) {
 
   const selectedGoal =
     goals.find((g) => g.id === selectedGoalId) || null;
+
+     // If not logged in, show the auth screen instead of the app
+  if (!user) {
+    return (
+      <AuthScreen
+        loading={authLoading}
+        onSignIn={signInWithEmail}
+        onSignUp={signUpWithEmail}
+        onResetPassword={resetPassword}
+      />
+    );
+  }
 
     return (
     <div className="min-h-screen bg-[#05060A] text-slate-100 flex flex-col">
