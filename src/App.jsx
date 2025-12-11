@@ -472,7 +472,7 @@ function AuthScreen({ onSignIn, onSignUp, onResetPassword, loading }) {
               </button>
             </div>
           )}
-          
+
           {error && (
             <p className="text-xs text-red-400 whitespace-pre-wrap">{error}</p>
           )}
@@ -1065,17 +1065,21 @@ function ActionsMenu({ customizeMode, setCustomizeMode, onReset, onSignOut }) {
         </button>
 
         {/* Sign Out */}
-        <button
-          type="button"
-          className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-slate-200"
-          onClick={() => {
-            setOpen(false);
-            onSignOut();
-            window.location.reload();
-          }}
-        >
-          Sign Out
-        </button>
+      <button
+         type="button"
+         className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-slate-200"
+         onClick={async () => {
+           setOpen(false);
+           try {
+             await onSignOut();   // ✅ wait for Supabase to finish
+           } catch (err) {
+             console.error("Sign out failed:", err);
+             // optional: alert("Sign out failed. Try again.");
+           }
+         }}
+       >
+         Sign Out
+       </button>
       </div>
     </div>
   );
