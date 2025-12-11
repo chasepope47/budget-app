@@ -1,4 +1,5 @@
 import React from "react";
+import { parseCsvTransactions } from "../lib/csv.js";
 
 function BankImportCard({ onTransactionsParsed = () => {} }) {
   const [status, setStatus] = React.useState(null);
@@ -12,24 +13,33 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
     setError(null);
 
     const reader = new FileReader();
+
     reader.onload = (evt) => {
       try {
         const text = evt.target?.result || "";
-        const rows = parseCsvToTransactions(text);
+        const rows = parseCsvTransactions(text);
+
         if (!rows.length) {
           setError("No valid rows with amounts were found in this file.");
           setStatus(null);
           return;
         }
 
-        onTransactionsParsed({ rows, sourceName: file.name || "" });
-        setStatus(`Imported ${rows.length} transactions.`);
+        // ✅ We now send an object payload to the parent:
+        // { rows, sourceName }
+        onTransactionsParsed({
+          rows,
+          sourceName: file.name || "",
+        });
+
+        setStatus(`Imported ${rows.length} transactions from ${file.name}.`);
       } catch (err) {
         console.error("CSV parse error:", err);
         setError("We couldn't understand this CSV. Try a different export format.");
         setStatus(null);
       }
     };
+
     reader.onerror = () => {
       setError("Could not read the file.");
       setStatus(null);
@@ -64,129 +74,6 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
       </p>
     </div>
   );
-}
-
-/**
- * CSV → { date, description, amount, category }[]
- * (Very similar to what you already had, but trimmed to what BankImportCard uses.)
- */
-function parseCsvToTransactions(text) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  if (!lines.length) return [];
-
-  const headerLine = lines[0];
-  const headerCells = splitCsvLine(headerLine).map((h) =>
-    h.trim().toLowerCase()
-  );
-
-  const findIndex = (candidates) =>
-    headerCells.findIndex((h) =>
-      candidates.some((c) => h.includes(c.toLowerCase()))
-    );
-
-  const dateIdx = findIndex(["date", "posted", "transaction date"]);
-  const descIdx = findIndex(["description", "memo", "details", "payee"]);
-  const amountIdx = findIndex(["amount", "amt"]);
-  const debitIdx = findIndex(["debit", "withdrawal", "charge"]);
-  const creditIdx = findIndex(["credit", "deposit", "payment"]);
-
-  const rows = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitCsvLine(lines[i]);
-    if (cells.every((c) => !c || !c.trim())) continue;
-
-    const date =
-      dateIdx >= 0 && cells[dateIdx] ? cells[dateIdx].trim() : "";
-
-    const description =
-      descIdx >= 0 && cells[descIdx]
-        ? cells[descIdx].trim()
-        : "Transaction";
-
-    let amount = null;
-
-    if (amountIdx >= 0 && cells[amountIdx]) {
-      amount = parseAmountCell(cells[amountIdx]);
-    } else {
-      const debitVal =
-        debitIdx >= 0 && cells[debitIdx]
-          ? parseAmountCell(cells[debitIdx])
-          : null;
-      const creditVal =
-        creditIdx >= 0 && cells[creditIdx]
-          ? parseAmountCell(cells[creditIdx])
-          : null;
-
-      if (debitVal !== null && !Number.isNaN(debitVal)) {
-        amount = -Math.abs(debitVal);
-      } else if (creditVal !== null && !Number.isNaN(creditVal)) {
-        amount = Math.abs(creditVal);
-      }
-    }
-
-    if (typeof amount !== "number" || Number.isNaN(amount)) {
-      continue;
-    }
-
-    rows.push({
-      date,
-      description,
-      category: "Other",
-      amount,
-    });
-  }
-
-  return rows;
-}
-
-function splitCsvLine(line) {
-  const result = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (ch === "," && !inQuotes) {
-      result.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result;
-}
-
-function parseAmountCell(cell) {
-  if (cell === null || cell === undefined) return NaN;
-  let cleaned = String(cell).trim();
-
-  cleaned = cleaned.replace(/"/g, "");
-
-  let negative = false;
-  if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-    negative = true;
-    cleaned = cleaned.slice(1, -1);
-  }
-
-  cleaned = cleaned.replace(/[$,]/g, "");
-
-  if (cleaned === "") return NaN;
-
-  const num = Number(cleaned);
-  if (Number.isNaN(num)) return NaN;
-  return negative ? -num : num;
 }
 
 export default BankImportCard;

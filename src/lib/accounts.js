@@ -1,4 +1,6 @@
 // src/lib/accounts.js
+import { normalizeKey, KNOWN_BANKS } from "./csv.js";
+
 export function sumAmounts(items) {
   return items.reduce((sum, item) => sum + item.amount, 0);
 }
@@ -51,23 +53,10 @@ function buildDescriptionSet(transactions = []) {
   return set;
 }
 
-const KNOWN_BANK_KEYWORDS = [
-  { match: "chase", label: "Chase" },
-  { match: "capitalone", label: "Capital One" },
-  { match: "wellsfargo", label: "Wells Fargo" },
-  { match: "americanexpress", label: "Amex" },
-  { match: "discover", label: "Discover" },
-  { match: "navyfederal", label: "Navy Federal" },
-  { match: "mountainamerica", label: "Mountain America" },
-  { match: "bankofamerica", label: "Bank of America" },
-  { match: "usbank", label: "US Bank" },
-  { match: "pnc", label: "PNC" },
-];
+// We now rely on KNOWN_BANKS + normalizeKey from csv.js
+// KNOWN_BANKS is an array like: [{ key: "chase", label: "Chase" }, ...]
 
-function normalizeKey(str = "") {
-  return str.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
+// Heuristic account type from rows
 function guessAccountTypeFromRows(rows = []) {
   if (!rows.length) return "checking";
   let negatives = 0;
@@ -83,23 +72,49 @@ function guessAccountTypeFromRows(rows = []) {
 }
 
 function guessAccountNameFromRows(rows = [], sourceName = "") {
+  // --- 1. Try to detect bank from the file name using KNOWN_BANKS ---
   const sourceKey = normalizeKey(sourceName);
   if (sourceKey) {
-    for (const bank of KNOWN_BANK_KEYWORDS) {
-      if (sourceKey.includes(bank.match)) {
+    for (const bank of KNOWN_BANKS) {
+      const matchKey = (bank.key || bank.match || "").toLowerCase();
+      if (matchKey && sourceKey.includes(matchKey)) {
         return `${bank.label} Account`;
       }
     }
   }
 
+  // --- 2. Try to detect bank from the first 20 descriptions ---
+  if (rows.length) {
+    const joinedDescriptions = rows
+      .slice(0, 20)
+      .map((r) => r.description || "")
+      .join(" ");
+
+    const descKey = normalizeKey(joinedDescriptions);
+
+    if (descKey) {
+      for (const bank of KNOWN_BANKS) {
+        const matchKey = (bank.key || bank.match || "").toLowerCase();
+        if (matchKey && descKey.includes(matchKey)) {
+          return `${bank.label} Account`;
+        }
+      }
+    }
+  }
+
+  // --- 3. Fallback to your original "first word" heuristic ---
   if (!rows.length) return "Imported Account";
+
   const sample = (rows[0].description || "").trim();
   if (!sample) return "Imported Account";
+
   const words = sample.split(/\s+/).filter((w) => w.length > 3);
   if (!words.length) return "Imported Account";
+
   const label = words[0].replace(/[^a-z0-9]/gi, " ");
   const cleaned = label.trim();
   if (!cleaned) return "Imported Account";
+
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) + " Account";
 }
 
@@ -112,6 +127,7 @@ export function detectTargetAccountForImport(
     (acc) => Array.isArray(acc.transactions) && acc.transactions.length > 0
   );
 
+  // If no account has transactions, treat this as a new account
   if (!withTransactions.length) {
     return null;
   }
@@ -146,6 +162,7 @@ export function detectTargetAccountForImport(
     return bestAccountId;
   }
 
+  // Otherwise looks like a new account
   return null;
 }
 
@@ -161,6 +178,7 @@ export function importTransactionsWithDetection(
     importedRows
   );
 
+  // Case 1: matched an existing account
   if (targetId) {
     const nextAccounts = (accounts || []).map((acc) =>
       acc.id === targetId
@@ -181,6 +199,7 @@ export function importTransactionsWithDetection(
     };
   }
 
+  // Case 2: create a new account
   const type = guessAccountTypeFromRows(importedRows);
   const name = guessAccountNameFromRows(importedRows, sourceName);
   const newId =
