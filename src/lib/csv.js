@@ -19,6 +19,20 @@ export function normalizeKey(str = "") {
   return str.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * Try to guess the bank from the file name + first part of the contents.
+ */
+export function detectBankFromText(text = "", fileName = "") {
+  const haystack = normalizeKey((fileName || "") + " " + text.slice(0, 4000));
+
+  for (const bank of KNOWN_BANKS) {
+    if (haystack.includes(bank.key)) {
+      return bank.label;
+    }
+  }
+  return null;
+}
+
 // super-simple CSV splitter that respects quotes
 export function splitCsvLine(line) {
   const result = [];
@@ -40,6 +54,7 @@ export function splitCsvLine(line) {
       current += ch;
     }
   }
+
   result.push(current);
   return result;
 }
@@ -47,6 +62,7 @@ export function splitCsvLine(line) {
 // parse amounts like "$1,234.56", "(123.45)", etc.
 export function parseAmountCell(cell) {
   if (cell === null || cell === undefined) return NaN;
+
   let cleaned = String(cell).trim();
 
   // remove quotes
@@ -66,6 +82,7 @@ export function parseAmountCell(cell) {
 
   const num = Number(cleaned);
   if (Number.isNaN(num)) return NaN;
+
   return negative ? -num : num;
 }
 
@@ -84,9 +101,14 @@ export function categorizeTransaction(description, amount) {
   }
 
   // Money going out
-  if (text.includes("uber") || text.includes("lyft") || text.includes("taxi")) {
+  if (
+    text.includes("uber") ||
+    text.includes("lyft") ||
+    text.includes("taxi")
+  ) {
     return "Transport – Rideshare";
   }
+
   if (
     text.includes("shell") ||
     text.includes("chevron") ||
@@ -96,6 +118,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Transport – Gas";
   }
+
   if (
     text.includes("walmart") ||
     text.includes("costco") ||
@@ -105,6 +128,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Groceries";
   }
+
   if (
     text.includes("starbucks") ||
     text.includes("coffee") ||
@@ -115,6 +139,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Food & Dining";
   }
+
   if (
     text.includes("netflix") ||
     text.includes("spotify") ||
@@ -125,6 +150,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Subscriptions";
   }
+
   if (
     text.includes("rent") ||
     text.includes("landlord") ||
@@ -132,6 +158,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Housing – Rent/Mortgage";
   }
+
   if (
     text.includes("power") ||
     text.includes("electric") ||
@@ -141,9 +168,11 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Utilities";
   }
+
   if (text.includes("gym") || text.includes("fitness")) {
     return "Health & Fitness";
   }
+
   if (
     text.includes("insurance") ||
     text.includes("geico") ||
@@ -151,6 +180,7 @@ export function categorizeTransaction(description, amount) {
   ) {
     return "Insurance";
   }
+
   if (
     text.includes("amazon") ||
     text.includes("target") ||
@@ -165,13 +195,7 @@ export function categorizeTransaction(description, amount) {
 
 // header alias map for flexible CSV formats
 export const HEADER_ALIASES = {
-  date: [
-    "date",
-    "transaction date",
-    "posted date",
-    "posting date",
-    "trans date",
-  ],
+  date: ["date", "transaction date", "posted date", "posting date", "trans date"],
   description: [
     "description",
     "details",
@@ -187,6 +211,7 @@ export const HEADER_ALIASES = {
 
 export function normalizeHeaderRow(line) {
   const parts = splitCsvLine(line).map((h) => h.trim());
+
   return parts.map((cell) => {
     let h = cell.toLowerCase().replace(/"/g, "");
     h = h.replace(/\s+/g, " ").trim();
@@ -199,29 +224,209 @@ export function findHeaderIndex(header, aliases) {
 }
 
 /**
+ * Normalize a date string into YYYY-MM-DD where possible.
+ * Handles lots of common formats & falls back to the raw string.
+ */
+export function parseDateCell(cell) {
+  if (!cell) return "";
+  let s = String(cell).trim().replace(/"/g, "");
+  if (!s) return "";
+
+  // ISO-ish: 2024-01-05, 2024/01/05, 2024.01.05
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+
+  // Compact: 20240105
+  m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) {
+    const [, y, mo, d] = m;
+    return `${y}-${mo}-${d}`;
+  }
+
+  // 01/05/2024 or 05/01/24 (MM/DD or DD/MM)
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (m) {
+    let [, a, b, c] = m;
+    let year = c.length === 2 ? (Number(c) >= 70 ? `19${c}` : `20${c}`) : c;
+    const nA = Number(a);
+    const nB = Number(b);
+
+    let month, day;
+    if (nA > 12 && nB <= 12) {
+      // 31/01/2024 style → DD/MM
+      day = nA;
+      month = nB;
+    } else {
+      // default to MM/DD
+      month = nA;
+      day = nB;
+    }
+
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
+      2,
+      "0"
+    )}`;
+  }
+
+  // 5 Jan 2024
+  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{2,4})$/);
+  if (m) {
+    const [, d, mon, y] = m;
+    const year = y.length === 2 ? `20${y}` : y;
+    const monthNames = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ];
+    const idx = monthNames.indexOf(mon.toLowerCase().slice(0, 3));
+    if (idx >= 0) {
+      const month = String(idx + 1).padStart(2, "0");
+      const day = String(d).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // Jan 5, 2024
+  m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{2,4})$/);
+  if (m) {
+    const [, mon, d, y] = m;
+    const year = y.length === 2 ? `20${y}` : y;
+    const monthNames = [
+      "jan",
+      "feb",
+      "mar",
+      "apr",
+      "may",
+      "jun",
+      "jul",
+      "aug",
+      "sep",
+      "oct",
+      "nov",
+      "dec",
+    ];
+    const idx = monthNames.indexOf(mon.toLowerCase().slice(0, 3));
+    if (idx >= 0) {
+      const month = String(idx + 1).padStart(2, "0");
+      const day = String(d).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+  }
+
+  // Last resort – let JS try
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  // If we really can't figure it out, keep the raw string
+  return s;
+}
+
+/**
+ * Get a human-ish list of column labels for mapping UI.
+ * If the first line looks header-less, we synthesize "Column 1", etc.
+ */
+export function getCsvColumnsForMapping(text) {
+  const firstLine =
+    text.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
+  if (!firstLine) return [];
+
+  const rawCols = splitCsvLine(firstLine).map((c) =>
+    c.trim().replace(/^"|"$/g, "")
+  );
+
+  const hasLetter = rawCols.some((c) => /[a-zA-Z]/.test(c));
+
+  if (!hasLetter) {
+    // Probably header-less → generic labels
+    return rawCols.map((_, idx) => `Column ${idx + 1}`);
+  }
+
+  // Use whatever header is there, falling back to generic labels when blank
+  return rawCols.map((c, idx) => c || `Column ${idx + 1}`);
+}
+
+/**
  * Main CSV → [{ date, description, amount, category }]
+ * Handles header-based and header-less CSVs, plus various date/amount formats.
  */
 export function parseCsvTransactions(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
-  const header = normalizeHeaderRow(lines[0]);
+  let header = normalizeHeaderRow(lines[0]);
+  let startIndex = 1;
 
-  const dateIndex = findHeaderIndex(header, HEADER_ALIASES.date);
-  const descIndex = findHeaderIndex(header, HEADER_ALIASES.description);
-  const amountIndex = findHeaderIndex(header, HEADER_ALIASES.amount);
-  const debitIndex = findHeaderIndex(header, HEADER_ALIASES.debit);
-  const creditIndex = findHeaderIndex(header, HEADER_ALIASES.credit);
+  function getIndexes(headerRow) {
+    const dateIndex = findHeaderIndex(headerRow, HEADER_ALIASES.date);
+    const descIndex = findHeaderIndex(headerRow, HEADER_ALIASES.description);
+    const amountIndex = findHeaderIndex(headerRow, HEADER_ALIASES.amount);
+    const debitIndex = findHeaderIndex(headerRow, HEADER_ALIASES.debit);
+    const creditIndex = findHeaderIndex(headerRow, HEADER_ALIASES.credit);
+    return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex };
+  }
+
+  let {
+    dateIndex,
+    descIndex,
+    amountIndex,
+    debitIndex,
+    creditIndex,
+  } = getIndexes(header);
+
+  const noUsefulHeader =
+    dateIndex < 0 &&
+    descIndex < 0 &&
+    amountIndex < 0 &&
+    debitIndex < 0 &&
+    creditIndex < 0;
+
+  // If we didn't recognize ANY header columns, assume it's header-less.
+  if (noUsefulHeader) {
+    const firstCols = splitCsvLine(lines[0]).map((c) => c.trim());
+
+    const syntheticHeader = firstCols.map((_, idx) => {
+      if (idx === 0) return "date";
+      if (idx === 1) return "description";
+      if (idx === 2 || idx === firstCols.length - 1) return "amount";
+      return `col${idx + 1}`;
+    });
+
+    header = syntheticHeader;
+    startIndex = 0;
+
+    ({
+      dateIndex,
+      descIndex,
+      amountIndex,
+      debitIndex,
+      creditIndex,
+    } = getIndexes(header));
+  }
 
   const rows = [];
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = startIndex; i < lines.length; i++) {
     const raw = lines[i];
     const cols = splitCsvLine(raw).map((c) => c.trim());
 
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
 
-    const date = dateIndex >= 0 ? cols[dateIndex] : "";
+    const rawDate = dateIndex >= 0 ? cols[dateIndex] : "";
+    const date = parseDateCell(rawDate);
     const description = descIndex >= 0 ? cols[descIndex] : "";
 
     let amount = NaN;
@@ -235,13 +440,12 @@ export function parseCsvTransactions(text) {
         debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
       const credit =
         creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
-
       // Convention: money in = +, money out = -
       amount = credit - debit;
     }
 
     // Skip totally empty rows
-    if (!date && !description && isNaN(amount)) continue;
+    if (!date && !description && Number.isNaN(amount)) continue;
 
     // Skip non-numeric amounts
     if (typeof amount !== "number" || Number.isNaN(amount)) continue;
@@ -254,6 +458,46 @@ export function parseCsvTransactions(text) {
       amount,
       category,
     });
+  }
+
+  return rows;
+}
+
+/**
+ * Manual override parser used when the user specifies which columns
+ * are date/description/amount.
+ */
+export function parseCsvWithMapping(
+  text,
+  { dateIndex = null, descIndex = null, amountIndex = null } = {}
+) {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length === 0) return [];
+
+  const rows = [];
+
+  // Assume first line is header for mapping purposes
+  for (let i = 1; i < lines.length; i++) {
+    const raw = lines[i];
+    const cols = splitCsvLine(raw).map((c) => c.trim());
+    if (cols.length === 0 || cols.every((c) => c === "")) continue;
+
+    const rawDate =
+      dateIndex != null && dateIndex >= 0 ? cols[dateIndex] : "";
+    const date = parseDateCell(rawDate);
+    const description =
+      descIndex != null && descIndex >= 0 ? cols[descIndex] : "";
+
+    let amount = NaN;
+    if (amountIndex != null && amountIndex >= 0) {
+      amount = parseAmountCell(cols[amountIndex]);
+    }
+
+    if (!date && !description && Number.isNaN(amount)) continue;
+    if (typeof amount !== "number" || Number.isNaN(amount)) continue;
+
+    const category = categorizeTransaction(description, amount);
+    rows.push({ date, description, amount, category });
   }
 
   return rows;
