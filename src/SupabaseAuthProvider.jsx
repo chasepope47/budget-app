@@ -12,18 +12,28 @@ export function SupabaseAuthProvider({ children }) {
     let ignore = false;
 
     async function getInitialSession() {
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
 
-      if (error) {
-        console.error("Error getting initial session:", error);
-      }
+        if (error) {
+          console.error("Error getting initial session:", error);
+          // Clear any corrupted session data
+          await supabase.auth.signOut();
+        }
 
-      if (!ignore) {
-        setUser(session?.user ?? null);
-        setAuthLoading(false);
+        if (!ignore) {
+          setUser(session?.user ?? null);
+          setAuthLoading(false);
+        }
+      } catch (err) {
+        console.error("Failed to initialize auth:", err);
+        if (!ignore) {
+          setUser(null);
+          setAuthLoading(false);
+        }
       }
     }
 
@@ -31,9 +41,18 @@ export function SupabaseAuthProvider({ children }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event);
+      
       if (!ignore) {
         setUser(session?.user ?? null);
+      }
+
+      // Handle token refresh errors by signing out
+      if (event === "TOKEN_REFRESHED") {
+        console.log("Token refreshed successfully");
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
       }
     });
 
@@ -51,26 +70,38 @@ export function SupabaseAuthProvider({ children }) {
     if (error) throw error;
   }
 
-async function signUpWithEmail(email, password) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      // After they click the confirm email link,
-      // Supabase will redirect them back here:
-      emailRedirectTo: window.location.origin,
-    },
-  });
+  async function signUpWithEmail(email, password) {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
 
-  if (error) throw error;
-  return data; // so the UI can show a "check your email" message if you want
-}
+    if (error) throw error;
+    return data;
+  }
 
   async function signOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      console.error("Error signing out:", error);
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error("Error signing out:", error);
+      }
+      // Always clear user state locally even if API call fails
+      setUser(null);
+    } catch (err) {
+      console.error("Sign out failed:", err);
+      setUser(null);
     }
+  }
+
+  async function resetPassword(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) throw error;
   }
 
   const value = {
@@ -83,13 +114,6 @@ async function signUpWithEmail(email, password) {
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-async function resetPassword(email) {
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: window.location.origin, // or `${window.location.origin}/reset`
-  });
-  if (error) throw error;
 }
 
 export function useSupabaseAuth() {
