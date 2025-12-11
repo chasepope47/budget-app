@@ -1449,17 +1449,17 @@ function Dashboard({
                               <td className="px-2 py-1 text-slate-300">
                                 {tx.category || "Other"}
                               </td>
-                              <td
-                                className={`px-2 py-1 text-right ${
-                                  tx.amount < 0
-                                    ? "text-rose-300"
-                                    : "text-emerald-300"
-                                }`}
-                              >
-                                {isNaN(tx.amount)
-                                  ? "-"
-                                  : `$${tx.amount.toFixed(2)}`}
-                              </td>
+                             <td
+                            className={`px-2 py-1 text-right ${
+                              typeof tx.amount === "number" && tx.amount < 0
+                                ? "text-rose-300"
+                                : "text-emerald-300"
+                              }`}
+                            >
+                             {typeof tx.amount !== "number" || Number.isNaN(tx.amount)
+                              ? "-"
+                              : `$${tx.amount.toFixed(2)}`}
+                            </td>
                             </tr>
                           ))}
                         </tbody>
@@ -2400,37 +2400,52 @@ function GoalDetailPage({ goal }) {
   );
 }
 
-function BankImportCard({ onTransactionsParsed }) {
-  const [error, setError] = useState("");
-  const [fileName, setFileName] = useState("");
+function BankImportCard({ onTransactionsParsed = () => {} }) {
+  const [status, setStatus] = React.useState(null);
+  const [error, setError] = React.useState(null);
 
-  async function handleFileChange(e) {
+  function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setError("");
-    setFileName(file.name);
+    setStatus("Reading file...");
+    setError(null);
 
-    try {
-      const text = await file.text();
-      const rows = parseCsvTransactions(text);
-      onTransactionsParsed({ rows, sourceName: file.name });
-    } catch (err) {
-      console.error(err);
-      setError("Could not read or parse this file.");
-    }
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result || "";
+        const rows = parseCsvToTransactions(text);
+        if (!rows.length) {
+          setError("No valid rows with amounts were found in this file.");
+          setStatus(null);
+          return;
+        }
+
+        onTransactionsParsed(rows);
+        setStatus(`Imported ${rows.length} transactions.`);
+      } catch (err) {
+        console.error("CSV parse error:", err);
+        setError("We couldn't understand this CSV. Try a different export format.");
+        setStatus(null);
+      }
+    };
+    reader.onerror = () => {
+      setError("Could not read the file.");
+      setStatus(null);
+    };
+
+    reader.readAsText(file);
   }
 
-
   return (
-    <div className="space-y-2 text-xs">
+    <div className="space-y-3 text-xs">
       <p className="text-slate-400">
-        Upload a <span className="text-cyan-300 font-semibold">.csv</span>{" "}
-        bank statement. We&apos;ll parse basic fields like date, description,
-        and amount.
+        Upload a <span className="font-mono text-slate-200">.csv</span> bank
+        statement. We'll try to detect date, description, and amount.
       </p>
 
-      <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
+      <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-500/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
         <span>Choose CSV file</span>
         <input
           type="file"
@@ -2440,13 +2455,8 @@ function BankImportCard({ onTransactionsParsed }) {
         />
       </label>
 
-      {fileName && (
-        <p className="text-[0.7rem] text-slate-500">
-          Selected: <span className="text-slate-300">{fileName}</span>
-        </p>
-      )}
-
-      {error && <p className="text-[0.7rem] text-rose-400">{error}</p>}
+      {status && <p className="text-emerald-300">{status}</p>}
+      {error && <p className="text-rose-300">{error}</p>}
 
       <p className="text-[0.7rem] text-slate-500">
         Tip: Most banks let you export recent transactions as CSV from their
@@ -2454,6 +2464,136 @@ function BankImportCard({ onTransactionsParsed }) {
       </p>
     </div>
   );
+}
+
+/**
+ * Very generic CSV → { date, description, amount }[]
+ * Tries multiple common header names and skips rows without a numeric amount.
+ */
+function parseCsvToTransactions(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (!lines.length) return [];
+
+  const headerLine = lines[0];
+  const headerCells = splitCsvLine(headerLine).map((h) =>
+    h.trim().toLowerCase()
+  );
+
+  const findIndex = (candidates) =>
+    headerCells.findIndex((h) =>
+      candidates.some((c) => h.includes(c.toLowerCase()))
+    );
+
+  const dateIdx = findIndex(["date", "posted", "transaction date"]);
+  const descIdx = findIndex(["description", "memo", "details", "payee"]);
+  const amountIdx = findIndex(["amount", "amt"]);
+  const debitIdx = findIndex(["debit", "withdrawal", "charge"]);
+  const creditIdx = findIndex(["credit", "deposit", "payment"]);
+
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = splitCsvLine(lines[i]);
+    if (cells.every((c) => !c || !c.trim())) continue;
+
+    const date =
+      dateIdx >= 0 && cells[dateIdx] ? cells[dateIdx].trim() : "";
+
+    const description =
+      descIdx >= 0 && cells[descIdx]
+        ? cells[descIdx].trim()
+        : "Transaction";
+
+    let amount = null;
+
+    // 1) Single "Amount" column
+    if (amountIdx >= 0 && cells[amountIdx]) {
+      amount = parseAmountCell(cells[amountIdx]);
+    } else {
+      // 2) Separate debit / credit columns
+      const debitVal =
+        debitIdx >= 0 && cells[debitIdx]
+          ? parseAmountCell(cells[debitIdx])
+          : null;
+      const creditVal =
+        creditIdx >= 0 && cells[creditIdx]
+          ? parseAmountCell(cells[creditIdx])
+          : null;
+
+      if (debitVal !== null && !Number.isNaN(debitVal)) {
+        amount = -Math.abs(debitVal); // money going out
+      } else if (creditVal !== null && !Number.isNaN(creditVal)) {
+        amount = Math.abs(creditVal); // money coming in
+      }
+    }
+
+    // If we still don't have a real number, skip this row
+    if (typeof amount !== "number" || Number.isNaN(amount)) {
+      continue;
+    }
+
+    rows.push({
+      date,
+      description,
+      category: "Other",
+      amount,
+    });
+  }
+
+  return rows;
+}
+
+function splitCsvLine(line) {
+  // super-simple CSV splitter that respects quotes
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (ch === "," && !inQuotes) {
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function parseAmountCell(cell) {
+  if (cell === null || cell === undefined) return NaN;
+  let cleaned = String(cell).trim();
+
+  // remove quotes
+  cleaned = cleaned.replace(/"/g, "");
+
+  // handle parentheses for negatives: (123.45) => -123.45
+  let negative = false;
+  if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
+    negative = true;
+    cleaned = cleaned.slice(1, -1);
+  }
+
+  // strip $ and commas
+  cleaned = cleaned.replace(/[$,]/g, "");
+
+  if (cleaned === "") return NaN;
+
+  const num = Number(cleaned);
+  if (Number.isNaN(num)) return NaN;
+  return negative ? -num : num;
 }
 
 function categorizeTransaction(description, amount) {
@@ -2578,40 +2718,10 @@ const HEADER_ALIASES = {
   amount: ["amount", "amt", "transaction amount", "value"],
 };
 
-function splitCsvLine(line) {
-  const result = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-
-    if (ch === '"') {
-      // Handle escaped quotes ("")
-      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
-        current += '"';
-        i++; // skip second quote
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === "," && !inQuotes) {
-      // Comma that actually separates columns
-      result.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
-  }
-
-  result.push(current);
-  return result;
-}
-
-function normalizeHeaderRow(headerLine) {
-  const parts = splitCsvLine(headerLine).map((h) => h.trim());
-
+function normalizeHeaderRow(line) {
+  const parts = splitCsvLine(line).map((h) => h.trim());
   return parts.map((cell) => {
-    let h = cell.replace(/"/g, "").toLowerCase();
+    let h = cell.toLowerCase().replace(/"/g, "");
     h = h.replace(/\s+/g, " ").trim();
     return h;
   });
@@ -2619,30 +2729,6 @@ function normalizeHeaderRow(headerLine) {
 
 function findHeaderIndex(header, aliases) {
   return header.findIndex((h) => aliases.includes(h));
-}
-
-function parseAmountCell(cell) {
-  if (!cell) return NaN;
-  let cleaned = String(cell).trim();
-
-  // remove quotes
-  cleaned = cleaned.replace(/"/g, "");
-
-  // handle parentheses for negatives: (123.45) => -123.45
-  let negative = false;
-  if (cleaned.startsWith("(") && cleaned.endsWith(")")) {
-    negative = true;
-    cleaned = cleaned.slice(1, -1);
-  }
-
-  // strip $ and commas
-  cleaned = cleaned.replace(/[$,]/g, "");
-
-  if (cleaned === "") return NaN;
-
-  let num = Number(cleaned);
-  if (isNaN(num)) return NaN;
-  return negative ? -num : num;
 }
 
 function parseCsvTransactions(text) {
