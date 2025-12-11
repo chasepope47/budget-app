@@ -28,8 +28,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
         // ✅ We now send an object payload to the parent:
         // { rows, sourceName }
         onTransactionsParsed({
-          rows,
-          sourceName: file.name || "",
+          rows, sourceName: file.name || "",
         });
 
         setStatus(`Imported ${rows.length} transactions from ${file.name}.`);
