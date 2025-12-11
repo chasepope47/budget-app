@@ -79,9 +79,17 @@ async function signUpWithEmail(email, password) {
     signInWithEmail,
     signUpWithEmail,
     signOut,
+    resetPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+async function resetPassword(email) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin, // or `${window.location.origin}/reset`
+  });
+  if (error) throw error;
 }
 
 export function useSupabaseAuth() {

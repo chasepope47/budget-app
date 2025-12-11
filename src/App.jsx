@@ -329,13 +329,39 @@ function importTransactionsWithDetection(
   };
 }
 
-function AuthScreen({ onSignIn, onSignUp, loading }) {
+function AuthScreen({ onSignIn, onSignUp, onResetPassword, loading }) {
   const [mode, setMode] = React.useState("signin"); // or "signup"
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState(null);
   const [info, setInfo] = React.useState(null);
   const [submitting, setSubmitting] = React.useState(false);
+  const [resetSubmitting, setResetSubmitting] = React.useState(false);
+
+  async function handleForgotPasswordClick() {
+  setError(null);
+  setInfo(null);
+
+  if (!email) {
+    setError("Please enter your email first, then click 'Forgot password?'.");
+    return;
+  }
+
+  if (!onResetPassword) return;
+
+  setResetSubmitting(true);
+  try {
+    await onResetPassword(email);
+    setInfo(
+      "If an account exists with that email, a reset link has been sent. " +
+      "Check your inbox and follow the instructions there."
+    );
+  } catch (err) {
+    setError(err.message || "Failed to start password reset.");
+  } finally {
+    setResetSubmitting(false);
+  }
+}
 
     async function handleSubmit(e) {
     e.preventDefault();
@@ -434,6 +460,19 @@ function AuthScreen({ onSignIn, onSignUp, loading }) {
             />
           </div>
 
+          {mode === "signin" && (
+            <div className="flex justify-end -mt-1">
+              <button
+                type="button"
+                onClick={handleForgotPasswordClick}
+                disabled={resetSubmitting}
+                className="text-[0.7rem] text-cyan-300 hover:text-cyan-200 disabled:opacity-60"
+              >
+                {resetSubmitting ? "Sending reset link..." : "Forgot password?"}
+              </button>
+            </div>
+          )}
+          
           {error && (
             <p className="text-xs text-red-400 whitespace-pre-wrap">{error}</p>
           )}
@@ -469,6 +508,7 @@ function App() {
     signInWithEmail,
     signUpWithEmail,
     signOut,
+    resetPassword,
   } = useSupabaseAuth();
 
   // If not logged in, show the auth screen instead of the app
@@ -478,6 +518,7 @@ function App() {
         loading={authLoading}
         onSignIn={signInWithEmail}
         onSignUp={signUpWithEmail}
+        onResetPassword={resetPassword}
       />
     );
   }
