@@ -1,6 +1,8 @@
+// src/pages/BalancesPage.jsx
 import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
+import ParsedTransactionsCard from "../components/ParsedTransactionsCard.jsx";
 
 function computeNetTransactions(account) {
   const txs = Array.isArray(account?.transactions)
@@ -206,6 +208,17 @@ function BalancesDashboard({
                       </span>
                     </span>
                   </div>
+
+                  {/* Parsed transactions for the selected account */}
+                  {currentRow && (
+                    <ParsedTransactionsCard
+                      transactions={
+                        Array.isArray(currentRow.transactions)
+                          ? currentRow.transactions
+                          : []
+                      }
+                    />
+                  )}
 
                   <NeonProgressBar value={share} />
                   <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
