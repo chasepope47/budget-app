@@ -243,7 +243,18 @@ function BalancesDashboard({
                       Set estimated balance
                     </button>
                   </div>
-                </section>
+                  
+                  {/* Only show transactions for the selected account */}
+                  {isCurrent && (
+                    <div className="mt-3">
+                      <ParsedTransactionsCard
+                        transactions={
+                          Array.isArray(row.transactions) ? row.transactions : []
+                        }
+                      />
+                    </div>
+                  )}
+                  </section>
               );
             })}
           </div>
