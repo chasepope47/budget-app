@@ -209,17 +209,6 @@ function BalancesDashboard({
                     </span>
                   </div>
 
-                  {/* Parsed transactions for the selected account */}
-                  {currentRow && (
-                    <ParsedTransactionsCard
-                      transactions={
-                        Array.isArray(currentRow.transactions)
-                          ? currentRow.transactions
-                          : []
-                      }
-                    />
-                  )}
-
                   <NeonProgressBar value={share} />
                   <div className="mt-1 flex justify-between items-center text-[0.7rem] text-slate-500">
                     <span>{share.toFixed(1)}% of total cash</span>
