@@ -2520,10 +2520,43 @@ const HEADER_ALIASES = {
   amount: ["amount", "amt", "transaction amount", "value"],
 };
 
-function normalizeHeaderRow(line) {
-  return line
-    .split(",")
-    .map((h) => h.trim().toLowerCase().replace(/"/g, ""));
+function splitCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+
+    if (ch === '"') {
+      // Handle escaped quotes ("")
+      if (inQuotes && i + 1 < line.length && line[i + 1] === '"') {
+        current += '"';
+        i++; // skip second quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      // Comma that actually separates columns
+      result.push(current);
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+
+  result.push(current);
+  return result;
+}
+
+function normalizeHeaderRow(headerLine) {
+  const parts = splitCsvLine(headerLine).map((h) => h.trim());
+
+  return parts.map((cell) => {
+    let h = cell.replace(/"/g, "").toLowerCase();
+    h = h.replace(/\s+/g, " ").trim();
+    return h;
+  });
 }
 
 function findHeaderIndex(header, aliases) {
@@ -2558,14 +2591,11 @@ function parseCsvTransactions(text) {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
-  // try to treat first non-empty line as header
+  // First non-empty line is the header
   const header = normalizeHeaderRow(lines[0]);
 
   const dateIndex = findHeaderIndex(header, HEADER_ALIASES.date);
-  const descIndex = findHeaderIndex(
-    header,
-    HEADER_ALIASES.description
-  );
+  const descIndex = findHeaderIndex(header, HEADER_ALIASES.description);
   const amountIndex = findHeaderIndex(header, HEADER_ALIASES.amount);
   const debitIndex = findHeaderIndex(header, HEADER_ALIASES.debit);
   const creditIndex = findHeaderIndex(header, HEADER_ALIASES.credit);
@@ -2574,7 +2604,7 @@ function parseCsvTransactions(text) {
 
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
-    const cols = raw.split(",").map((c) => c.trim());
+    const cols = splitCsvLine(raw).map((c) => c.trim());
 
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
 
@@ -2584,19 +2614,19 @@ function parseCsvTransactions(text) {
     let amount = NaN;
 
     if (amountIndex >= 0) {
-      // single Amount column
+      // Single Amount column (your file does this)
       amount = parseAmountCell(cols[amountIndex]);
     } else if (debitIndex >= 0 || creditIndex >= 0) {
-      // separate Debit/Credit columns
+      // Separate Debit/Credit columns
       const debit =
         debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
       const credit =
         creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
-      // convention: money in = positive, money out = negative
+      // Convention: money in = +, money out = -
       amount = credit - debit;
     }
 
-    // if row is basically empty, skip
+    // Skip totally empty rows
     if (!date && !description && isNaN(amount)) continue;
 
     const category = categorizeTransaction(description, amount);
