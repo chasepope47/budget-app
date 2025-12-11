@@ -752,14 +752,13 @@ const currentAccountBalance =
   accountRows.find((row) => row.id === currentAccountId)?.balance ?? 0;
 
 // ---- CSV import with automatic account detection ----
-function handleImportedTransactions(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return;
-  function handleImportedTransactions(payload) {
-    const { rows, sourceName = "" } = payload;
-      importTransactionsWithDetection(accounts, currentAccountId, rows, sourceName);
-}
+function handleImportedTransactions(payload) {
+  // Support old style (array only) just in case
+  const { rows, sourceName = "" } = Array.isArray(payload)
+    ? { rows: payload, sourceName: "" }
+    : payload || {};
 
-    if (!Array.isArray(rows) || rows.length === 0) return;
+  if (!Array.isArray(rows) || rows.length === 0) return;
 
   const result = importTransactionsWithDetection(
     accounts,
@@ -779,13 +778,9 @@ function handleImportedTransactions(rows) {
 
   const toastId = Date.now();
 
-  // Build a slightly nicer message
-  let message;
-  if (result.createdNew) {
-    message = `New account detected and created: "${result.targetAccountName}".`;
-  } else {
-    message = `Imported transactions into "${result.targetAccountName}".`;
-  }
+  const message = result.createdNew
+    ? `New account detected and created: "${result.targetAccountName}".`
+    : `Imported transactions into "${result.targetAccountName}".`;
 
   setToast({
     id: toastId,
@@ -795,7 +790,6 @@ function handleImportedTransactions(rows) {
     createdNew: result.createdNew,
   });
 
-  // Auto-hide after 4 seconds
   setTimeout(() => {
     setToast((current) =>
       current && current.id === toastId ? null : current
@@ -1415,9 +1409,6 @@ function Dashboard({
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
-                <BankImportCard
-                  onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
-                />
                 <BankImportCard
                 onTransactionsParsed={(payload) => onTransactionsUpdate(payload)}
                 />
@@ -2413,23 +2404,29 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
 
     const reader = new FileReader();
     reader.onload = (evt) => {
-      try {
-        const text = evt.target?.result || "";
-        const rows = parseCsvToTransactions(text);
-        if (!rows.length) {
-          setError("No valid rows with amounts were found in this file.");
-          setStatus(null);
-          return;
-        }
+  try {
+    const text = evt.target?.result || "";
 
-        onTransactionsParsed(rows);
-        setStatus(`Imported ${rows.length} transactions.`);
-      } catch (err) {
-        console.error("CSV parse error:", err);
-        setError("We couldn't understand this CSV. Try a different export format.");
-        setStatus(null);
-      }
-    };
+    // Use the robust parser that respects quotes + commas
+    const rows = parseCsvTransactions(text);
+
+    if (!rows.length) {
+      setError("No valid rows with amounts were found in this file.");
+      setStatus(null);
+      return;
+    }
+
+    // ✅ Pass rows + file name to enable bank/account detection
+    onTransactionsParsed({ rows, sourceName: file.name });
+
+    setStatus(`Imported ${rows.length} transactions.`);
+  } catch (err) {
+    console.error("CSV parse error:", err);
+    setError("We couldn't understand this CSV. Try a different export format.");
+    setStatus(null);
+  }
+};
+
     reader.onerror = () => {
       setError("Could not read the file.");
       setStatus(null);
