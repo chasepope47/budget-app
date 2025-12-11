@@ -206,14 +206,60 @@ function guessAccountTypeFromRows(rows = []) {
   return ratio >= 0.7 ? "credit" : "checking";
 }
 
-function guessAccountNameFromRows(rows = []) {
+const KNOWN_BANK_KEYWORDS = [
+  { match: "chase", label: "Chase" },
+  { match: "capitalone", label: "Capital One" },
+  { match: "wellsfargo", label: "Wells Fargo" },
+  { match: "americanexpress", label: "Amex" },
+  { match: "discover", label: "Discover" },
+  { match: "navyfederal", label: "Navy Federal" },
+  { match: "mountainamerica", label: "Mountain America" },
+  { match: "bankofamerica", label: "Bank of America" },
+  { match: "usbank", label: "US Bank" },
+  { match: "pnc", label: "PNC" }
+];
+
+function normalizeKey(str = "") {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function guessAccountNameFromRows(rows = [], sourceName = "") {
+  // --- 1. Detect bank from file name ---
+  const sourceKey = normalizeKey(sourceName);
+  if (sourceKey) {
+    for (const bank of KNOWN_BANK_KEYWORDS) {
+      if (sourceKey.includes(bank.match)) {
+        return `${bank.label} Account`;
+      }
+    }
+  }
+
+  // --- 2. Detect bank from first 20 descriptions ---
+  const joinedDescriptions = rows
+    .slice(0, 20)
+    .map((r) => r.description || "")
+    .join(" ");
+
+  const descKey = normalizeKey(joinedDescriptions);
+
+  for (const bank of KNOWN_BANK_KEYWORDS) {
+    if (descKey.includes(bank.match)) {
+      return `${bank.label} Account`;
+    }
+  }
+
+  // --- 3. Fallback to original behavior ---
   if (!rows.length) return "Imported Account";
+
   const sample = (rows[0].description || "").trim();
   if (!sample) return "Imported Account";
+
   const words = sample.split(/\s+/).filter((w) => w.length > 3);
   if (!words.length) return "Imported Account";
+
   const label = words[0].replace(/[^a-z0-9]/gi, " ");
   const cleaned = label.trim();
+
   if (!cleaned) return "Imported Account";
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) + " Account";
 }
@@ -276,7 +322,8 @@ const withTransactions = (accounts || []).filter(
 function importTransactionsWithDetection(
   accounts = [],
   currentAccountId,
-  importedRows = []
+  importedRows = [],
+  sourceName = ""
 ) {
   const targetId = detectTargetAccountForImport(
     accounts,
@@ -307,7 +354,7 @@ function importTransactionsWithDetection(
 
   // Case 2: No good match → create a new account
   const type = guessAccountTypeFromRows(importedRows);
-  const name = guessAccountNameFromRows(importedRows);
+  const name = guessAccountNameFromRows(importedRows, sourceName);
   const newId =
     name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") +
     "-" +
@@ -707,11 +754,18 @@ const currentAccountBalance =
 // ---- CSV import with automatic account detection ----
 function handleImportedTransactions(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return;
+  function handleImportedTransactions(payload) {
+    const { rows, sourceName = "" } = payload;
+      importTransactionsWithDetection(accounts, currentAccountId, rows, sourceName);
+}
+
+    if (!Array.isArray(rows) || rows.length === 0) return;
 
   const result = importTransactionsWithDetection(
     accounts,
     currentAccountId,
-    rows
+    rows,
+    sourceName
   );
 
   setAccounts(result.accounts);
@@ -1363,6 +1417,9 @@ function Dashboard({
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
                 <BankImportCard
                   onTransactionsParsed={(rows) => onTransactionsUpdate(rows)}
+                />
+                <BankImportCard
+                onTransactionsParsed={(payload) => onTransactionsUpdate(payload)}
                 />
 
                 {Array.isArray(transactions) && transactions.length > 0 && (
@@ -2357,12 +2414,13 @@ function BankImportCard({ onTransactionsParsed }) {
     try {
       const text = await file.text();
       const rows = parseCsvTransactions(text);
-      onTransactionsParsed(rows);
+      onTransactionsParsed({ rows, sourceName: file.name });
     } catch (err) {
       console.error(err);
-      setError("Could not read or parse this file. Make sure it's a CSV.");
+      setError("Could not read or parse this file.");
     }
   }
+
 
   return (
     <div className="space-y-2 text-xs">
@@ -2639,7 +2697,7 @@ function parseCsvTransactions(text) {
     });
   }
 
-  return rows;
-}
+    return rows;
+  }
 
 export default App;
