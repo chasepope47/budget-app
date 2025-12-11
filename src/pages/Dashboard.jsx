@@ -5,6 +5,7 @@ import NeonProgressBar from "../components/NeonProgressBar.jsx";
 import GoalCard from "../components/GoalCard.jsx";
 import BankImportCard from "../components/BankImportCard.jsx";
 import Stat from "../components/Stat.jsx";
+import { formatMoney, formatPercent } from "../utils/format.js";
 
 const DEFAULT_DASHBOARD_SECTIONS = [
   "monthOverview",
@@ -12,14 +13,13 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "goals",
   "csvImport",
 ];
-
 function Dashboard({
-  month,
-  income,
-  fixed,
-  variable,
-  leftover,
-  goals,
+month = "",
+  income = 0,
+  fixed = 0,
+  variable = 0,
+  leftover = 0,
+  goals = [],
   transactions = [],
   accounts = [],
   currentAccountId,
@@ -28,10 +28,20 @@ function Dashboard({
   onTransactionsUpdate = () => {},
   currentAccountBalance = 0,
   totalBalance = 0,
-  sectionsOrder = DEFAULT_DASHBOARD_SECTIONS,
+  sectionsOrder,
 }) {
+  // make sure these are always numbers
+  const safeIncome = Number(income) || 0;
+  const safeFixed = Number(fixed) || 0;
+  const safeVariable = Number(variable) || 0;
+  const safeLeftover = Number(leftover) || 0;
+  const safeCurrentAccountBalance = Number(currentAccountBalance) || 0;
+  const safeTotalBalance = Number(totalBalance) || 0;
+
   const allocatedPercent =
-    income > 0 ? ((income - leftover) / income) * 100 : 0;
+    safeIncome > 0
+      ? ((safeIncome - safeLeftover) / safeIncome) * 100
+      : 0;
 
   const order =
     sectionsOrder && sectionsOrder.length
@@ -58,10 +68,10 @@ function Dashboard({
             return (
               <Card key="monthOverview" title="MONTH OVERVIEW">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                  <Stat label="Income" value={income} accent="text-emerald-300" />
-                  <Stat label="Fixed" value={fixed} accent="text-rose-300" />
-                  <Stat label="Variable" value={variable} accent="text-amber-300" />
-                  <Stat label="Leftover" value={leftover} accent="text-cyan-300" />
+                  <Stat label="Income" value={safeIncome} accent="text-emerald-300" />
+                  <Stat label="Fixed" value={safeFixed} accent="text-rose-300" />
+                  <Stat label="Variable" value={safeVariable} accent="text-amber-300" />
+                  <Stat label="Leftover" value={safeVariable} accent="text-cyan-300" />
                 </div>
 
                 <div className="mt-4">

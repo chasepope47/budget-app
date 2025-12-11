@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import Card from "../components/Card.jsx";
+import { formatMoney, formatPercent } from "../utils/format.js";
 
 function TransactionsPage({
   transactions = [],

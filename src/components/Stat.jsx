@@ -1,4 +1,5 @@
 import React from "react";
+import { formatMoney, formatPercent } from "../utils/format.js";
 
 function Stat({ label, value, accent }) {
   return (

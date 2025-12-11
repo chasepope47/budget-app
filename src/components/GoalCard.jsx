@@ -1,5 +1,7 @@
 import React from "react";
 import NeonProgressBar from "./NeonProgressBar.jsx";
+import { formatMoney, formatPercent } from "../utils/format.js";
+
 
 function GoalCard({ goal, onClick }) {
   const progress = (goal.saved / goal.target) * 100;
