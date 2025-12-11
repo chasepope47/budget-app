@@ -313,13 +313,20 @@ function App() {
     resetPassword,
   } = useSupabaseAuth();
 
+  // NEW: profile + theme + realtime flags
+  const [profile, setProfile] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    const rawStored = loadStoredState();
+    return rawStored?.theme || "dark";
+  });
+
   const applyingRemoteRef = useRef(false);
   const [lastSavedAt, setLastSavedAt] = useState(null);
 
-  const rawStored = loadStoredState();
+   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
 
-  // Base state (local or empty)
+  // Start with empty data if nothing stored yet
   const [budget, setBudget] = useState(stored?.budget || EMPTY_BUDGET);
   const [goals, setGoals] = useState(stored?.goals || EMPTY_GOALS);
   const [accounts, setAccounts] = useState(
@@ -332,7 +339,6 @@ function App() {
       "main"
   );
 
-  // Layout / nav customization
   const [navOrder, setNavOrder] = useState(
     stored?.navOrder && stored.navOrder.length
       ? stored.navOrder
@@ -348,7 +354,11 @@ function App() {
   );
 
   const [customizeMode, setCustomizeMode] = useState(false);
-  const [currentPage, setCurrentPage] = useState(homePage);
+
+  const [currentPage, setCurrentPage] = useState(
+    stored?.homePage || "dashboard"
+  );
+
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || (stored?.goals?.[0]?.id ?? null)
   );
@@ -359,6 +369,30 @@ function App() {
   const currentAccount =
     accounts.find((acc) => acc.id === currentAccountId) || accounts[0];
   const transactions = currentAccount ? currentAccount.transactions || [] : [];
+
+    function applyRemoteState(remote) {
+    if (!remote) return;
+    try {
+      if (remote.budget) setBudget(remote.budget);
+      if (remote.goals) setGoals(remote.goals);
+      if (remote.accounts)
+        setAccounts(normalizeAccounts(remote.accounts));
+      if (remote.currentAccountId)
+        setCurrentAccountId(remote.currentAccountId);
+      if (remote.selectedGoalId)
+        setSelectedGoalId(remote.selectedGoalId);
+      if (remote.navOrder) setNavOrder(remote.navOrder);
+      if (remote.homePage) {
+        setHomePage(remote.homePage);
+        setCurrentPage(remote.homePage);
+      }
+      if (remote.dashboardSectionsOrder)
+        setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+      if (remote.theme) setTheme(remote.theme);
+    } catch (err) {
+      console.error("Failed to apply remote user state", err);
+    }
+  }
 
   // --- Transaction editing ---
   function handleEditTransaction(index, updatedFields) {
