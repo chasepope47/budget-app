@@ -130,18 +130,27 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
   }
 
   function handleConfirmImport() {
-    if (!previewRows.length) return;
+  if (!previewRows.length) return;
 
-    onTransactionsParsed({
-      rows: previewRows,
-      sourceName: fileName || "",
-    });
+  // Send rows up to App so they get routed into the correct account
+  onTransactionsParsed({
+    rows: previewRows,
+    sourceName: fileName || "",
+  });
 
-    setStatus(
-      `Imported ${previewRows.length} transactions${fileName ? ` from ${fileName}` : ""}.`
-    );
-    // Keep the preview visible so the user still sees what just went in.
-  }
+  // Show a simple success message
+  setStatus(
+    `Imported ${previewRows.length} transactions${
+      fileName ? ` from ${fileName}` : ""
+    }. View them under the target account.`
+  );
+
+  // 🔽 Clear the preview + mapping so they only see transactions in the account pages
+  setPreviewRows([]);
+  setRawText("");
+  setColumns([]);
+  setMapping({ date: "", description: "", amount: "" });
+}
 
   const previewCount = Math.min(10, previewRows.length);
   const previewTotal = previewRows.reduce(
