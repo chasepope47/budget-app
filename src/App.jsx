@@ -512,6 +512,7 @@ function App() {
   } = useSupabaseAuth();
 
   const applyingRemoteRef = useRef(false);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
 
   const rawStored = loadStoredState();
   const stored = migrateStoredState(rawStored);
@@ -763,6 +764,7 @@ function handleImportedTransactions(rows) {
           filter: `id=eq.${user.id}`,
         },
         (payload) => {
+          console.log("🔄️ Realtime update received:", payload)
           const remote = payload.new?.state;
           if (!remote) return;
 
@@ -868,6 +870,14 @@ function handleImportedTransactions(rows) {
       saveUserState(user.id, state).catch((err) =>
         console.error("Failed to save user state to Supabase:", err)
       );
+
+      saveUserState(user.id, state)
+  .then(() => {
+    setLastSavedAt(new Date().toLocaleTimeString());
+  })
+  .catch((err) =>
+    console.error("Failed to save user state to Supabase:", err)
+  );
     }
   }, [
     user,
@@ -1048,6 +1058,11 @@ function handleImportedTransactions(rows) {
           onClose={() => setToast(null)}
         />
       )}
+     {lastSavedAt && (
+      <div className="text-[0.6rem] text-slate-500 text-right px-3 pb-2">
+      Last cloud save: {lastSavedAt}
+    </div>
+  )}
     </div>
   );
 }
