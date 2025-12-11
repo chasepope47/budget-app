@@ -33,7 +33,6 @@ month = "",
   // make sure these are always numbers
   const safeIncome = Number(income) || 0;
   const safeFixed = Number(fixed) || 0;
-  const safeVariable = Number(variable) || 0;
   const safeLeftover = Number(leftover) || 0;
   const safeCurrentAccountBalance = Number(currentAccountBalance) || 0;
   const safeTotalBalance = Number(totalBalance) || 0;

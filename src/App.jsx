@@ -878,8 +878,8 @@ function App() {
           <Dashboard
             month={activeMonth}
             income={budget.income}
-            fixed={budget.fixed}
-            variable={budget.variable}
+            fixed={totals.fixedTotal}
+            variable={totals.variableTotal}
             leftover={totals.leftover}
             goals={goals}
             transactions={
