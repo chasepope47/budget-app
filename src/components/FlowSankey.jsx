@@ -22,7 +22,16 @@ const TEXT = "#E2E8F0";
 const SUBTEXT = "#94A3B8";
 const BORDER = "rgba(148,163,184,0.35)";
 
-function FlowSankey({ nodes = [], links = [], height = 420 }) {
+// You pass these (optional). If you don’t, we generate simple defaults.
+const DEFAULT_COLUMN_LABELS = ["Income", "Cash Flow", "Spending"];
+
+export default function FlowSankey({
+  nodes = [],
+  links = [],
+  height = 420,
+  columnLabels = DEFAULT_COLUMN_LABELS,
+  emptyMessage = "Not enough data for this timeframe.",
+}) {
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(null);
   const [hover, setHover] = React.useState(null);
@@ -39,34 +48,33 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
+
   const canHover =
     typeof window !== "undefined" &&
     window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches;
 
-  const filteredNodes = (nodes || []).filter(
-    (node) => Number.isFinite(Number(node.value)) && Number(node.value) >= 0
-  );
+  const safeNodes = (nodes || []).filter((n) => {
+    const v = Number(n.value);
+    return Number.isFinite(v) && v >= 0 && n.id;
+  });
 
-  if (!filteredNodes.length) {
-    return (
-      <div className="text-xs text-slate-400">
-        Not enough data for this timeframe. Import transactions or pick a
-        wider range.
-      </div>
-    );
+  if (!safeNodes.length) {
+    return <div className="text-xs text-slate-400">{emptyMessage}</div>;
   }
 
-  const columns = Array.from(
-    new Set(filteredNodes.map((node) => node.column ?? 0))
-  ).sort((a, b) => a - b);
-  const nodesByColumn = columns.map((column) =>
-    filteredNodes.filter((node) => node.column === column)
+  // Columns
+  const columns = Array.from(new Set(safeNodes.map((n) => n.column ?? 0))).sort(
+    (a, b) => a - b
+  );
+  const nodesByColumn = columns.map((col) =>
+    safeNodes.filter((n) => (n.column ?? 0) === col)
   );
 
+  // Layout sizing
   const columnCount = columns.length || 1;
   const spanCount = Math.max(columnCount - 1, 1);
   const maxNodesInColumn = nodesByColumn.reduce(
-    (max, nodes) => Math.max(max, nodes.length),
+    (max, list) => Math.max(max, list.length),
     0
   );
   const baseSpacing =
@@ -91,15 +99,16 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     NODE_WIDTH +
     columnSpacing * Math.max(columnCount - 1, 0);
 
-  const columnTotals = nodesByColumn.map((nodes) =>
-    nodes.reduce((sum, node) => sum + Math.max(Number(node.value) || 0, 0), 0)
+  // Value scale per max column total
+  const columnTotals = nodesByColumn.map((list) =>
+    list.reduce((sum, n) => sum + Math.max(Number(n.value) || 0, 0), 0)
   );
   const maxColumnTotal = Math.max(...columnTotals, 1);
 
-  const minHeightNeeded = nodesByColumn.reduce((max, nodes) => {
-    if (!nodes.length) return max;
+  const minHeightNeeded = nodesByColumn.reduce((max, list) => {
+    if (!list.length) return max;
     const required =
-      nodes.length * MIN_NODE_HEIGHT + Math.max(nodes.length - 1, 0) * NODE_GAP;
+      list.length * MIN_NODE_HEIGHT + Math.max(list.length - 1, 0) * NODE_GAP;
     return Math.max(max, required);
   }, 0);
 
@@ -109,77 +118,104 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const svgHeight = availableHeight + verticalPadding;
   const valueScale = availableHeight / maxColumnTotal;
 
+  // Build node layout
   const layout = {};
-
   nodesByColumn.forEach((columnNodes, columnIndex) => {
-    const sortedNodes = columnNodes.slice().sort((a, b) => b.value - a.value);
-
-    const heights = sortedNodes.map((node) => {
+    const sorted = columnNodes.slice().sort((a, b) => Number(b.value) - Number(a.value));
+    const heights = sorted.map((node) => {
       const hasSub = Boolean(node.subtitle);
-      const labelMin = hasSub
-        ? LABEL_BLOCK_HEIGHT_WITH_SUB
-        : LABEL_BLOCK_HEIGHT_NO_SUB;
+      const labelMin = hasSub ? LABEL_BLOCK_HEIGHT_WITH_SUB : LABEL_BLOCK_HEIGHT_NO_SUB;
       const minH = Math.max(MIN_NODE_HEIGHT, labelMin + NODE_INNER_PADDING);
       return Math.max(Number(node.value) * valueScale, minH);
     });
+
     const totalHeight =
       heights.reduce((sum, h) => sum + h, 0) +
-      (sortedNodes.length - 1) * NODE_GAP;
-    let yOffset =
+      Math.max(sorted.length - 1, 0) * NODE_GAP;
+
+    let y =
       TOP_PADDING + Math.max((availableHeight - totalHeight) / 2, 0);
-    sortedNodes.forEach((node, idx) => {
+
+    sorted.forEach((node, idx) => {
       layout[node.id] = {
         ...node,
         width: NODE_WIDTH,
         height: heights[idx],
         x: HORIZONTAL_PADDING + columnIndex * columnSpacing,
-        y: yOffset,
+        y,
       };
-      yOffset += heights[idx] + NODE_GAP;
+      y += heights[idx] + NODE_GAP;
     });
   });
 
+  // Responsive scaling (svg viewBox stays fixed)
+  const availableWidth = containerWidth || svgWidth;
+  const scaleRaw = availableWidth / svgWidth;
+  const scale = Math.min(scaleRaw, 1);
+  const scaledHeight = svgHeight * scale;
+
+  const isPhoneWidth =
+    typeof containerWidth === "number" && containerWidth <= PHONE_WIDTH_CUTOFF;
+
+  const effectiveLabelPx = 10 * scale;
+  const effectiveValuePx = 11 * scale;
+  const useCompact =
+    isPhoneWidth ||
+    effectiveLabelPx < MIN_EFFECTIVE_TEXT_PX ||
+    effectiveValuePx < MIN_EFFECTIVE_TEXT_PX;
+
+  if (useCompact) {
+    return (
+      <div ref={containerRef} className="w-full">
+        <CompactFlowList nodes={nodes} links={links} />
+      </div>
+    );
+  }
+
+  // Link stacking offsets
   const flowOffsets = {};
-  filteredNodes.forEach((node) => {
-    flowOffsets[node.id] = { out: 0, in: 0 };
+  safeNodes.forEach((n) => {
+    flowOffsets[n.id] = { out: 0, in: 0 };
   });
 
-  const renderLinks = links
+  const renderLinks = (links || [])
     .map((link, index) => {
       const source = layout[link.source];
       const target = layout[link.target];
       if (!source || !target) return null;
 
       const thickness = Math.max(
-        Number(link.value) * valueScale,
+        (Number(link.value) || 0) * valueScale,
         MIN_LINK_THICKNESS
       );
-      const sourceOffset = flowOffsets[link.source] || { out: 0 };
-      const targetOffset = flowOffsets[link.target] || { in: 0 };
-      const y1 = source.y + sourceOffset.out + thickness / 2;
-      const y2 = target.y + targetOffset.in + thickness / 2;
-      sourceOffset.out += thickness;
-      targetOffset.in += thickness;
-      flowOffsets[link.source] = sourceOffset;
-      flowOffsets[link.target] = targetOffset;
+
+      const srcOff = flowOffsets[link.source] || { out: 0 };
+      const tgtOff = flowOffsets[link.target] || { in: 0 };
+
+      const y1 = source.y + srcOff.out + thickness / 2;
+      const y2 = target.y + tgtOff.in + thickness / 2;
+
+      srcOff.out += thickness;
+      tgtOff.in += thickness;
+
+      flowOffsets[link.source] = srcOff;
+      flowOffsets[link.target] = tgtOff;
 
       const x1 = source.x + source.width;
       const x2 = target.x;
       const curvature = (x2 - x1) * 0.5;
 
-      const path = `
-        M ${x1} ${y1}
-        C ${x1 + curvature} ${y1},
-          ${x2 - curvature} ${y2},
-          ${x2} ${y2}
-      `;
+      const path = `M ${x1} ${y1} C ${x1 + curvature} ${y1}, ${x2 - curvature} ${y2}, ${x2} ${y2}`;
 
       return (
         <path
           key={`link-${index}`}
           d={path}
           fill="none"
-          stroke={link.color || (MONARCH ? "rgba(15,23,42,0.25)" : "rgba(255,255,255,0.25)")}
+          stroke={
+            link.color ||
+            (MONARCH ? "rgba(15,23,42,0.25)" : "rgba(255,255,255,0.25)")
+          }
           strokeWidth={thickness}
           strokeOpacity={MONARCH ? 0.55 : 0.75}
           strokeLinecap="round"
@@ -190,24 +226,31 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     })
     .filter(Boolean);
 
-  const renderNodes = filteredNodes.map((node) => {
+  const renderNodes = safeNodes.map((node) => {
     const box = layout[node.id];
     if (!box) return null;
+
     const label = node.label || "Node";
     const subtitle = node.subtitle || "";
     const canShowSubtitle = box.height >= LABEL_BLOCK_HEIGHT_WITH_SUB;
+
     return (
       <g
         key={node.id}
         onMouseMove={(e) => {
           if (!canHover) return;
-          const svgRect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
-          if (!svgRect) return;
-          const scaledX = (e.clientX - svgRect.left) / scale;
-          const scaledY = (e.clientY - svgRect.top) / scale;
+
+          const svgEl = e.currentTarget.ownerSVGElement;
+          const rect = svgEl?.getBoundingClientRect();
+          if (!rect) return;
+
+          // Convert mouse (px) -> SVG viewBox coords (no scale bug)
+          const x = ((e.clientX - rect.left) / rect.width) * svgWidth;
+          const y = ((e.clientY - rect.top) / rect.height) * svgHeight;
+
           setHover({
-            x: scaledX,
-            y: scaledY,
+            x,
+            y,
             title: label,
             value: formatCurrency(node.value || 0),
             subtitle: subtitle || null,
@@ -233,69 +276,35 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
               : undefined,
           }}
         />
-        <text
-          x={box.x + 12}
-          y={box.y + 20}
-          fill={TEXT}
-          style={{ fontSize: "10px" }}
-        >
+        <text x={box.x + 12} y={box.y + 20} fill={TEXT} style={{ fontSize: "10px" }}>
           {label}
         </text>
         <text
           x={box.x + 12}
           y={box.y + 38}
           fill={TEXT}
-          style={{ fontSize: "11px", fontWeight: 600 }}
+          style={{ fontSize: "11px", fontWeight: 700 }}
         >
           {formatCurrency(node.value || 0)}
         </text>
-        {subtitle && canShowSubtitle && (
-          <text
-            x={box.x + 12}
-            y={box.y + 52}
-            fill={SUBTEXT}
-            style={{ fontSize: "10px" }}
-          >
+
+        {subtitle && canShowSubtitle ? (
+          <text x={box.x + 12} y={box.y + 52} fill={SUBTEXT} style={{ fontSize: "10px" }}>
             {subtitle}
           </text>
-        )}
+        ) : null}
       </g>
     );
   });
 
-  const availableWidth = containerWidth || svgWidth;
-  const scaleRaw = availableWidth / svgWidth;
-  const scale = Math.min(scaleRaw, 1);
-  const prefersReducedMotion =
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-  const scaledHeight = svgHeight * scale;
-
-  const isPhoneWidth =
-    typeof containerWidth === "number" && containerWidth <= PHONE_WIDTH_CUTOFF;
-  const effectiveLabelPx = 10 * scale;
-  const effectiveValuePx = 11 * scale;
-  const useCompact =
-    isPhoneWidth ||
-    effectiveLabelPx < MIN_EFFECTIVE_TEXT_PX ||
-    effectiveValuePx < MIN_EFFECTIVE_TEXT_PX;
-
-  if (useCompact) {
-    return (
-      <div ref={containerRef} className="w-full">
-        <CompactFlowList nodes={nodes} links={links} />
-      </div>
-    );
-  }
+  // Bands + column headers
+  const columnName = (idx) => columnLabels[idx] || `Column ${idx + 1}`;
 
   return (
     <div
       ref={containerRef}
       className="w-full overflow-hidden relative"
-      style={{
-        height: scaledHeight,
-        transition: prefersReducedMotion ? "none" : "height 180ms ease",
-      }}
+      style={{ height: scaledHeight }}
     >
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -305,12 +314,6 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
         aria-label="Cash flow Sankey chart"
         preserveAspectRatio="xMidYMid meet"
       >
-        <defs>
-          <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
-            <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
-          </linearGradient>
-        </defs>
         {columns.map((col, idx) => {
           const x = HORIZONTAL_PADDING + idx * columnSpacing;
           return (
@@ -329,16 +332,9 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
             />
           );
         })}
+
         {columns.map((col, idx) => {
           const x = HORIZONTAL_PADDING + idx * columnSpacing;
-          const name =
-            idx === 0
-              ? "Income"
-              : idx === 1
-              ? "Cash Flow"
-              : idx === 2
-              ? "Spending"
-              : `Column ${idx + 1}`;
           return (
             <text
               key={`colhead-${col}`}
@@ -347,34 +343,25 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
               fill="#CBD5F5"
               style={{
                 fontSize: "11px",
-                fontWeight: 700,
+                fontWeight: 800,
                 letterSpacing: "0.08em",
               }}
             >
-              {name.toUpperCase()}
+              {columnName(idx).toUpperCase()}
             </text>
           );
         })}
+
         {renderLinks}
         {renderNodes}
       </svg>
+
       {hover ? (
         <div
           className="absolute pointer-events-none z-20 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-slate-100 shadow-lg"
           style={{
-            left: Math.min(
-              hover.x * scale + 12,
-              Math.max(
-                (typeof containerWidth === "number"
-                  ? containerWidth
-                  : svgWidth * scale) - 220,
-                0
-              )
-            ),
-            top: Math.min(
-              hover.y * scale + 12,
-              Math.max(scaledHeight - 90, 8)
-            ),
+            left: Math.min(hover.x * scale + 12, Math.max((containerWidth || svgWidth * scale) - 220, 0)),
+            top: Math.min(hover.y * scale + 12, Math.max(scaledHeight - 90, 8)),
             width: 210,
           }}
         >
@@ -389,12 +376,11 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   );
 }
 
-export default FlowSankey;
-
 function CompactFlowList({ nodes = [], links = [] }) {
-  const safeNodes = (nodes || []).filter(
-    (n) => Number.isFinite(Number(n.value)) && Number(n.value) >= 0
-  );
+  const safeNodes = (nodes || []).filter((n) => {
+    const v = Number(n.value);
+    return Number.isFinite(v) && v >= 0 && n.id;
+  });
   const [openId, setOpenId] = React.useState(null);
 
   const outBySource = React.useMemo(() => {
@@ -405,9 +391,7 @@ function CompactFlowList({ nodes = [], links = [] }) {
       if (!map[l.source]) map[l.source] = [];
       map[l.source].push({ ...l, value: v });
     });
-    Object.keys(map).forEach((key) => {
-      map[key].sort((a, b) => b.value - a.value);
-    });
+    Object.keys(map).forEach((k) => map[k].sort((a, b) => b.value - a.value));
     return map;
   }, [links]);
 
@@ -419,17 +403,13 @@ function CompactFlowList({ nodes = [], links = [] }) {
       if (!map[l.target]) map[l.target] = [];
       map[l.target].push({ ...l, value: v });
     });
-    Object.keys(map).forEach((key) => {
-      map[key].sort((a, b) => b.value - a.value);
-    });
+    Object.keys(map).forEach((k) => map[k].sort((a, b) => b.value - a.value));
     return map;
   }, [links]);
 
   const nodeById = React.useMemo(() => {
     const map = {};
-    safeNodes.forEach((n) => {
-      map[n.id] = n;
-    });
+    safeNodes.forEach((n) => (map[n.id] = n));
     return map;
   }, [safeNodes]);
 
@@ -464,14 +444,13 @@ function CompactFlowList({ nodes = [], links = [] }) {
           <div className="sticky top-0 z-10 -mx-3 mb-2 px-3 py-2 text-xs font-semibold text-slate-200 bg-slate-950/80 backdrop-blur border-b border-slate-800">
             Column {col + 1}
           </div>
+
           <div className="space-y-2">
             {columnNodes.map((n) => (
               <button
                 key={n.id}
                 type="button"
-                onClick={() =>
-                  setOpenId((current) => (current === n.id ? null : n.id))
-                }
+                onClick={() => setOpenId((cur) => (cur === n.id ? null : n.id))}
                 className="w-full text-left rounded-lg border border-slate-800 bg-slate-950/40 p-3"
                 aria-expanded={openId === n.id}
               >
@@ -486,6 +465,7 @@ function CompactFlowList({ nodes = [], links = [] }) {
                       </div>
                     ) : null}
                   </div>
+
                   <div className="shrink-0 text-right">
                     <div className="text-sm font-bold text-slate-100">
                       {formatCurrency(n.value || 0)}
@@ -497,7 +477,8 @@ function CompactFlowList({ nodes = [], links = [] }) {
                     ) : null}
                   </div>
                 </div>
-                {openId === n.id && (
+
+                {openId === n.id ? (
                   <div className="mt-2 space-y-2 text-xs text-slate-300">
                     {!!(inByTarget[n.id]?.length) && (
                       <div>
@@ -545,11 +526,9 @@ function CompactFlowList({ nodes = [], links = [] }) {
                       </div>
                     )}
                   </div>
-                )}
-                <div
-                  className="mt-2 h-1.5 w-full rounded-full bg-slate-800"
-                  aria-hidden="true"
-                >
+                ) : null}
+
+                <div className="mt-2 h-1.5 w-full rounded-full bg-slate-800" aria-hidden="true">
                   <div
                     className="h-1.5 rounded-full"
                     style={{
