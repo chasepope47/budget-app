@@ -6,7 +6,6 @@ import {
   getCsvColumnsForMapping,
   detectBankFromText,
 } from "../lib/csv.js";
-import { parsePdfTransactions } from "../lib/pdf.js";
 
 function BankImportCard({ onTransactionsParsed = () => {} }) {
   const [status, setStatus] = React.useState("");
@@ -46,6 +45,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
     if (isPdf) {
       setStatus("Extracting transactions from PDF...");
       try {
+        const { parsePdfTransactions } = await import("../lib/pdf.js");
         const { text, rows } = await parsePdfTransactions(file);
         setRawText(text);
 
