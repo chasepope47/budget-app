@@ -3,15 +3,20 @@ import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
 
 function GoalDetailPage({ goal }) {
-  const progress = (goal.saved / goal.target) * 100;
+  const saved = Number(goal?.saved ?? goal?.current ?? 0);
+  const target = Number(goal?.target ?? 0);
+  const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
+  const displayEmoji = goal?.emoji || "🎯";
+  const displayName = goal?.name || "Untitled Goal";
+  const progress = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
 
   return (
     <div className="space-y-5">
       <header className="space-y-1">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">{goal.emoji}</span>
+          <span className="text-2xl">{displayEmoji}</span>
           <h1 className="text-xl font-semibold text-slate-100">
-            {goal.name}
+            {displayName}
           </h1>
         </div>
         <p className="text-xs text-slate-400">
@@ -22,7 +27,7 @@ function GoalDetailPage({ goal }) {
       <Card title="PROGRESS">
         <div className="flex flex-col gap-2 text-sm">
           <span className="text-slate-200">
-            ${goal.saved.toFixed(2)} / ${goal.target.toFixed(2)}
+            ${saved.toFixed(2)} / ${target.toFixed(2)}
           </span>
           <NeonProgressBar value={progress} />
           <span className="text-xs text-slate-400">
@@ -35,7 +40,7 @@ function GoalDetailPage({ goal }) {
         <p className="text-sm text-slate-200">
           Recommended monthly contribution:
           <span className="ml-1 text-cyan-300 font-semibold">
-            ${goal.monthlyPlan.toFixed(2)}
+            ${monthlyPlan.toFixed(2)}
           </span>
         </p>
         <p className="mt-1 text-xs text-slate-400">

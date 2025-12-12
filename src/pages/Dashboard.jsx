@@ -14,7 +14,7 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "csvImport",
 ];
 function Dashboard({
-month = "",
+  month = "",
   income = 0,
   fixed = 0,
   variable = 0,
@@ -33,6 +33,7 @@ month = "",
   // make sure these are always numbers
   const safeIncome = Number(income) || 0;
   const safeFixed = Number(fixed) || 0;
+  const safeVariable = Number(variable) || 0;
   const safeLeftover = Number(leftover) || 0;
   const safeCurrentAccountBalance = Number(currentAccountBalance) || 0;
   const safeTotalBalance = Number(totalBalance) || 0;
@@ -70,7 +71,7 @@ month = "",
                   <Stat label="Income" value={safeIncome} accent="text-emerald-300" />
                   <Stat label="Fixed" value={safeFixed} accent="text-rose-300" />
                   <Stat label="Variable" value={safeVariable} accent="text-amber-300" />
-                  <Stat label="Leftover" value={safeVariable} accent="text-cyan-300" />
+                  <Stat label="Leftover" value={safeLeftover} accent="text-cyan-300" />
                 </div>
 
                 <div className="mt-4">
