@@ -7,7 +7,8 @@ const CHART_PADDING = 32;
 const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
 const MIN_COLUMN_SPACING = 140;
-const BASE_COLUMN_SPACING = 220;
+const MIN_CHART_WIDTH = 640;
+const LINK_OFFSET = 10;
 
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
@@ -48,19 +49,14 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const minWidth =
     CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * MIN_COLUMN_SPACING;
   const measuredWidth = containerWidth || minWidth;
+  const targetWidth = Math.max(measuredWidth, MIN_CHART_WIDTH, minWidth);
 
-  const expandedWidth = Math.max(
-    measuredWidth,
-    CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * BASE_COLUMN_SPACING
-  );
-
-  const columnSpacing =
+  const rawSpacing =
     columnCount > 1
-      ? Math.max(
-          MIN_COLUMN_SPACING,
-          (expandedWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
-        )
+      ? (targetWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
       : 0;
+  const columnSpacing =
+    columnCount > 1 ? Math.max(MIN_COLUMN_SPACING, rawSpacing) : 0;
 
   const svgWidth =
     CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * Math.max(columnCount - 1, 0);
@@ -124,8 +120,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
       flowOffsets[link.source] = sourceOffset;
       flowOffsets[link.target] = targetOffset;
 
-      const x1 = source.x + source.width;
-      const x2 = target.x;
+      const x1 = source.x + Math.max(source.width - LINK_OFFSET, 0);
+      const x2 = target.x + Math.min(LINK_OFFSET, target.width || LINK_OFFSET);
       const curvature = (x2 - x1) * 0.5;
 
       const path = `
@@ -143,6 +139,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           stroke={link.color || "rgba(255,255,255,0.25)"}
           strokeWidth={thickness}
           strokeOpacity={0.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       );
     })
