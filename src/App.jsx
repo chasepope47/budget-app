@@ -1412,6 +1412,7 @@ function App() {
             transactions={
               accountsById[currentAccountId]?.transactions || []
             }
+            accountName={accountsById[currentAccountId]?.name || "None"}
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
           />

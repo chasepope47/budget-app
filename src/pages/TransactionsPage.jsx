@@ -4,6 +4,7 @@ import { formatMoney, formatPercent } from "../utils/format.js";
 
 function TransactionsPage({
   transactions = [],
+  accountName = "",
   onUpdateTransaction = () => {},
   onDeleteTransaction = () => {},
 }) {
