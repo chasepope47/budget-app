@@ -1,6 +1,6 @@
 import React from "react";
 import Card from "../components/Card.jsx";
-import FlowSankey from "../components/FlowSankey.jsx";
+import FlowSankey, { estimateFlowSankeyHeight } from "../components/FlowSankey.jsx";
 import { formatCurrency } from "../components/ui.js";
 import {
   DEFAULT_REPORT_CONFIG,
@@ -48,19 +48,8 @@ function ReportsPage({
   }, [accounts]);
 
   const chartHeight = React.useMemo(() => {
-    const nodes = data?.nodes || [];
-    if (!nodes.length) return 420;
-    const perColumn = {};
-    nodes.forEach((node) => {
-      const col = node.column ?? 0;
-      perColumn[col] = (perColumn[col] || 0) + 1;
-    });
-    const maxNodesInColumn = Object.values(perColumn).reduce(
-      (max, count) => Math.max(max, count),
-      0
-    );
-    const baseHeight = 420 + Math.max(0, maxNodesInColumn - 3) * 80;
-    return baseHeight;
+    const estimated = estimateFlowSankeyHeight(data?.nodes || []);
+    return Math.max(estimated, 520);
   }, [data?.nodes]);
 
   const handleSelectChange =
@@ -188,7 +177,7 @@ function ReportsPage({
 
         <div
           className="-mx-2 rounded-2xl border border-slate-800/70 bg-slate-950/40 px-2 py-3 sm:mx-0 pb-8"
-          style={{ minHeight: chartHeight + 64 }}
+          style={{ minHeight: chartHeight + 200 }}
         >
           <FlowSankey
             nodes={data?.nodes || []}

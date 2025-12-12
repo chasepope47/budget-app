@@ -4,7 +4,7 @@ import { formatCurrency } from "./ui.js";
 const NODE_WIDTH = 150;
 const NODE_GAP = 18;
 const TOP_PADDING = 36;
-const BOTTOM_PADDING = 120;
+const BOTTOM_PADDING = 180;
 const HORIZONTAL_PADDING = 32;
 const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
@@ -15,6 +15,25 @@ const LABEL_BLOCK_HEIGHT_WITH_SUB = 64;
 const NODE_INNER_PADDING = 12;
 const PHONE_WIDTH_CUTOFF = 520;
 const MIN_EFFECTIVE_TEXT_PX = 8;
+const EXTRA_VERTICAL_GAP = 160;
+
+function hexToRgba(hex, alpha = 1) {
+  if (!hex || typeof hex !== "string" || hex[0] !== "#") return hex;
+  let cleaned = hex.slice(1);
+  if (cleaned.length === 3) {
+    cleaned = cleaned
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  if (cleaned.length !== 6) return hex;
+  const intVal = parseInt(cleaned, 16);
+  if (!Number.isFinite(intVal)) return hex;
+  const r = (intVal >> 16) & 255;
+  const g = (intVal >> 8) & 255;
+  const b = intVal & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 const MONARCH = true;
 const PANEL = "rgba(2,6,23,0.35)";
@@ -24,6 +43,38 @@ const BORDER = "rgba(148,163,184,0.35)";
 
 // You pass these (optional). If you don’t, we generate simple defaults.
 const DEFAULT_COLUMN_LABELS = ["Income", "Cash Flow", "Spending"];
+
+export function estimateFlowSankeyHeight(nodes = [], height = 420) {
+  const safeNodes = (nodes || []).filter((n) => {
+    const v = Number(n.value);
+    return Number.isFinite(v) && v >= 0 && n.id;
+  });
+
+  if (!safeNodes.length) return height;
+
+  const columns = Array.from(new Set(safeNodes.map((n) => n.column ?? 0))).sort(
+    (a, b) => a - b
+  );
+  const nodesByColumn = columns.map((col) =>
+    safeNodes.filter((n) => (n.column ?? 0) === col)
+  );
+
+  const minHeightNeeded = nodesByColumn.reduce((max, list) => {
+    if (!list.length) return max;
+    const required =
+      list.length * MIN_NODE_HEIGHT + Math.max(list.length - 1, 0) * NODE_GAP;
+    return Math.max(max, required);
+  }, 0);
+
+  const verticalPadding = TOP_PADDING + BOTTOM_PADDING;
+  const baseAvailableHeight = Math.max(height - verticalPadding, 120);
+  const availableHeight = Math.max(
+    baseAvailableHeight,
+    minHeightNeeded + EXTRA_VERTICAL_GAP
+  );
+
+  return availableHeight + verticalPadding;
+}
 
 export default function FlowSankey({
   nodes = [],
@@ -114,7 +165,10 @@ export default function FlowSankey({
 
   const verticalPadding = TOP_PADDING + BOTTOM_PADDING;
   const baseAvailableHeight = Math.max(height - verticalPadding, 120);
-  const availableHeight = Math.max(baseAvailableHeight, minHeightNeeded);
+  const availableHeight = Math.max(
+    baseAvailableHeight,
+    minHeightNeeded + EXTRA_VERTICAL_GAP
+  );
   const svgHeight = availableHeight + verticalPadding;
   const valueScale = availableHeight / maxColumnTotal;
 
@@ -152,7 +206,7 @@ export default function FlowSankey({
   const availableWidth = containerWidth || svgWidth;
   const scaleRaw = availableWidth / svgWidth;
   const scale = Math.min(scaleRaw, 1);
-  const scaledHeight = svgHeight * scale;
+  const scaledHeight = svgHeight;
 
   const isPhoneWidth =
     typeof containerWidth === "number" && containerWidth <= PHONE_WIDTH_CUTOFF;
@@ -205,22 +259,21 @@ export default function FlowSankey({
       const x2 = target.x;
       const curvature = (x2 - x1) * 0.5;
 
-      const path = `M ${x1} ${y1} C ${x1 + curvature} ${y1}, ${x2 - curvature} ${y2}, ${x2} ${y2}`;
+      const offsetX = Math.min(columnSpacing * 0.35, 28);
+      const controlX = x1 + offsetX;
+      const path = `M ${x1} ${y1} L ${controlX} ${y1} L ${controlX} ${y2} L ${x2} ${y2}`;
 
       return (
         <path
           key={`link-${index}`}
           d={path}
           fill="none"
-          stroke={
-            link.color ||
-            (MONARCH ? "rgba(15,23,42,0.25)" : "rgba(255,255,255,0.25)")
-          }
-          strokeWidth={thickness}
-          strokeOpacity={MONARCH ? 0.55 : 0.75}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ mixBlendMode: MONARCH ? "multiply" : "normal" }}
+          stroke={link.color || (MONARCH ? "rgba(255,255,255,0.8)" : "#ffffff")}
+          strokeWidth={3}
+          strokeOpacity={Number.isFinite(link.opacity) ? link.opacity : 0.85}
+          strokeLinecap="square"
+          strokeLinejoin="miter"
+          style={{ mixBlendMode: "normal" }}
         />
       );
     })
@@ -233,6 +286,12 @@ export default function FlowSankey({
     const label = node.label || "Node";
     const subtitle = node.subtitle || "";
     const canShowSubtitle = box.height >= LABEL_BLOCK_HEIGHT_WITH_SUB;
+    const nodeStrokeColor =
+      node.color || (MONARCH ? "rgba(148,163,184,0.65)" : "#94A3B8");
+    const nodeFillColor = node.color
+      ? hexToRgba(node.color, 0.16)
+      : PANEL;
+    const nodeStrokeWidth = node.color ? 1.4 : MONARCH ? 1 : 1.5;
 
     return (
       <g
@@ -267,13 +326,13 @@ export default function FlowSankey({
           width={box.width}
           height={box.height}
           rx={12}
-          fill={PANEL}
-          stroke={MONARCH ? BORDER : node.color || "#475569"}
-          strokeWidth={MONARCH ? 1 : 1.5}
+          fill={nodeFillColor}
+          stroke={nodeStrokeColor}
+          strokeWidth={nodeStrokeWidth}
           style={{
-            filter: MONARCH
-              ? "drop-shadow(0 1px 2px rgba(15,23,42,0.08))"
-              : undefined,
+            filter:
+              "drop-shadow(0 10px 30px rgba(2,6,23,0.65))",
+            mixBlendMode: "screen",
           }}
         />
         <text x={box.x + 12} y={box.y + 20} fill={TEXT} style={{ fontSize: "10px" }}>
@@ -303,8 +362,8 @@ export default function FlowSankey({
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden relative"
-      style={{ height: scaledHeight }}
+      className="w-full relative"
+      style={{ minHeight: scaledHeight }}
     >
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
@@ -352,8 +411,8 @@ export default function FlowSankey({
           );
         })}
 
-        {renderLinks}
         {renderNodes}
+        {renderLinks}
       </svg>
 
       {hover ? (

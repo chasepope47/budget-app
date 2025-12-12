@@ -42,9 +42,20 @@ function buildDefaultProfile(user) {
   };
 }
 
+let hasUserMetadataTable = true;
+
+function fallbackProfile(user) {
+  const safeUser = typeof user === "string" ? { id: user } : user;
+  return buildDefaultProfile(safeUser);
+}
+
 export async function loadOrCreateUserProfile(user) {
   const userId = typeof user === "string" ? user : user?.id;
   if (!userId) return null;
+
+  if (!hasUserMetadataTable) {
+    return fallbackProfile(user);
+  }
 
   try {
     const { data, error } = await supabase
@@ -70,18 +81,30 @@ export async function loadOrCreateUserProfile(user) {
         return inserted ?? defaults;
       }
       console.error("Failed to load user metadata:", error);
+      if (error?.code === "PGRST205") {
+        hasUserMetadataTable = false;
+        return fallbackProfile(user);
+      }
       return null;
     }
 
     return data ?? null;
   } catch (err) {
     console.error("Unexpected error loading profile metadata:", err);
+    if (err?.message?.includes("user_metadata")) {
+      hasUserMetadataTable = false;
+      return fallbackProfile(user);
+    }
     return null;
   }
 }
 
 export async function updateUserProfile(userId, { username, avatar_emoji } = {}) {
   if (!userId) throw new Error("Missing user id for profile update");
+
+  if (!hasUserMetadataTable) {
+    return fallbackProfile({ id: userId });
+  }
 
   const payload = {};
   if (typeof username === "string") {
@@ -128,6 +151,10 @@ export async function updateUserProfile(userId, { username, avatar_emoji } = {})
     }
 
     console.error("Failed to update user metadata:", error);
+    if (error?.code === "PGRST205") {
+      hasUserMetadataTable = false;
+      return fallbackProfile({ id: userId });
+    }
     throw error;
   }
 
