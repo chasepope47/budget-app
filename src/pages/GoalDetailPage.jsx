@@ -9,6 +9,7 @@ function GoalDetailPage({
   onDeleteGoal = () => {},
   onDuplicateGoal = () => {},
   onExportGoal = () => {},
+  onAddContributionRequest = () => {},
 }) {
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
@@ -69,7 +70,10 @@ function GoalDetailPage({
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
-          <button className="px-3 py-1.5 text-xs rounded-md border border-pink-400/70 text-pink-200 bg-pink-500/10 hover:bg-pink-500/20 transition">
+          <button
+            className="px-3 py-1.5 text-xs rounded-md border border-pink-400/70 text-pink-200 bg-pink-500/10 hover:bg-pink-500/20 transition"
+            onClick={() => onAddContributionRequest(goal?.id)}
+          >
             Add Contribution
           </button>
         </div>

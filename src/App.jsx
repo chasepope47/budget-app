@@ -14,6 +14,7 @@ import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
 import GoalEditorModal from "./components/GoalEditorModal.jsx";
+import ContributionModal from "./components/ContributionModal.jsx";
 import ThemeSelector from "./components/ThemeSelector.jsx";
 
 // Pages
@@ -474,6 +475,10 @@ function App() {
     mode: "create",
     goalId: null,
   });
+  const [contributionModal, setContributionModal] = useState({
+    open: false,
+    goalId: null,
+  });
 
   // Derived things
   const totals = useMemo(() => computeTotals(budget), [budget]);
@@ -796,6 +801,8 @@ function App() {
       name: `${goal.name || "Goal"} copy`,
     };
     setGoals((prev) => [...prev, duplicate]);
+    setSelectedGoalId(duplicate.id);
+    setCurrentPage("goalDetail");
     setToast({
       message: `Duplicated goal "${goal.name || "Goal"}".`,
       variant: "success",
@@ -1387,6 +1394,7 @@ function App() {
             onDeleteGoal={handleGoalDelete}
             onDuplicateGoal={handleGoalDuplicate}
             onExportGoal={handleGoalExport}
+            onAddContributionRequest={handleOpenContribution}
           />
         )}
       </main>
@@ -1417,8 +1425,40 @@ function App() {
         onSave={handleGoalEditorSave}
         onDelete={handleGoalDelete}
       />
+      <ContributionModal
+        open={contributionModal.open}
+        goal={goals.find((g) => g.id === contributionModal.goalId)}
+        onAdd={handleAddContribution}
+        onClose={() => setContributionModal({ open: false, goalId: null })}
+      />
     </div>
   );
 }
 
 export default App;
+    setContributionModal({ open: false, goalId: null });
+  function handleOpenContribution(goalId) {
+    if (!goalId) return;
+    setContributionModal({ open: true, goalId });
+  }
+
+  function handleAddContribution(amount) {
+    if (!contributionModal.goalId) return;
+    const numeric = Math.max(0, Number(amount) || 0);
+    setGoals((prev) =>
+      prev.map((goal) =>
+        goal.id === contributionModal.goalId
+          ? {
+              ...goal,
+              current: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
+              saved: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
+            }
+          : goal
+      )
+    );
+    setToast({
+      message: `Added $${numeric.toFixed(2)} to your goal.`,
+      variant: "success",
+    });
+    setContributionModal({ open: false, goalId: null });
+  }
