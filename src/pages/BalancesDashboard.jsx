@@ -10,6 +10,7 @@ function BalancesDashboard({
   onDeleteAccount = () => {},
   onSetAccountBalance = () => {},
   onRenameAccount = () => {},
+  onViewAccount = () => {},
 }) {
   const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
 
@@ -100,7 +101,10 @@ function BalancesDashboard({
                 <div className="flex flex-col items-end gap-1">
                   <button
                     type="button"
-                    onClick={() => onChangeCurrentAccount(acc.id)}
+                    onClick={() => {
+                      onChangeCurrentAccount(acc.id);
+                      onViewAccount(acc.id);
+                    }}
                     className="px-2 py-0.5 rounded text-[11px] border border-slate-500 hover:border-cyan-400"
                   >
                     View
