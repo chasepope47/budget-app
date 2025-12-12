@@ -1,0 +1,184 @@
+import React from "react";
+import { formatCurrency } from "./ui.js";
+
+const NODE_WIDTH = 140;
+const NODE_GAP = 18;
+const CHART_PADDING = 32;
+const MIN_NODE_HEIGHT = 14;
+const MIN_LINK_THICKNESS = 2;
+
+function FlowSankey({ nodes = [], links = [], height = 360 }) {
+  const filteredNodes = (nodes || []).filter(
+    (node) => Number.isFinite(Number(node.value)) && Number(node.value) >= 0
+  );
+
+  if (!filteredNodes.length) {
+    return (
+      <div className="text-xs text-slate-400">
+        Not enough data for this timeframe. Import transactions or pick a
+        wider range.
+      </div>
+    );
+  }
+
+  const columns = Array.from(
+    new Set(filteredNodes.map((node) => node.column ?? 0))
+  ).sort((a, b) => a - b);
+  const columnCount = columns.length || 1;
+  const columnSpacing = 220;
+  const svgWidth =
+    CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * (columnCount - 1);
+
+  const columnTotals = columns.map((column) =>
+    filteredNodes
+      .filter((node) => node.column === column)
+      .reduce((sum, node) => sum + Math.max(Number(node.value) || 0, 0), 0)
+  );
+  const maxColumnTotal = Math.max(...columnTotals, 1);
+  const availableHeight = Math.max(height - CHART_PADDING, 120);
+  const valueScale = availableHeight / maxColumnTotal;
+
+  const layout = {};
+
+  columns.forEach((columnKey, columnIndex) => {
+    const columnNodes = filteredNodes
+      .filter((node) => node.column === columnKey)
+      .sort((a, b) => b.value - a.value);
+
+    const heights = columnNodes.map((node) =>
+      Math.max(Number(node.value) * valueScale, MIN_NODE_HEIGHT)
+    );
+    const totalHeight =
+      heights.reduce((sum, h) => sum + h, 0) +
+      (columnNodes.length - 1) * NODE_GAP;
+    let yOffset = Math.max((availableHeight - totalHeight) / 2, 0) + CHART_PADDING / 2;
+    columnNodes.forEach((node, idx) => {
+      layout[node.id] = {
+        ...node,
+        width: NODE_WIDTH,
+        height: heights[idx],
+        x: CHART_PADDING + columnIndex * columnSpacing,
+        y: yOffset,
+      };
+      yOffset += heights[idx] + NODE_GAP;
+    });
+  });
+
+  const flowOffsets = {};
+  filteredNodes.forEach((node) => {
+    flowOffsets[node.id] = { out: 0, in: 0 };
+  });
+
+  const renderLinks = links
+    .map((link, index) => {
+      const source = layout[link.source];
+      const target = layout[link.target];
+      if (!source || !target) return null;
+
+      const thickness = Math.max(
+        Number(link.value) * valueScale,
+        MIN_LINK_THICKNESS
+      );
+      const sourceOffset = flowOffsets[link.source] || { out: 0 };
+      const targetOffset = flowOffsets[link.target] || { in: 0 };
+      const y1 = source.y + sourceOffset.out + thickness / 2;
+      const y2 = target.y + targetOffset.in + thickness / 2;
+      sourceOffset.out += thickness;
+      targetOffset.in += thickness;
+      flowOffsets[link.source] = sourceOffset;
+      flowOffsets[link.target] = targetOffset;
+
+      const x1 = source.x + source.width;
+      const x2 = target.x;
+      const curvature = (x2 - x1) * 0.5;
+
+      const path = `
+        M ${x1} ${y1}
+        C ${x1 + curvature} ${y1},
+          ${x2 - curvature} ${y2},
+          ${x2} ${y2}
+      `;
+
+      return (
+        <path
+          key={`link-${index}`}
+          d={path}
+          fill="none"
+          stroke={link.color || "rgba(255,255,255,0.25)"}
+          strokeWidth={thickness}
+          strokeOpacity={0.85}
+        />
+      );
+    })
+    .filter(Boolean);
+
+  const renderNodes = filteredNodes.map((node) => {
+    const box = layout[node.id];
+    if (!box) return null;
+    const label = node.label || "Node";
+    const subtitle = node.subtitle || "";
+    return (
+      <g key={node.id}>
+        <rect
+          x={box.x}
+          y={box.y}
+          width={box.width}
+          height={box.height}
+          rx={10}
+          fill="url(#nodeOverlay)"
+          stroke={node.color || "#475569"}
+          strokeWidth={1.5}
+          style={{
+            fill: `${node.color || "#475569"}20`,
+          }}
+        />
+        <text
+          x={box.x + 12}
+          y={box.y + 20}
+          fill="#e2e8f0"
+          style={{ fontSize: "10px" }}
+        >
+          {label}
+        </text>
+        <text
+          x={box.x + 12}
+          y={box.y + 38}
+          fill="#f8fafc"
+          style={{ fontSize: "11px", fontWeight: 600 }}
+        >
+          {formatCurrency(node.value || 0)}
+        </text>
+        {subtitle && (
+          <text
+            x={box.x + 12}
+            y={box.y + 52}
+            fill="#94a3b8"
+            style={{ fontSize: "10px" }}
+          >
+            {subtitle}
+          </text>
+        )}
+      </g>
+    );
+  });
+
+  return (
+    <svg
+      viewBox={`0 0 ${svgWidth} ${height}`}
+      className="w-full h-auto"
+      role="img"
+      aria-label="Cash flow Sankey chart"
+    >
+      <defs>
+        <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
+          <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
+        </linearGradient>
+      </defs>
+      {renderLinks}
+      {renderNodes}
+    </svg>
+  );
+}
+
+export default FlowSankey;

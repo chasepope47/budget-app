@@ -2,11 +2,28 @@ import React, { useState, useMemo } from "react";
 import Card from "../components/Card.jsx";
 import { formatMoney, formatPercent } from "../utils/format.js";
 
+const FLOW_TYPE_OPTIONS = [
+  { value: "auto", label: "Auto (detect)" },
+  { value: "income", label: "Income" },
+  { value: "expense", label: "Expense" },
+  { value: "transfer", label: "Transfer" },
+  { value: "ignore", label: "Ignore" },
+];
+
+const FLOW_TYPE_LABELS = {
+  income: "Income",
+  expense: "Expense",
+  transfer: "Transfer",
+  ignore: "Ignored",
+  unknown: "Unknown",
+};
+
 function TransactionsPage({
   transactions = [],
   accountName = "",
   onUpdateTransaction = () => {},
   onDeleteTransaction = () => {},
+  typeHints = [],
 }) {
   const hasData = Array.isArray(transactions) && transactions.length > 0;
 
@@ -223,13 +240,14 @@ function TransactionsPage({
 
         {hasData && rowsToRender.length > 0 && (
           <div className="w-full overflow-x-auto">
-            <div className="min-w-[640px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
+            <div className="min-w-[760px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
               <table className="w-full text-[0.7rem] sm:text-xs text-left">
                 <thead className="bg-slate-900 text-slate-300 sticky top-0">
                   <tr>
                     <th className="px-2 py-1">Date</th>
                     <th className="px-2 py-1">Description</th>
                     <th className="px-2 py-1">Category</th>
+                    <th className="px-2 py-1">Type</th>
                     <th className="px-2 py-1 text-right">Amount</th>
                     <th className="px-2 py-1 text-right">Actions</th>
                   </tr>
@@ -263,6 +281,31 @@ function TransactionsPage({
                             })
                           }
                         />
+                      </td>
+
+                      <td className="px-2 py-1 text-slate-300">
+                        <div className="flex flex-col gap-1">
+                          <select
+                            className="w-full bg-slate-900/40 rounded-md border border-slate-700 px-2 py-1 text-[0.65rem] focus:outline-none focus:border-cyan-400"
+                            value={tx.flowType || "auto"}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              onUpdateTransaction(index, {
+                                flowType: next === "auto" ? undefined : next,
+                              });
+                            }}
+                          >
+                            {FLOW_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          <span className="text-[0.6rem] text-slate-500">
+                            Detected:{" "}
+                            {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
+                          </span>
+                        </div>
                       </td>
 
                       <td

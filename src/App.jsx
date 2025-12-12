@@ -22,6 +22,7 @@ import BalancesDashboard from "./pages/BalancesDashboard.jsx";
 import BudgetPage from "./pages/BudgetPage.jsx";
 import TransactionsPage from "./pages/TransactionsPage.jsx";
 import GoalDetailPage from "./pages/GoalDetailPage.jsx";
+import ReportsPage from "./pages/ReportsPage.jsx";
 
 // Libs
 import {
@@ -38,6 +39,12 @@ import {
   mergeTransactions,
   importTransactionsWithDetection,
 } from "./lib/accounts.js";
+import {
+  DEFAULT_REPORT_CONFIG,
+  normalizeReportConfig,
+  buildTransactionFlowMeta,
+  buildCashFlowReport,
+} from "./lib/reports.js";
 import { getThemeConfig } from "./themeConfig.js";
 
 // ----- Navigation -----
@@ -47,6 +54,7 @@ const NAV_ITEMS = [
   { key: "budget", label: "Budget" },
   { key: "transactions", label: "Transactions" },
   { key: "goalDetail", label: "Goals" },
+  { key: "reports", label: "Reports" },
 ];
 
 const NAV_LABELS = NAV_ITEMS.reduce((map, item) => {
@@ -478,6 +486,9 @@ function App() {
     open: false,
     goalId: null,
   });
+  const [reportConfig, setReportConfig] = useState(
+    normalizeReportConfig(stored?.reportConfig)
+  );
 
   // Derived things
   const totals = useMemo(() => computeTotals(budget), [budget]);
@@ -524,6 +535,23 @@ function App() {
 
   const activeMonth = budget.month || getCurrentMonthKey();
 
+  const transactionFlowMeta = useMemo(
+    () => buildTransactionFlowMeta(accounts),
+    [accounts]
+  );
+
+  const reportData = useMemo(
+    () =>
+      buildCashFlowReport({
+        accounts,
+        goals,
+        budget,
+        config: reportConfig,
+        flowMeta: transactionFlowMeta,
+      }),
+    [accounts, goals, budget, reportConfig, transactionFlowMeta]
+  );
+
   let pageTitle = NAV_LABELS[currentPage] || "Dashboard";
   if (currentPage === "goalDetail" && currentGoal) {
     pageTitle = currentGoal.name;
@@ -552,6 +580,9 @@ function App() {
           normalizeDashboardSections(remote.dashboardSectionsOrder)
         );
       if (remote.theme) setTheme(remote.theme);
+      if (remote.reportConfig) {
+        setReportConfig(normalizeReportConfig(remote.reportConfig));
+      }
     } catch (err) {
       console.error("Failed to apply remote user state", err);
     }
@@ -650,6 +681,7 @@ function App() {
       homePage,
       dashboardSectionsOrder,
       theme,
+      reportConfig,
     };
 
     // Always keep localStorage up-to-date
@@ -694,6 +726,7 @@ function App() {
     homePage,
     dashboardSectionsOrder,
     theme,
+    reportConfig,
   ]);
 
   // ---------- Handlers ----------
@@ -934,6 +967,15 @@ function App() {
     setDashboardSectionsOrder((prev) => moveItem(prev, index, delta));
   }
 
+  function handleReportConfigChange(partialUpdates) {
+    setReportConfig((prev) =>
+      normalizeReportConfig({
+        ...prev,
+        ...(partialUpdates || {}),
+      })
+    );
+  }
+
   function handleCreateAccountFromCsv({ bankName, accountType, transactions }) {
     const id =
       bankName?.toLowerCase().replace(/\s+/g, "-").slice(0, 20) ||
@@ -1105,6 +1147,7 @@ function App() {
     setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
     setCurrentPage("dashboard");
     setTheme("dark");
+    setReportConfig(normalizeReportConfig());
     setToast({
       message: "All data reset successfully.",
       variant: "success",
@@ -1311,6 +1354,8 @@ function App() {
                 "Review, edit, and clean up imported transactions."}
               {currentPage === "goalDetail" &&
                 "Drill into a single financial goal and its progress."}
+              {currentPage === "reports" &&
+                "Flow-based reports that show how income moves into spending, savings, and goals."}
             </p>
           </div>
 
@@ -1415,10 +1460,20 @@ function App() {
             accountName={accountsById[currentAccountId]?.name || "None"}
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
+            typeHints={transactionFlowMeta.byAccount[currentAccountId] || []}
           />
         )}
 
-        {currentPage === "goalDetail" && (
+        {currentPage === "reports" && (
+          <ReportsPage
+            data={reportData}
+            config={reportConfig}
+            accounts={accounts}
+            onUpdateConfig={handleReportConfigChange}
+          />
+        )}
+
+        {currentPage === "goalDetail" && currentGoal && (
           <GoalDetailPage
             goal={currentGoal}
             onEditGoal={handleStartEditGoal}
