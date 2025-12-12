@@ -28,6 +28,12 @@ body[data-theme="aurora"] {
   --surface-card-shadow: 0 20px 40px rgba(16, 185, 129, 0.2);
 }
 
+body[data-theme="crimson"] {
+  --surface-card-bg: rgba(43, 13, 18, 0.92);
+  --surface-card-border: rgba(244, 63, 94, 0.4);
+  --surface-card-shadow: 0 20px 38px rgba(190, 24, 93, 0.25);
+}
+
 .card-surface {
   background: var(--surface-card-bg);
   border-color: var(--surface-card-border);

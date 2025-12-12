@@ -37,6 +37,16 @@ export const THEME_OPTIONS = [
     pillClass: "border-emerald-500/40 bg-emerald-900/40 hover:bg-emerald-900/70",
     previewGradient: "from-[#052528] via-[#0b4b4f] to-[#0f766e]",
   },
+  {
+    key: "crimson",
+    label: "Crimson Bloom",
+    description: "Deep burgundy with neon rose edges",
+    shellClass:
+      "bg-gradient-to-br from-[#19070a] via-[#2b0d12] to-[#19070a] text-rose-50",
+    headerClass: "border-rose-900/40 bg-[#2b0d12]/90",
+    pillClass: "border-rose-500/50 bg-rose-900/40 hover:bg-rose-900/70",
+    previewGradient: "from-[#300911] via-[#5b0a1c] to-[#be123c]",
+  },
 ];
 
 export function getThemeConfig(key) {
