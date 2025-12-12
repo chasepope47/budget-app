@@ -112,6 +112,9 @@ function TransactionsPage({
           <span className="text-xs text-slate-400">
             Imported from your bank CSV files
           </span>
+          <p className="text-[0.65rem] text-slate-500">
+            Currently viewing: <span className="font-semibold text-cyan-200">{accountName || "None"}</span>
+          </p>
         </div>
 
         {hasData && (
