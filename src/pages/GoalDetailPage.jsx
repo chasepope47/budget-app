@@ -14,7 +14,7 @@ function GoalDetailPage({
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
   const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
-  const displayEmoji = goal?.emoji || "🎯";
+  const displayEmoji = goal?.icon || goal?.emoji || "🎯";
   const displayName = goal?.name || "Untitled Goal";
   const progress = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
 

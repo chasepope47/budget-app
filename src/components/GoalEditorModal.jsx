@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
 
+const THEME_OPTIONS = [
+  { key: "cyber", label: "Cyber Cyan", background: "bg-gradient-to-br from-[#041019] via-[#051c25] to-[#03070d]" },
+  { key: "sunset", label: "Sunset Glow", background: "bg-gradient-to-br from-orange-500 via-pink-500 to-rose-500" },
+  { key: "forest", label: "Forest Echo", background: "bg-gradient-to-br from-[#0f3d2a] via-[#145036] to-[#1e6746]" },
+  { key: "midnight", label: "Midnight Pulse", background: "bg-gradient-to-br from-[#09001a] via-[#1b0231] to-[#330057]" },
+];
+
+const ICON_CHOICES = ["🎯", "🚀", "🏖️", "📚", "🏡", "💎", "🚗", "🧠"];
+
 const DEFAULT_GOAL = {
   name: "",
   target: 0,
@@ -7,6 +16,11 @@ const DEFAULT_GOAL = {
   monthlyPlan: 0,
   emoji: "🎯",
   description: "",
+  dueDate: "",
+  theme: THEME_OPTIONS[0].key,
+  icon: ICON_CHOICES[0],
+  background: THEME_OPTIONS[0].key,
+  animation: "pulse",
 };
 
 function GoalEditorModal({
@@ -28,6 +42,11 @@ function GoalEditorModal({
       monthlyPlan: Number(initialGoal?.monthlyPlan ?? 0),
       emoji: initialGoal?.emoji || "🎯",
       description: initialGoal?.description || "",
+      dueDate: initialGoal?.dueDate || "",
+      theme: initialGoal?.theme || THEME_OPTIONS[0].key,
+      icon: initialGoal?.icon || ICON_CHOICES[0],
+      background: initialGoal?.background || THEME_OPTIONS[0].key,
+      animation: initialGoal?.animation || "pulse",
     });
   }, [initialGoal, open]);
 
@@ -163,6 +182,81 @@ function GoalEditorModal({
             placeholder="What is this goal for?"
           />
         </label>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <label className="space-y-1">
+            <span className="text-xs text-slate-400">Target date</span>
+            <input
+              type="date"
+              value={form.dueDate}
+              onChange={(e) => handleChange("dueDate", e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-cyan-400 focus:outline-none"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-xs text-slate-400">Animation style</span>
+            <select
+              value={form.animation}
+              onChange={(e) => handleChange("animation", e.target.value)}
+              className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:border-cyan-400 focus:outline-none"
+            >
+              <option value="pulse">Pulse</option>
+              <option value="glow">Glow</option>
+              <option value="slide">Slide</option>
+              <option value="wave">Wave</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block text-xs text-slate-400">Theme</label>
+          <div className="grid grid-cols-2 gap-3">
+            {THEME_OPTIONS.map((theme) => (
+              <button
+                type="button"
+                key={theme.key}
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    theme: theme.key,
+                    background: theme.key,
+                  }))
+                }
+                className={`rounded-xl p-3 text-left transition border ${
+                  form.theme === theme.key
+                    ? "border-cyan-400 bg-cyan-500/10"
+                    : "border-white/10 hover:border-cyan-400/50"
+                }`}
+              >
+                <div
+                  className={`h-12 rounded-lg ${theme.background} mb-2`}
+                />
+                <p className="text-sm text-white">{theme.label}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <span className="text-xs text-slate-400">Icon</span>
+          <div className="flex flex-wrap gap-2">
+            {ICON_CHOICES.map((choice) => (
+              <button
+                type="button"
+                key={choice}
+                onClick={() => handleChange("icon", choice)}
+                className={`w-10 h-10 rounded-full border text-lg flex items-center justify-center ${
+                  form.icon === choice
+                    ? "border-cyan-400 bg-cyan-500/10"
+                    : "border-white/10 hover:border-cyan-400/50"
+                }`}
+              >
+                {choice}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="text-xs text-slate-400">
           Progress preview: {progress.toFixed(1)}%

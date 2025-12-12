@@ -740,6 +740,11 @@ function App() {
       saved: current,
       monthlyPlan,
       emoji: (data?.emoji && data.emoji.trim()) || "🎯",
+      dueDate: data?.dueDate || null,
+      theme: data?.theme || "cyber",
+      icon: data?.icon || "🎯",
+      background: data?.background || "default",
+      animation: data?.animation || "pulse",
       description: data?.description?.trim() || "",
     };
   }
