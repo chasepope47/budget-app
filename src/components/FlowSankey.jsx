@@ -3,12 +3,13 @@ import { formatCurrency } from "./ui.js";
 
 const NODE_WIDTH = 150;
 const NODE_GAP = 18;
-const CHART_PADDING = 32;
+const TOP_PADDING = 36;
+const BOTTOM_PADDING = 120;
+const HORIZONTAL_PADDING = 32;
 const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
 const MIN_COLUMN_SPACING = 140;
 const MIN_CHART_WIDTH = 640;
-const LINK_OFFSET = 10;
 
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
@@ -43,27 +44,38 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const columns = Array.from(
     new Set(filteredNodes.map((node) => node.column ?? 0))
   ).sort((a, b) => a - b);
-  const columnCount = columns.length || 1;
-  const spanCount = Math.max(columnCount - 1, 1);
-
-  const minWidth =
-    CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * MIN_COLUMN_SPACING;
-  const measuredWidth = containerWidth || minWidth;
-  const targetWidth = Math.max(measuredWidth, MIN_CHART_WIDTH, minWidth);
-
-  const rawSpacing =
-    columnCount > 1
-      ? (targetWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
-      : 0;
-  const columnSpacing =
-    columnCount > 1 ? Math.max(MIN_COLUMN_SPACING, rawSpacing) : 0;
-
-  const svgWidth =
-    CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * Math.max(columnCount - 1, 0);
-
   const nodesByColumn = columns.map((column) =>
     filteredNodes.filter((node) => node.column === column)
   );
+
+  const columnCount = columns.length || 1;
+  const spanCount = Math.max(columnCount - 1, 1);
+  const maxNodesInColumn = nodesByColumn.reduce(
+    (max, nodes) => Math.max(max, nodes.length),
+    0
+  );
+  const baseSpacing =
+    MIN_COLUMN_SPACING + Math.max(0, maxNodesInColumn - 4) * 24;
+
+  const minWidth =
+    HORIZONTAL_PADDING * 2 +
+    NODE_WIDTH +
+    Math.max(columnCount - 1, 0) * baseSpacing;
+  const measuredWidth = containerWidth || 0;
+  const targetWidth = Math.max(minWidth, measuredWidth, MIN_CHART_WIDTH);
+
+  const columnSpacing =
+    columnCount > 1
+      ? Math.max(
+          baseSpacing,
+          (targetWidth - HORIZONTAL_PADDING * 2 - NODE_WIDTH) / spanCount
+        )
+      : 0;
+
+  const svgWidth =
+    HORIZONTAL_PADDING * 2 +
+    NODE_WIDTH +
+    columnSpacing * Math.max(columnCount - 1, 0);
 
   const columnTotals = nodesByColumn.map((nodes) =>
     nodes.reduce((sum, node) => sum + Math.max(Number(node.value) || 0, 0), 0)
@@ -77,9 +89,10 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     return Math.max(max, required);
   }, 0);
 
-  const baseAvailableHeight = Math.max(height - CHART_PADDING, 120);
+  const verticalPadding = TOP_PADDING + BOTTOM_PADDING;
+  const baseAvailableHeight = Math.max(height - verticalPadding, 120);
   const availableHeight = Math.max(baseAvailableHeight, minHeightNeeded);
-  const svgHeight = availableHeight + CHART_PADDING;
+  const svgHeight = availableHeight + verticalPadding;
   const valueScale = availableHeight / maxColumnTotal;
 
   const layout = {};
@@ -94,13 +107,13 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
       heights.reduce((sum, h) => sum + h, 0) +
       (sortedNodes.length - 1) * NODE_GAP;
     let yOffset =
-      Math.max((availableHeight - totalHeight) / 2, 0) + CHART_PADDING / 2;
+      TOP_PADDING + Math.max((availableHeight - totalHeight) / 2, 0);
     sortedNodes.forEach((node, idx) => {
       layout[node.id] = {
         ...node,
         width: NODE_WIDTH,
         height: heights[idx],
-        x: CHART_PADDING + columnIndex * columnSpacing,
+        x: HORIZONTAL_PADDING + columnIndex * columnSpacing,
         y: yOffset,
       };
       yOffset += heights[idx] + NODE_GAP;
@@ -131,8 +144,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
       flowOffsets[link.source] = sourceOffset;
       flowOffsets[link.target] = targetOffset;
 
-      const x1 = source.x + Math.max(source.width - LINK_OFFSET, 0);
-      const x2 = target.x + Math.min(LINK_OFFSET, target.width || LINK_OFFSET);
+      const x1 = source.x + source.width;
+      const x2 = target.x;
       const curvature = (x2 - x1) * 0.5;
 
       const path = `
@@ -149,9 +162,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           fill="none"
           stroke={link.color || "rgba(255,255,255,0.25)"}
           strokeWidth={thickness}
-          strokeOpacity={0.85}
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          strokeOpacity={0.75}
         />
       );
     })
@@ -208,7 +219,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   });
 
   return (
-    <div ref={containerRef} className="w-full overflow-x-auto">
+    <div ref={containerRef} className="w-full overflow-x-auto overflow-y-visible">
       <svg
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         width={svgWidth}
