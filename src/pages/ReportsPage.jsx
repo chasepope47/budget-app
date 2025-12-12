@@ -60,8 +60,8 @@ function ReportsPage({
       0
     );
     const baseHeight = 420 + Math.max(0, maxNodesInColumn - 3) * 80;
-    return baseHeight * (Number(safeConfig.chartScale) || 1);
-  }, [data?.nodes, safeConfig.chartScale]);
+    return baseHeight;
+  }, [data?.nodes]);
 
   const handleSelectChange =
     (field) =>
@@ -90,8 +90,7 @@ function ReportsPage({
             {data?.timeframeLabel || "All time"}
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2 text-xs">
+        <div className="flex flex-wrap gap-2 text-xs items-end">
           <label className="flex flex-col gap-1">
             <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
               Date range
@@ -143,28 +142,6 @@ function ReportsPage({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 min-w-[160px]">
-            <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
-              Chart height
-            </span>
-            <div className="flex flex-col bg-slate-900/80 border border-slate-700 rounded-md px-3 py-2">
-              <input
-                type="range"
-                min="1"
-                max="2.5"
-                step="0.1"
-                value={safeConfig.chartScale}
-                onChange={(e) =>
-                  onUpdateConfig({ chartScale: Number(e.target.value) })
-                }
-                className="w-full accent-cyan-400"
-              />
-              <span className="text-[0.65rem] text-slate-400">
-                {safeConfig.chartScale.toFixed(1)}× height
-              </span>
-            </div>
-          </label>
-
           <button
             type="button"
             onClick={handleResetConfig}
@@ -172,6 +149,13 @@ function ReportsPage({
           >
             Reset
           </button>
+
+          <div className="mt-auto">
+            <ReportSettingsMenu
+              config={safeConfig}
+              handleToggleChange={handleToggleChange}
+            />
+          </div>
         </div>
       </div>
 
@@ -214,40 +198,6 @@ function ReportsPage({
         </div>
       </Card>
 
-      <Card title="REPORT SETTINGS">
-        <div className="grid md:grid-cols-2 gap-3 text-xs">
-          <Toggle
-            label="Show income sources"
-            description="Break the left column into individual income categories."
-            checked={safeConfig.showIncomeBreakdown}
-            onChange={handleToggleChange("showIncomeBreakdown")}
-          />
-          <Toggle
-            label="Show expense categories"
-            description="Split outflows by category instead of a single block."
-            checked={safeConfig.showExpenseBreakdown}
-            onChange={handleToggleChange("showExpenseBreakdown")}
-          />
-          <Toggle
-            label="Show savings node"
-            description="Reserve a lane for leftover cash / savings."
-            checked={safeConfig.showSavingsNode}
-            onChange={handleToggleChange("showSavingsNode")}
-          />
-          <Toggle
-            label="Show goal breakdown"
-            description="Flow savings into your top planned goals."
-            checked={safeConfig.showGoalFlows}
-            onChange={handleToggleChange("showGoalFlows")}
-          />
-          <Toggle
-            label="Show transfer summary"
-            description="Mention how much was classified as transfers vs withdrawals."
-            checked={safeConfig.showTransferSummary}
-            onChange={handleToggleChange("showTransferSummary")}
-          />
-        </div>
-      </Card>
     </div>
   );
 }
@@ -282,6 +232,108 @@ function Toggle({ label, description, checked, onChange }) {
         <span className="text-xs text-slate-500">{description}</span>
       </span>
     </label>
+  );
+}
+
+function ReportSettingsMenu({ config, handleToggleChange }) {
+  const [open, setOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
+  const buttonRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handleClick = (event) => {
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(event.target) &&
+        buttonRef.current &&
+        !buttonRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        ref={buttonRef}
+        onClick={() => setOpen((prev) => !prev)}
+        className="inline-flex items-center gap-2 rounded-md border border-slate-600 bg-slate-900/70 px-3 py-2 text-xs font-semibold text-slate-100 hover:border-cyan-400 hover:text-cyan-200 transition"
+      >
+        Report settings
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 12 12"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <path
+            d="M3 4.5L6 7.5L9 4.5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open ? (
+        <div
+          ref={menuRef}
+          className="absolute right-0 z-10 mt-2 w-80 rounded-xl border border-slate-800/80 bg-slate-950/95 p-3 shadow-2xl backdrop-blur"
+        >
+          <p className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
+            Report settings
+          </p>
+          <div className="mt-3 space-y-2 text-xs">
+            <Toggle
+              label="Show income sources"
+              description="Break the left column into individual income categories."
+              checked={config.showIncomeBreakdown}
+              onChange={handleToggleChange("showIncomeBreakdown")}
+            />
+            <Toggle
+              label="Show expense categories"
+              description="Split outflows by category instead of a single block."
+              checked={config.showExpenseBreakdown}
+              onChange={handleToggleChange("showExpenseBreakdown")}
+            />
+            <Toggle
+              label="Show savings node"
+              description="Reserve a lane for leftover cash / savings."
+              checked={config.showSavingsNode}
+              onChange={handleToggleChange("showSavingsNode")}
+            />
+            <Toggle
+              label="Show goal breakdown"
+              description="Flow savings into your top planned goals."
+              checked={config.showGoalFlows}
+              onChange={handleToggleChange("showGoalFlows")}
+            />
+            <Toggle
+              label="Show transfer summary"
+              description="Mention how much was classified as transfers vs withdrawals."
+              checked={config.showTransferSummary}
+              onChange={handleToggleChange("showTransferSummary")}
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

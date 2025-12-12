@@ -13,10 +13,13 @@ const MIN_CHART_WIDTH = 640;
 const LABEL_BLOCK_HEIGHT_NO_SUB = 48;
 const LABEL_BLOCK_HEIGHT_WITH_SUB = 64;
 const NODE_INNER_PADDING = 12;
+const PHONE_WIDTH_CUTOFF = 520;
+const MIN_EFFECTIVE_TEXT_PX = 8;
 
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(null);
+  const [hover, setHover] = React.useState(null);
 
   React.useEffect(() => {
     if (!containerRef.current || typeof ResizeObserver === "undefined") return;
@@ -30,6 +33,9 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
+  const canHover =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(hover: hover) and (pointer: fine)")?.matches;
 
   const filteredNodes = (nodes || []).filter(
     (node) => Number.isFinite(Number(node.value)) && Number(node.value) >= 0
@@ -64,8 +70,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     HORIZONTAL_PADDING * 2 +
     NODE_WIDTH +
     Math.max(columnCount - 1, 0) * baseSpacing;
-  const measuredWidth = containerWidth || 0;
-  const targetWidth = Math.max(MIN_CHART_WIDTH, minWidth, measuredWidth);
+  const targetWidth = Math.max(MIN_CHART_WIDTH, minWidth);
 
   const columnSpacing =
     columnCount > 1
@@ -183,7 +188,25 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     const subtitle = node.subtitle || "";
     const canShowSubtitle = box.height >= LABEL_BLOCK_HEIGHT_WITH_SUB;
     return (
-      <g key={node.id}>
+      <g
+        key={node.id}
+        onMouseMove={(e) => {
+          if (!canHover) return;
+          const svgRect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
+          if (!svgRect) return;
+          setHover({
+            x: e.clientX - svgRect.left,
+            y: e.clientY - svgRect.top,
+            title: label,
+            value: formatCurrency(node.value || 0),
+            subtitle: subtitle || null,
+          });
+        }}
+        onMouseLeave={() => {
+          if (!canHover) return;
+          setHover(null);
+        }}
+      >
         <rect
           x={box.x}
           y={box.y}
@@ -229,22 +252,47 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
 
   const availableWidth = containerWidth || svgWidth;
   const scale =
-    availableWidth < svgWidth ? Math.max(0.3, availableWidth / svgWidth) : 1;
+    availableWidth < svgWidth ? Math.max(0.4, availableWidth / svgWidth) : 1;
+  const prefersReducedMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
   const scaledHeight = svgHeight * scale;
+
+  const isPhoneWidth =
+    typeof containerWidth === "number" && containerWidth <= PHONE_WIDTH_CUTOFF;
+  const effectiveLabelPx = 10 * scale;
+  const effectiveValuePx = 11 * scale;
+  const useCompact =
+    isPhoneWidth ||
+    effectiveLabelPx < MIN_EFFECTIVE_TEXT_PX ||
+    effectiveValuePx < MIN_EFFECTIVE_TEXT_PX;
+
+  if (useCompact) {
+    return (
+      <div ref={containerRef} className="w-full">
+        <CompactFlowList nodes={nodes} links={links} />
+      </div>
+    );
+  }
 
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-visible"
-      style={{ height: scaledHeight }}
+      className="w-full overflow-hidden flex justify-center"
+      style={{
+        height: scaledHeight,
+        transition: prefersReducedMotion ? "none" : "height 180ms ease",
+      }}
     >
       <div
-        className="vizScale"
+        className="vizScale relative"
         style={{
           width: svgWidth,
           height: svgHeight,
-          transformOrigin: "top left",
+          transformOrigin: "top center",
           transform: `scale(${scale})`,
+          transition: prefersReducedMotion ? "none" : "transform 180ms ease",
+          willChange: "transform",
         }}
       >
         <svg
@@ -264,9 +312,202 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           {renderLinks}
           {renderNodes}
         </svg>
+        {hover ? (
+          <div
+            className="absolute pointer-events-none z-20 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-slate-100 shadow-lg"
+            style={{
+              left: Math.min(hover.x + 12, svgWidth - 220),
+              top: Math.max(hover.y + 12, 8),
+              width: 210,
+            }}
+          >
+            <div className="font-semibold truncate">{hover.title}</div>
+            <div className="mt-1 font-bold">{hover.value}</div>
+            {hover.subtitle ? (
+              <div className="mt-1 text-slate-300 truncate">{hover.subtitle}</div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
 
 export default FlowSankey;
+
+function CompactFlowList({ nodes = [], links = [] }) {
+  const safeNodes = (nodes || []).filter(
+    (n) => Number.isFinite(Number(n.value)) && Number(n.value) >= 0
+  );
+  const [openId, setOpenId] = React.useState(null);
+
+  const outBySource = React.useMemo(() => {
+    const map = {};
+    (links || []).forEach((l) => {
+      const v = Number(l.value) || 0;
+      if (v <= 0) return;
+      if (!map[l.source]) map[l.source] = [];
+      map[l.source].push({ ...l, value: v });
+    });
+    Object.keys(map).forEach((key) => {
+      map[key].sort((a, b) => b.value - a.value);
+    });
+    return map;
+  }, [links]);
+
+  const inByTarget = React.useMemo(() => {
+    const map = {};
+    (links || []).forEach((l) => {
+      const v = Number(l.value) || 0;
+      if (v <= 0) return;
+      if (!map[l.target]) map[l.target] = [];
+      map[l.target].push({ ...l, value: v });
+    });
+    Object.keys(map).forEach((key) => {
+      map[key].sort((a, b) => b.value - a.value);
+    });
+    return map;
+  }, [links]);
+
+  const nodeById = React.useMemo(() => {
+    const map = {};
+    safeNodes.forEach((n) => {
+      map[n.id] = n;
+    });
+    return map;
+  }, [safeNodes]);
+
+  if (!safeNodes.length) return null;
+
+  const columns = Array.from(new Set(safeNodes.map((n) => n.column ?? 0))).sort(
+    (a, b) => a - b
+  );
+
+  const byColumn = columns.map((col) => ({
+    col,
+    nodes: safeNodes
+      .filter((n) => (n.column ?? 0) === col)
+      .slice()
+      .sort((a, b) => Number(b.value) - Number(a.value)),
+  }));
+
+  const outTotals = {};
+  (links || []).forEach((l) => {
+    const v = Number(l.value) || 0;
+    if (!outTotals[l.source]) outTotals[l.source] = 0;
+    outTotals[l.source] += v;
+  });
+
+  return (
+    <div className="w-full max-h-[70vh] overflow-y-auto space-y-3 pr-1">
+      {byColumn.map(({ col, nodes: columnNodes }) => (
+        <div
+          key={`col-${col}`}
+          className="rounded-xl border border-slate-800 bg-slate-900/30 p-3"
+        >
+          <div className="sticky top-0 z-10 -mx-3 mb-2 px-3 py-2 text-xs font-semibold text-slate-200 bg-slate-950/80 backdrop-blur border-b border-slate-800">
+            Column {col + 1}
+          </div>
+          <div className="space-y-2">
+            {columnNodes.map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() =>
+                  setOpenId((current) => (current === n.id ? null : n.id))
+                }
+                className="w-full text-left rounded-lg border border-slate-800 bg-slate-950/40 p-3"
+                aria-expanded={openId === n.id}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-100 truncate">
+                      {n.label || "Node"}
+                    </div>
+                    {n.subtitle ? (
+                      <div className="text-xs text-slate-400 truncate">
+                        {n.subtitle}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-bold text-slate-100">
+                      {formatCurrency(n.value || 0)}
+                    </div>
+                    {outTotals[n.id] ? (
+                      <div className="text-[11px] text-slate-400">
+                        Out: {formatCurrency(outTotals[n.id])}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                {openId === n.id && (
+                  <div className="mt-2 space-y-2 text-xs text-slate-300">
+                    {!!(inByTarget[n.id]?.length) && (
+                      <div>
+                        <div className="mb-1 font-semibold text-slate-200">
+                          Incoming
+                        </div>
+                        <div className="space-y-1">
+                          {inByTarget[n.id].slice(0, 5).map((l, idx) => (
+                            <div
+                              key={`in-${idx}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span className="truncate">
+                                {nodeById[l.source]?.label || l.source}
+                              </span>
+                              <span className="shrink-0">
+                                {formatCurrency(l.value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {!!(outBySource[n.id]?.length) && (
+                      <div>
+                        <div className="mb-1 font-semibold text-slate-200">
+                          Outgoing
+                        </div>
+                        <div className="space-y-1">
+                          {outBySource[n.id].slice(0, 5).map((l, idx) => (
+                            <div
+                              key={`out-${idx}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span className="truncate">
+                                {nodeById[l.target]?.label || l.target}
+                              </span>
+                              <span className="shrink-0">
+                                {formatCurrency(l.value)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div
+                  className="mt-2 h-1.5 w-full rounded-full bg-slate-800"
+                  aria-hidden="true"
+                >
+                  <div
+                    className="h-1.5 rounded-full"
+                    style={{
+                      width: "100%",
+                      background: n.color || "#64748b",
+                      opacity: 0.55,
+                    }}
+                  />
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
