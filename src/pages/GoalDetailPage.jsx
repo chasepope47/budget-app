@@ -1,8 +1,13 @@
 import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
+import GoalActionsMenu from "../components/GoalActionsMenu.jsx";
 
-function GoalDetailPage({ goal, onEditGoal = () => {}, onDeleteGoal = () => {} }) {
+function GoalDetailPage({
+  goal,
+  onEditGoal = () => {},
+  onDeleteGoal = () => {},
+}) {
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
   const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
@@ -12,16 +17,27 @@ function GoalDetailPage({ goal, onEditGoal = () => {}, onDeleteGoal = () => {} }
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">{displayEmoji}</span>
-          <h1 className="text-xl font-semibold text-slate-100">
-            {displayName}
-          </h1>
+      <header className="flex items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{displayEmoji}</span>
+            <div>
+              <h1 className="text-xl font-semibold text-slate-100">
+                {displayName}
+              </h1>
+              <p className="text-xs text-slate-400">
+                Personalized goal view – future: themed backgrounds & animations.
+              </p>
+            </div>
+          </div>
         </div>
-        <p className="text-xs text-slate-400">
-          Personalized goal view – future: themed backgrounds & animations.
-        </p>
+        <GoalActionsMenu
+          onEdit={() => onEditGoal(goal?.id)}
+          onDelete={() => {
+            if (!goal?.id) return;
+            onDeleteGoal(goal.id);
+          }}
+        />
       </header>
 
       <Card title="PROGRESS">
@@ -51,28 +67,6 @@ function GoalDetailPage({ goal, onEditGoal = () => {}, onDeleteGoal = () => {} }
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <button className="px-3 py-1.5 text-xs rounded-md border border-pink-400/70 text-pink-200 bg-pink-500/10 hover:bg-pink-500/20 transition">
             Add Contribution
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1.5 rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition"
-            onClick={() => onEditGoal(goal?.id)}
-          >
-            Edit Goal
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1.5 rounded-md border border-rose-500/60 text-rose-200 hover:border-rose-400 transition"
-            onClick={() => {
-              if (!goal?.id) return;
-              const confirmed = window.confirm(
-                `Delete goal "${goal.name || "this goal"}"?`
-              );
-              if (confirmed) {
-                onDeleteGoal(goal.id);
-              }
-            }}
-          >
-            Delete Goal
           </button>
         </div>
       </Card>
