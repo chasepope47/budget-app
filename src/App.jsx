@@ -15,7 +15,6 @@ import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
 import GoalEditorModal from "./components/GoalEditorModal.jsx";
 import ContributionModal from "./components/ContributionModal.jsx";
-import ThemeSelector from "./components/ThemeSelector.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -1152,8 +1151,6 @@ function App() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
-            <ThemeSelector value={theme} onChange={setTheme} />
-
             {navOrder.map((pageKey) => (
               <NavButton
                 key={pageKey}
@@ -1175,6 +1172,8 @@ function App() {
               setCustomizeMode={setCustomizeMode}
               onReset={handleResetAllData}
               onSignOut={signOut}
+              themeValue={theme}
+              onChangeTheme={setTheme}
             />
           </div>
         </div>

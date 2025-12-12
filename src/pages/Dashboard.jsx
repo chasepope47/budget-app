@@ -49,6 +49,15 @@ function Dashboard({
       ? sectionsOrder
       : DEFAULT_DASHBOARD_SECTIONS;
 
+  const hasAccountTransactions =
+    Array.isArray(transactions) && transactions.length > 0;
+  const [showAccountTransactions, setShowAccountTransactions] =
+    React.useState(false);
+
+  React.useEffect(() => {
+    setShowAccountTransactions(false);
+  }, [transactions]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -172,55 +181,73 @@ function Dashboard({
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
-                <BankImportCard onTransactionsParsed={onCsvImported} />
+                <BankImportCard
+                  onTransactionsParsed={(rows, raw) => {
+                    setShowAccountTransactions(false);
+                    onCsvImported(rows, raw);
+                  }}
+                />
 
-                {Array.isArray(transactions) && transactions.length > 0 && (
-                  <div className="mt-4">
-                    <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400 mb-2">
-                      Parsed Transactions
-                    </h3>
-
-                    <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
-                      <table className="w-full text-xs text-left">
-                        <thead className="bg-slate-900 text-slate-300">
-                          <tr>
-                            <th className="px-2 py-1">Date</th>
-                            <th className="px-2 py-1">Description</th>
-                            <th className="px-2 py-1">Category</th>
-                            <th className="px-2 py-1 text-right">Amount</th>
-                          </tr>
-                        </thead>
-
-                        <tbody className="divide-y divide-slate-800">
-                          {transactions.map((tx, idx) => (
-                            <tr key={idx} className="hover:bg-slate-900/70">
-                              <td className="px-2 py-1 text-slate-300">
-                                {tx.date || "-"}
-                              </td>
-                              <td className="px-2 py-1 text-slate-200">
-                                {tx.description || "-"}
-                              </td>
-                              <td className="px-2 py-1 text-slate-300">
-                                {tx.category || "Other"}
-                              </td>
-                              <td
-                                className={`px-2 py-1 text-right ${
-                                  typeof tx.amount === "number" &&
-                                  tx.amount < 0
-                                    ? "text-rose-300"
-                                    : "text-emerald-300"
-                                }`}
-                              >
-                                {typeof tx.amount !== "number" ||
-                                Number.isNaN(tx.amount)
-                                  ? "-"
-                                  : `$${tx.amount.toFixed(2)}`}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                {hasAccountTransactions && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                        Current account transactions
+                      </h3>
+                      <button
+                        type="button"
+                        className="text-[0.7rem] px-2 py-1 rounded-md border border-slate-600 text-slate-200 hover:border-cyan-400 transition"
+                        onClick={() =>
+                          setShowAccountTransactions((prev) => !prev)
+                        }
+                      >
+                        {showAccountTransactions ? "Hide" : "Show"}
+                      </button>
                     </div>
+
+                    {showAccountTransactions && (
+                      <div className="max-h-64 overflow-auto border border-slate-800 rounded-lg">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-900 text-slate-300">
+                            <tr>
+                              <th className="px-2 py-1">Date</th>
+                              <th className="px-2 py-1">Description</th>
+                              <th className="px-2 py-1">Category</th>
+                              <th className="px-2 py-1 text-right">Amount</th>
+                            </tr>
+                          </thead>
+
+                          <tbody className="divide-y divide-slate-800">
+                            {transactions.map((tx, idx) => (
+                              <tr key={idx} className="hover:bg-slate-900/70">
+                                <td className="px-2 py-1 text-slate-300">
+                                  {tx.date || "-"}
+                                </td>
+                                <td className="px-2 py-1 text-slate-200">
+                                  {tx.description || "-"}
+                                </td>
+                                <td className="px-2 py-1 text-slate-300">
+                                  {tx.category || "Other"}
+                                </td>
+                                <td
+                                  className={`px-2 py-1 text-right ${
+                                    typeof tx.amount === "number" &&
+                                    tx.amount < 0
+                                      ? "text-rose-300"
+                                      : "text-emerald-300"
+                                  }`}
+                                >
+                                  {typeof tx.amount !== "number" ||
+                                  Number.isNaN(tx.amount)
+                                    ? "-"
+                                    : `$${tx.amount.toFixed(2)}`}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </Card>

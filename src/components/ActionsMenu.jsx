@@ -1,6 +1,14 @@
 import React, { useState } from "react";
+import ThemeSelector from "./ThemeSelector.jsx";
 
-function ActionsMenu({ customizeMode, setCustomizeMode, onReset, onSignOut }) {
+function ActionsMenu({
+  customizeMode,
+  setCustomizeMode,
+  onReset,
+  onSignOut,
+  themeValue,
+  onChangeTheme = () => {},
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -30,12 +38,21 @@ function ActionsMenu({ customizeMode, setCustomizeMode, onReset, onSignOut }) {
       </button>
 
       <div
-        className={`absolute right-0 mt-2 w-44 bg-[#0B0C14] border border-slate-700/70 rounded-lg shadow-lg z-50 text-xs origin-top-right transform transition-all duration-150 ${
+        className={`absolute right-0 mt-2 w-52 bg-[#0B0C14] border border-slate-700/70 rounded-lg shadow-lg z-50 text-xs origin-top-right transform transition-all duration-150 ${
           open
             ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
             : "opacity-0 scale-95 -translate-y-1 pointer-events-none"
         }`}
       >
+        <div className="px-2 py-2 border-b border-slate-800/70">
+          <ThemeSelector
+            value={themeValue}
+            onChange={onChangeTheme}
+            variant="menu"
+            onAfterSelect={() => setOpen(false)}
+          />
+        </div>
+
         <button
           type="button"
           className="w-full text-left px-3 py-2 hover:bg-slate-800/80 text-slate-200"
