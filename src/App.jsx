@@ -61,6 +61,28 @@ const DASHBOARD_SECTION_LABELS = {
   csvImport: "CSV Import",
 };
 
+function normalizeNavOrder(order) {
+  const defaults = NAV_ITEMS.map((n) => n.key);
+  if (!Array.isArray(order) || !order.length) return defaults;
+  const cleaned = order.filter((key) => defaults.includes(key));
+  const missing = defaults.filter((key) => !cleaned.includes(key));
+  return [...cleaned, ...missing];
+}
+
+function normalizeDashboardSections(order) {
+  if (
+    !Array.isArray(order) ||
+    !order.length
+  ) {
+    return DEFAULT_DASHBOARD_SECTIONS;
+  }
+  const cleaned = order.filter((key) => key in DASHBOARD_SECTION_LABELS);
+  const missing = DEFAULT_DASHBOARD_SECTIONS.filter(
+    (key) => !cleaned.includes(key)
+  );
+  return [...cleaned, ...missing];
+}
+
 // ----- Defaults -----
 const EMPTY_BUDGET = {
   month: "2025-01",
@@ -387,17 +409,11 @@ function App() {
   );
 
   const [navOrder, setNavOrder] = useState(
-    stored?.navOrder && stored.navOrder.length
-      ? stored.navOrder
-      : NAV_ITEMS.map((n) => n.key)
+    normalizeNavOrder(stored?.navOrder)
   );
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
-    stored?.dashboardSectionsOrder &&
-      Array.isArray(stored.dashboardSectionsOrder) &&
-      stored.dashboardSectionsOrder.length
-      ? stored.dashboardSectionsOrder
-      : DEFAULT_DASHBOARD_SECTIONS
+    normalizeDashboardSections(stored?.dashboardSectionsOrder)
   );
   const [customizeMode, setCustomizeMode] = useState(false);
   const [currentPage, setCurrentPage] = useState(
@@ -461,13 +477,15 @@ function App() {
         setAccounts(normalizeAccounts(remote.accounts || []));
       if (remote.currentAccountId) setCurrentAccountId(remote.currentAccountId);
       if (remote.selectedGoalId) setSelectedGoalId(remote.selectedGoalId);
-      if (remote.navOrder) setNavOrder(remote.navOrder);
+      if (remote.navOrder) setNavOrder(normalizeNavOrder(remote.navOrder));
       if (remote.homePage) {
         setHomePage(remote.homePage);
         setCurrentPage(remote.homePage);
       }
       if (remote.dashboardSectionsOrder)
-        setDashboardSectionsOrder(remote.dashboardSectionsOrder);
+        setDashboardSectionsOrder(
+          normalizeDashboardSections(remote.dashboardSectionsOrder)
+        );
       if (remote.theme) setTheme(remote.theme);
     } catch (err) {
       console.error("Failed to apply remote user state", err);
@@ -605,7 +623,7 @@ function App() {
   }
 
   function handleNavReorder(nextOrder) {
-    setNavOrder(nextOrder);
+    setNavOrder(normalizeNavOrder(nextOrder));
   }
 
   function handleNavMove(index, delta) {
@@ -613,7 +631,7 @@ function App() {
   }
 
   function handleDashboardSectionsReorder(nextOrder) {
-    setDashboardSectionsOrder(nextOrder);
+    setDashboardSectionsOrder(normalizeDashboardSections(nextOrder));
   }
 
   function handleDashboardSectionMove(index, delta) {
@@ -766,30 +784,42 @@ function App() {
   }
 
   async function handleResetAllData() {
-    if (!user || !user.id) return;
-
     const confirmed = window.confirm(
       "This will reset your budget, goals, accounts, and transactions back to empty. Continue?"
     );
     if (!confirmed) return;
 
+    let resetError = null;
     try {
-      await supabase.from("user_state").delete().eq("id", user.id);
-      window.localStorage.removeItem(STORAGE_KEY);
-
-      setBudget(EMPTY_BUDGET);
-      setGoals(EMPTY_GOALS);
-      setAccounts(EMPTY_ACCOUNTS);
-      setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
-      setSelectedGoalId(null);
-      setNavOrder(NAV_ITEMS.map((n) => n.key));
-      setHomePage("dashboard");
-      setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
-      setCurrentPage("dashboard");
-      setTheme("dark");
+      if (user?.id) {
+        await supabase.from("user_state").delete().eq("id", user.id);
+      }
     } catch (err) {
-      console.error("Failed to reset data:", err);
-      window.alert("Something went wrong resetting your data. Try again.");
+      resetError = err;
+      console.error("Failed to reset remote data:", err);
+    }
+
+    window.localStorage.removeItem(STORAGE_KEY);
+
+    setBudget(EMPTY_BUDGET);
+    setGoals(EMPTY_GOALS);
+    setAccounts(EMPTY_ACCOUNTS);
+    setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
+    setSelectedGoalId(null);
+    setNavOrder(NAV_ITEMS.map((n) => n.key));
+    setHomePage("dashboard");
+    setDashboardSectionsOrder(DEFAULT_DASHBOARD_SECTIONS);
+    setCurrentPage("dashboard");
+    setTheme("dark");
+    setToast({
+      message: "All data reset successfully.",
+      variant: "success",
+    });
+
+    if (resetError) {
+      window.alert(
+        "Remote reset failed, but local data was cleared. Try again later."
+      );
     }
   }
 
