@@ -54,6 +54,12 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "goals",
   "csvImport",
 ];
+const DASHBOARD_SECTION_LABELS = {
+  monthOverview: "Month Overview",
+  accountSnapshot: "Account Snapshot",
+  goals: "Goals",
+  csvImport: "CSV Import",
+};
 
 // ----- Defaults -----
 const EMPTY_BUDGET = {
@@ -576,6 +582,15 @@ function App() {
 
   // ---------- Handlers ----------
 
+  function moveItem(list, index, delta) {
+    const nextIndex = index + delta;
+    if (nextIndex < 0 || nextIndex >= list.length) return list;
+    const copy = [...list];
+    const [item] = copy.splice(index, 1);
+    copy.splice(nextIndex, 0, item);
+    return copy;
+  }
+
   function handleBudgetChange(nextBudget) {
     setBudget(nextBudget);
   }
@@ -593,8 +608,16 @@ function App() {
     setNavOrder(nextOrder);
   }
 
+  function handleNavMove(index, delta) {
+    setNavOrder((prev) => moveItem(prev, index, delta));
+  }
+
   function handleDashboardSectionsReorder(nextOrder) {
     setDashboardSectionsOrder(nextOrder);
+  }
+
+  function handleDashboardSectionMove(index, delta) {
+    setDashboardSectionsOrder((prev) => moveItem(prev, index, delta));
   }
 
   function handleCreateAccountFromCsv({ bankName, accountType, transactions }) {
@@ -839,6 +862,120 @@ function App() {
       </header>
 
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-4 space-y-3">
+        {customizeMode && (
+          <div className="border border-cyan-500/40 rounded-xl bg-cyan-500/5 p-4 space-y-4 shadow-lg">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-cyan-200">
+                  Customize layout
+                </p>
+                <p className="text-xs text-slate-300">
+                  Reorder your navigation tabs and dashboard sections. Changes
+                  are saved automatically.
+                </p>
+              </div>
+              <div className="flex gap-2 text-xs">
+                <span className="px-2 py-1 rounded border border-cyan-400/50 text-cyan-200">
+                  Home page: {NAV_LABELS[homePage] || homePage}
+                </span>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded border border-slate-600/70 text-slate-200 hover:border-slate-400 transition"
+                  onClick={() => setCustomizeMode(false)}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 text-xs">
+              <div className="space-y-2">
+                <p className="uppercase tracking-[0.2em] text-slate-400">
+                  Navigation order
+                </p>
+                <ul className="space-y-2">
+                  {navOrder.map((key, index) => (
+                    <li
+                      key={key}
+                      className="flex items-center justify-between rounded-lg border border-slate-700/70 bg-black/30 px-3 py-2 text-slate-200"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm">{NAV_LABELS[key] || key}</span>
+                        {homePage === key && (
+                          <span className="text-[10px] text-cyan-300">
+                            Home page
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="px-2 py-1 border border-slate-600/70 rounded disabled:opacity-40"
+                          onClick={() => handleNavMove(index, -1)}
+                          disabled={index === 0}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 border border-slate-600/70 rounded disabled:opacity-40"
+                          onClick={() => handleNavMove(index, 1)}
+                          disabled={index === navOrder.length - 1}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 border border-cyan-500/50 rounded text-cyan-200"
+                          onClick={() => handleSetHomePage(key)}
+                        >
+                          Set home
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="space-y-2">
+                <p className="uppercase tracking-[0.2em] text-slate-400">
+                  Dashboard sections
+                </p>
+                <ul className="space-y-2">
+                  {dashboardSectionsOrder.map((key, index) => (
+                    <li
+                      key={key}
+                      className="flex items-center justify-between rounded-lg border border-slate-700/70 bg-black/30 px-3 py-2 text-slate-200"
+                    >
+                      <span className="text-sm">
+                        {DASHBOARD_SECTION_LABELS[key] || key}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="px-2 py-1 border border-slate-600/70 rounded disabled:opacity-40"
+                          onClick={() => handleDashboardSectionMove(index, -1)}
+                          disabled={index === 0}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="px-2 py-1 border border-slate-600/70 rounded disabled:opacity-40"
+                          onClick={() => handleDashboardSectionMove(index, 1)}
+                          disabled={index === dashboardSectionsOrder.length - 1}
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Page Header */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col">
