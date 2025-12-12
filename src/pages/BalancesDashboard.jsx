@@ -1,5 +1,6 @@
 import React from "react";
 import Card from "../components/Card.jsx";
+import { computeNetTransactions } from "../lib/accounts.js";
 
 function BalancesDashboard({
   accounts = [],
@@ -34,7 +35,17 @@ function BalancesDashboard({
 
         {hasAccounts && (
           <div className="space-y-2">
-            {accounts.map((acc) => (
+            {accounts.map((acc) => {
+              const txCount = Array.isArray(acc.transactions)
+                ? acc.transactions.length
+                : 0;
+              const net = computeNetTransactions(acc);
+              const currentBalance =
+                (typeof acc.startingBalance === "number"
+                  ? acc.startingBalance
+                  : 0) + net;
+
+              return (
               <div
                 key={acc.id}
                 className={`flex items-center justify-between gap-3 rounded-md px-3 py-2 text-xs ${
@@ -53,6 +64,19 @@ function BalancesDashboard({
                   />
                   <p className="text-[11px] text-slate-400">
                     Type: {acc.type || "checking"}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    Transactions:{" "}
+                    <span className="text-slate-200">{txCount}</span> · Net:{" "}
+                    <span
+                      className={
+                        currentBalance >= 0
+                          ? "text-emerald-300"
+                          : "text-rose-300"
+                      }
+                    >
+                      ${currentBalance.toFixed(2)}
+                    </span>
                   </p>
                 </div>
 
@@ -90,7 +114,8 @@ function BalancesDashboard({
                   </button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </Card>
