@@ -851,6 +851,32 @@ function App() {
     }
   }
 
+  function handleOpenContribution(goalId) {
+    if (!goalId) return;
+    setContributionModal({ open: true, goalId });
+  }
+
+  function handleAddContribution(amount) {
+    if (!contributionModal.goalId) return;
+    const numeric = Math.max(0, Number(amount) || 0);
+    setGoals((prev) =>
+      prev.map((goal) =>
+        goal.id === contributionModal.goalId
+          ? {
+              ...goal,
+              current: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
+              saved: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
+            }
+          : goal
+      )
+    );
+    setToast({
+      message: `Added $${numeric.toFixed(2)} to your goal.`,
+      variant: "success",
+    });
+    setContributionModal({ open: false, goalId: null });
+  }
+
   function downloadExport(text, name) {
     const blob = new Blob([text], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1436,29 +1462,3 @@ function App() {
 }
 
 export default App;
-    setContributionModal({ open: false, goalId: null });
-  function handleOpenContribution(goalId) {
-    if (!goalId) return;
-    setContributionModal({ open: true, goalId });
-  }
-
-  function handleAddContribution(amount) {
-    if (!contributionModal.goalId) return;
-    const numeric = Math.max(0, Number(amount) || 0);
-    setGoals((prev) =>
-      prev.map((goal) =>
-        goal.id === contributionModal.goalId
-          ? {
-              ...goal,
-              current: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
-              saved: (Number(goal.current ?? goal.saved ?? 0) || 0) + numeric,
-            }
-          : goal
-      )
-    );
-    setToast({
-      message: `Added $${numeric.toFixed(2)} to your goal.`,
-      variant: "success",
-    });
-    setContributionModal({ open: false, goalId: null });
-  }
