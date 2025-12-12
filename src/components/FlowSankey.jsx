@@ -10,6 +10,9 @@ const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
 const MIN_COLUMN_SPACING = 140;
 const MIN_CHART_WIDTH = 640;
+const LABEL_BLOCK_HEIGHT_NO_SUB = 48;
+const LABEL_BLOCK_HEIGHT_WITH_SUB = 64;
+const NODE_INNER_PADDING = 12;
 
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
@@ -62,7 +65,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     NODE_WIDTH +
     Math.max(columnCount - 1, 0) * baseSpacing;
   const measuredWidth = containerWidth || 0;
-  const targetWidth = Math.max(minWidth, measuredWidth, MIN_CHART_WIDTH);
+  const targetWidth = Math.max(MIN_CHART_WIDTH, minWidth, measuredWidth);
 
   const columnSpacing =
     columnCount > 1
@@ -100,9 +103,14 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   nodesByColumn.forEach((columnNodes, columnIndex) => {
     const sortedNodes = columnNodes.slice().sort((a, b) => b.value - a.value);
 
-    const heights = sortedNodes.map((node) =>
-      Math.max(Number(node.value) * valueScale, MIN_NODE_HEIGHT)
-    );
+    const heights = sortedNodes.map((node) => {
+      const hasSub = Boolean(node.subtitle);
+      const labelMin = hasSub
+        ? LABEL_BLOCK_HEIGHT_WITH_SUB
+        : LABEL_BLOCK_HEIGHT_NO_SUB;
+      const minH = Math.max(MIN_NODE_HEIGHT, labelMin + NODE_INNER_PADDING);
+      return Math.max(Number(node.value) * valueScale, minH);
+    });
     const totalHeight =
       heights.reduce((sum, h) => sum + h, 0) +
       (sortedNodes.length - 1) * NODE_GAP;
@@ -173,6 +181,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     if (!box) return null;
     const label = node.label || "Node";
     const subtitle = node.subtitle || "";
+    const canShowSubtitle = box.height >= LABEL_BLOCK_HEIGHT_WITH_SUB;
     return (
       <g key={node.id}>
         <rect
@@ -204,7 +213,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
         >
           {formatCurrency(node.value || 0)}
         </text>
-        {subtitle && (
+        {subtitle && canShowSubtitle && (
           <text
             x={box.x + 12}
             y={box.y + 52}
@@ -218,26 +227,44 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
     );
   });
 
+  const availableWidth = containerWidth || svgWidth;
+  const scale =
+    availableWidth < svgWidth ? Math.max(0.3, availableWidth / svgWidth) : 1;
+  const scaledHeight = svgHeight * scale;
+
   return (
-    <div ref={containerRef} className="w-full overflow-x-auto overflow-y-visible">
-      <svg
-        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-        width={svgWidth}
-        height={svgHeight}
-        role="img"
-        aria-label="Cash flow Sankey chart"
-        className="min-w-full"
-        preserveAspectRatio="xMidYMid meet"
+    <div
+      ref={containerRef}
+      className="w-full overflow-visible"
+      style={{ height: scaledHeight }}
+    >
+      <div
+        className="vizScale"
+        style={{
+          width: svgWidth,
+          height: svgHeight,
+          transformOrigin: "top left",
+          transform: `scale(${scale})`,
+        }}
       >
-        <defs>
-          <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
-            <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
-          </linearGradient>
-        </defs>
-        {renderLinks}
-        {renderNodes}
-      </svg>
+        <svg
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          width={svgWidth}
+          height={svgHeight}
+          role="img"
+          aria-label="Cash flow Sankey chart"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <defs>
+            <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
+              <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
+            </linearGradient>
+          </defs>
+          {renderLinks}
+          {renderNodes}
+        </svg>
+      </div>
     </div>
   );
 }

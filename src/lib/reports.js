@@ -11,6 +11,7 @@ export const DEFAULT_REPORT_CONFIG = {
   showGoalFlows: true,
   showTransferSummary: true,
   maxGroups: 6,
+  chartScale: 1,
 };
 
 const DATE_RANGE_MAP = {

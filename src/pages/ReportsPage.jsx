@@ -59,8 +59,9 @@ function ReportsPage({
       (max, count) => Math.max(max, count),
       0
     );
-    return Math.min(660, 420 + Math.max(0, maxNodesInColumn - 4) * 28);
-  }, [data?.nodes]);
+    const baseHeight = 420 + Math.max(0, maxNodesInColumn - 3) * 80;
+    return baseHeight * (Number(safeConfig.chartScale) || 1);
+  }, [data?.nodes, safeConfig.chartScale]);
 
   const handleSelectChange =
     (field) =>
@@ -142,6 +143,28 @@ function ReportsPage({
             </select>
           </label>
 
+          <label className="flex flex-col gap-1 min-w-[160px]">
+            <span className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
+              Chart height
+            </span>
+            <div className="flex flex-col bg-slate-900/80 border border-slate-700 rounded-md px-3 py-2">
+              <input
+                type="range"
+                min="1"
+                max="2.5"
+                step="0.1"
+                value={safeConfig.chartScale}
+                onChange={(e) =>
+                  onUpdateConfig({ chartScale: Number(e.target.value) })
+                }
+                className="w-full accent-cyan-400"
+              />
+              <span className="text-[0.65rem] text-slate-400">
+                {safeConfig.chartScale.toFixed(1)}× height
+              </span>
+            </div>
+          </label>
+
           <button
             type="button"
             onClick={handleResetConfig}
@@ -179,7 +202,10 @@ function ReportsPage({
           </div>
         </div>
 
-        <div className="-mx-2 rounded-2xl border border-slate-800/70 bg-slate-950/40 px-2 py-3 sm:mx-0">
+        <div
+          className="-mx-2 rounded-2xl border border-slate-800/70 bg-slate-950/40 px-2 py-3 sm:mx-0 pb-8"
+          style={{ minHeight: chartHeight + 64 }}
+        >
           <FlowSankey
             nodes={data?.nodes || []}
             links={data?.links || []}
