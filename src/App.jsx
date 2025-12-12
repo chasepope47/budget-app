@@ -1364,10 +1364,6 @@ function App() {
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
             onCreateAccount={handleCreateEmptyAccount}
-            onViewAccount={(accId) => {
-              setCurrentAccountId(accId);
-              setCurrentPage("transactions");
-            }}
             onDeleteAccount={(accountIdToDelete) => {
               const count = accounts.length;
               if (count <= 1) {

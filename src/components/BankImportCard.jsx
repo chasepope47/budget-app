@@ -6,6 +6,7 @@ import {
   getCsvColumnsForMapping,
   detectBankFromText,
 } from "../lib/csv.js";
+import { parsePdfTransactions } from "../lib/pdf.js";
 
 function BankImportCard({ onTransactionsParsed = () => {} }) {
   const [status, setStatus] = React.useState("");
@@ -30,25 +31,51 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
     setPreviewRows([]);
   }
 
-  function handleFileChange(e) {
+  async function handleFileChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     resetState();
     setFileName(file.name);
-    setStatus("Reading file...");
     setError("");
 
     const lower = (file.name || "").toLowerCase();
+    const isPdf =
+      lower.endsWith(".pdf") || file.type === "application/pdf";
 
-    // PDF guard – we don't process PDFs yet
-    if (lower.endsWith(".pdf")) {
-      setStatus("");
-      setError(
-        "PDF statements aren't supported yet. Export a CSV from your bank's website and upload that instead."
-      );
+    if (isPdf) {
+      setStatus("Extracting transactions from PDF...");
+      try {
+        const { text, rows } = await parsePdfTransactions(file);
+        setRawText(text);
+
+        const bank = detectBankFromText(text, file.name || "");
+        setDetectedBank(bank || "");
+
+        if (!rows.length) {
+          setPreviewRows([]);
+          setStatus("");
+          setError(
+            "We couldn't detect any transactions in that PDF. Try a different export or use CSV."
+          );
+          return;
+        }
+
+        setPreviewRows(rows);
+        setStatus(
+          `Parsed ${rows.length} transactions from PDF. Review the preview below, then import.`
+        );
+      } catch (err) {
+        console.error("PDF parse error:", err);
+        setStatus("");
+        setError(
+          "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
+        );
+      }
       return;
     }
+
+    setStatus("Reading file...");
 
     const reader = new FileReader();
 
@@ -161,7 +188,8 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
     <div className="space-y-2 text-xs">
       <p className="text-slate-400">
         Upload a{" "}
-        <span className="text-cyan-300 font-semibold">.csv</span> bank
+        <span className="text-cyan-300 font-semibold">.csv</span> or{" "}
+        <span className="text-cyan-300 font-semibold">.pdf</span> bank
         statement. We&apos;ll parse basic fields like date, description,
         and amount, then route it into the right account.
       </p>

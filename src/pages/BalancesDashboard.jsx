@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import Card from "../components/Card.jsx";
 import { computeNetTransactions } from "../lib/accounts.js";
 
@@ -10,9 +10,17 @@ function BalancesDashboard({
   onDeleteAccount = () => {},
   onSetAccountBalance = () => {},
   onRenameAccount = () => {},
-  onViewAccount = () => {},
 }) {
   const hasAccounts = Array.isArray(accounts) && accounts.length > 0;
+  const [expandedAccounts, setExpandedAccounts] = useState([]);
+
+  const toggleAccount = (accountId) => {
+    setExpandedAccounts((prev) =>
+      prev.includes(accountId)
+        ? prev.filter((id) => id !== accountId)
+        : [...prev, accountId]
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -46,7 +54,7 @@ function BalancesDashboard({
                   ? acc.startingBalance
                   : 0) + net;
 
-              const previewTransactions = Array.isArray(acc.transactions)
+              const sortedTransactions = Array.isArray(acc.transactions)
                 ? acc.transactions
                     .slice()
                     .filter((tx) => tx && typeof tx === "object")
@@ -60,9 +68,11 @@ function BalancesDashboard({
                       if (!bValid) return -1;
                       return bTime - aTime;
                     })
-                    .slice(0, 3)
                 : [];
+              const previewTransactions = sortedTransactions.slice(0, 3);
               const hasPreviewTransactions = previewTransactions.length > 0;
+              const hasTransactions = sortedTransactions.length > 0;
+              const isExpanded = expandedAccounts.includes(acc.id);
 
               return (
                 <div
@@ -122,11 +132,11 @@ function BalancesDashboard({
                         type="button"
                         onClick={() => {
                           onChangeCurrentAccount(acc.id);
-                          onViewAccount(acc.id);
+                          toggleAccount(acc.id);
                         }}
                         className="px-2 py-0.5 rounded text-[11px] border border-slate-500 hover:border-cyan-400"
                       >
-                        View
+                        {isExpanded ? "Hide" : "View"}
                       </button>
                       <button
                         type="button"
@@ -140,7 +150,7 @@ function BalancesDashboard({
 
                   <div className="border-t border-slate-800/70 pt-2">
                     <p className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
-                      Recent activity
+                      {isExpanded ? "All transactions" : "Recent activity"}
                     </p>
                     {!hasPreviewTransactions && (
                       <p className="mt-1 text-[0.65rem] text-slate-500">
@@ -184,6 +194,55 @@ function BalancesDashboard({
                           );
                         })}
                       </ul>
+                    )}
+
+                    {isExpanded && hasTransactions && (
+                      <div className="mt-2 max-h-72 overflow-auto rounded-md border border-slate-800/50">
+                        <table className="w-full text-[0.7rem] text-left">
+                          <thead className="bg-slate-900 text-slate-300 sticky top-0">
+                            <tr>
+                              <th className="px-2 py-1">Date</th>
+                              <th className="px-2 py-1">Description</th>
+                              <th className="px-2 py-1">Category</th>
+                              <th className="px-2 py-1 text-right">
+                                Amount
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/70">
+                            {sortedTransactions.map((tx, index) => {
+                              const amountValue = Number(tx.amount);
+                              const amountDisplay = Number.isFinite(
+                                amountValue
+                              )
+                                ? `$${amountValue.toFixed(2)}`
+                                : "-";
+                              return (
+                                <tr key={tx.id || `${acc.id}-full-${index}`}>
+                                  <td className="px-2 py-1 text-slate-300">
+                                    {tx.date || "-"}
+                                  </td>
+                                  <td className="px-2 py-1 text-slate-200">
+                                    {tx.description || "Transaction"}
+                                  </td>
+                                  <td className="px-2 py-1 text-slate-400">
+                                    {tx.category || "Other"}
+                                  </td>
+                                  <td
+                                    className={`px-2 py-1 text-right ${
+                                      amountValue < 0
+                                        ? "text-rose-300"
+                                        : "text-emerald-300"
+                                    }`}
+                                  >
+                                    {amountDisplay}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
                 </div>
