@@ -16,6 +16,12 @@ const NODE_INNER_PADDING = 12;
 const PHONE_WIDTH_CUTOFF = 520;
 const MIN_EFFECTIVE_TEXT_PX = 8;
 
+const MONARCH = true;
+const PANEL = "rgba(2,6,23,0.35)";
+const TEXT = "#E2E8F0";
+const SUBTEXT = "#94A3B8";
+const BORDER = "rgba(148,163,184,0.35)";
+
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
   const [containerWidth, setContainerWidth] = React.useState(null);
@@ -173,9 +179,12 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           key={`link-${index}`}
           d={path}
           fill="none"
-          stroke={link.color || "rgba(255,255,255,0.25)"}
+          stroke={link.color || (MONARCH ? "rgba(15,23,42,0.25)" : "rgba(255,255,255,0.25)")}
           strokeWidth={thickness}
-          strokeOpacity={0.75}
+          strokeOpacity={MONARCH ? 0.55 : 0.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          style={{ mixBlendMode: MONARCH ? "multiply" : "normal" }}
         />
       );
     })
@@ -194,9 +203,11 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           if (!canHover) return;
           const svgRect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
           if (!svgRect) return;
+          const scaledX = (e.clientX - svgRect.left) / scale;
+          const scaledY = (e.clientY - svgRect.top) / scale;
           setHover({
-            x: e.clientX - svgRect.left,
-            y: e.clientY - svgRect.top,
+            x: scaledX,
+            y: scaledY,
             title: label,
             value: formatCurrency(node.value || 0),
             subtitle: subtitle || null,
@@ -212,18 +223,20 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           y={box.y}
           width={box.width}
           height={box.height}
-          rx={10}
-          fill="url(#nodeOverlay)"
-          stroke={node.color || "#475569"}
-          strokeWidth={1.5}
+          rx={12}
+          fill={PANEL}
+          stroke={MONARCH ? BORDER : node.color || "#475569"}
+          strokeWidth={MONARCH ? 1 : 1.5}
           style={{
-            fill: `${node.color || "#475569"}20`,
+            filter: MONARCH
+              ? "drop-shadow(0 1px 2px rgba(15,23,42,0.08))"
+              : undefined,
           }}
         />
         <text
           x={box.x + 12}
           y={box.y + 20}
-          fill="#e2e8f0"
+          fill={TEXT}
           style={{ fontSize: "10px" }}
         >
           {label}
@@ -231,7 +244,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
         <text
           x={box.x + 12}
           y={box.y + 38}
-          fill="#f8fafc"
+          fill={TEXT}
           style={{ fontSize: "11px", fontWeight: 600 }}
         >
           {formatCurrency(node.value || 0)}
@@ -240,7 +253,7 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           <text
             x={box.x + 12}
             y={box.y + 52}
-            fill="#94a3b8"
+            fill={SUBTEXT}
             style={{ fontSize: "10px" }}
           >
             {subtitle}
@@ -251,8 +264,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   });
 
   const availableWidth = containerWidth || svgWidth;
-  const scale =
-    availableWidth < svgWidth ? Math.max(0.4, availableWidth / svgWidth) : 1;
+  const scaleRaw = availableWidth / svgWidth;
+  const scale = Math.min(scaleRaw, 1);
   const prefersReducedMotion =
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -278,57 +291,100 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   return (
     <div
       ref={containerRef}
-      className="w-full overflow-hidden flex justify-center"
+      className="w-full overflow-hidden relative"
       style={{
         height: scaledHeight,
         transition: prefersReducedMotion ? "none" : "height 180ms ease",
       }}
     >
-      <div
-        className="vizScale relative"
-        style={{
-          width: svgWidth,
-          height: svgHeight,
-          transformOrigin: "top center",
-          transform: `scale(${scale})`,
-          transition: prefersReducedMotion ? "none" : "transform 180ms ease",
-          willChange: "transform",
-        }}
+      <svg
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        width="100%"
+        height="100%"
+        role="img"
+        aria-label="Cash flow Sankey chart"
+        preserveAspectRatio="xMidYMid meet"
       >
-        <svg
-          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-          width={svgWidth}
-          height={svgHeight}
-          role="img"
-          aria-label="Cash flow Sankey chart"
-          preserveAspectRatio="xMidYMid meet"
+        <defs>
+          <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
+            <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
+          </linearGradient>
+        </defs>
+        {columns.map((col, idx) => {
+          const x = HORIZONTAL_PADDING + idx * columnSpacing;
+          return (
+            <rect
+              key={`band-${col}`}
+              x={x}
+              y={TOP_PADDING - 8}
+              width={NODE_WIDTH}
+              height={availableHeight + 16}
+              rx={12}
+              fill={
+                layout[nodesByColumn[idx]?.[0]?.id]?.color ||
+                (MONARCH ? "#E2E8F0" : "#94A3B8")
+              }
+              opacity={MONARCH ? 0.08 : 0.06}
+            />
+          );
+        })}
+        {columns.map((col, idx) => {
+          const x = HORIZONTAL_PADDING + idx * columnSpacing;
+          const name =
+            idx === 0
+              ? "Income"
+              : idx === 1
+              ? "Cash Flow"
+              : idx === 2
+              ? "Spending"
+              : `Column ${idx + 1}`;
+          return (
+            <text
+              key={`colhead-${col}`}
+              x={x}
+              y={TOP_PADDING - 14}
+              fill="#CBD5F5"
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+              }}
+            >
+              {name.toUpperCase()}
+            </text>
+          );
+        })}
+        {renderLinks}
+        {renderNodes}
+      </svg>
+      {hover ? (
+        <div
+          className="absolute pointer-events-none z-20 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-slate-100 shadow-lg"
+          style={{
+            left: Math.min(
+              hover.x * scale + 12,
+              Math.max(
+                (typeof containerWidth === "number"
+                  ? containerWidth
+                  : svgWidth * scale) - 220,
+                0
+              )
+            ),
+            top: Math.min(
+              hover.y * scale + 12,
+              Math.max(scaledHeight - 90, 8)
+            ),
+            width: 210,
+          }}
         >
-          <defs>
-            <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
-              <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
-            </linearGradient>
-          </defs>
-          {renderLinks}
-          {renderNodes}
-        </svg>
-        {hover ? (
-          <div
-            className="absolute pointer-events-none z-20 rounded-lg border border-slate-700 bg-slate-950/90 px-3 py-2 text-xs text-slate-100 shadow-lg"
-            style={{
-              left: Math.min(hover.x + 12, svgWidth - 220),
-              top: Math.max(hover.y + 12, 8),
-              width: 210,
-            }}
-          >
-            <div className="font-semibold truncate">{hover.title}</div>
-            <div className="mt-1 font-bold">{hover.value}</div>
-            {hover.subtitle ? (
-              <div className="mt-1 text-slate-300 truncate">{hover.subtitle}</div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+          <div className="font-semibold truncate">{hover.title}</div>
+          <div className="mt-1 font-bold">{hover.value}</div>
+          {hover.subtitle ? (
+            <div className="mt-1 text-slate-300 truncate">{hover.subtitle}</div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

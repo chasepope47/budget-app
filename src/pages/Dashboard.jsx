@@ -5,6 +5,7 @@ import NeonProgressBar from "../components/NeonProgressBar.jsx";
 import GoalCard from "../components/GoalCard.jsx";
 import BankImportCard from "../components/BankImportCard.jsx";
 import Stat from "../components/Stat.jsx";
+import FlowSankey from "../components/FlowSankey.jsx";
 import { formatMoney, formatPercent } from "../utils/format.js";
 
 const DEFAULT_DASHBOARD_SECTIONS = [
@@ -12,6 +13,7 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "accountSnapshot",
   "goals",
   "csvImport",
+  "flow",
 ];
 function Dashboard({
   month = "",
@@ -252,6 +254,97 @@ function Dashboard({
                 )}
               </Card>
             );
+
+          // ----------------------------------------
+          // MONEY FLOW
+          // ----------------------------------------
+          case "flow": {
+            const flowNodes = [
+              {
+                id: "income",
+                label: "Total Income",
+                value: safeIncome,
+                column: 0,
+                color: "#38bdf8",
+              },
+              {
+                id: "flow",
+                label: "Cash Flow",
+                value: Math.max(
+                  safeIncome,
+                  safeFixed + safeVariable + Math.max(safeLeftover, 0)
+                ),
+                column: 1,
+                color: "#22d3ee",
+              },
+              {
+                id: "fixed",
+                label: "Fixed Expenses",
+                value: safeFixed,
+                column: 2,
+                color: "#fb7185",
+              },
+              {
+                id: "variable",
+                label: "Variable Spending",
+                value: safeVariable,
+                column: 2,
+                color: "#fbbf24",
+              },
+            ];
+
+            if (safeLeftover > 0) {
+              flowNodes.push({
+                id: "leftover",
+                label: "Leftover / Savings",
+                value: safeLeftover,
+                column: 2,
+                color: "#4ade80",
+              });
+            }
+
+            const flowLinks = [
+              {
+                source: "income",
+                target: "flow",
+                value: safeIncome,
+                color: "#38bdf8",
+              },
+            ];
+
+            if (safeFixed > 0) {
+              flowLinks.push({
+                source: "flow",
+                target: "fixed",
+                value: safeFixed,
+                color: "#fb7185",
+              });
+            }
+
+            if (safeVariable > 0) {
+              flowLinks.push({
+                source: "flow",
+                target: "variable",
+                value: safeVariable,
+                color: "#fbbf24",
+              });
+            }
+
+            if (safeLeftover > 0) {
+              flowLinks.push({
+                source: "flow",
+                target: "leftover",
+                value: safeLeftover,
+                color: "#4ade80",
+              });
+            }
+
+            return (
+              <Card key="flow" title="MONEY FLOW">
+                <FlowSankey nodes={flowNodes} links={flowLinks} />
+              </Card>
+            );
+          }
 
           default:
             return null;
