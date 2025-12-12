@@ -7,7 +7,8 @@ const CHART_PADDING = 32;
 const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
 const MIN_COLUMN_SPACING = 140;
-const BASE_COLUMN_SPACING = 220;
+const MIN_CHART_WIDTH = 640;
+const LINK_OFFSET = 10;
 
 function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const containerRef = React.useRef(null);
@@ -48,47 +49,53 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   const minWidth =
     CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * MIN_COLUMN_SPACING;
   const measuredWidth = containerWidth || minWidth;
+  const targetWidth = Math.max(measuredWidth, MIN_CHART_WIDTH, minWidth);
 
-  const expandedWidth = Math.max(
-    measuredWidth,
-    CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * BASE_COLUMN_SPACING
-  );
-
-  const columnSpacing =
+  const rawSpacing =
     columnCount > 1
-      ? Math.max(
-          MIN_COLUMN_SPACING,
-          (expandedWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
-        )
+      ? (targetWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
       : 0;
+  const columnSpacing =
+    columnCount > 1 ? Math.max(MIN_COLUMN_SPACING, rawSpacing) : 0;
 
   const svgWidth =
     CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * Math.max(columnCount - 1, 0);
 
-  const columnTotals = columns.map((column) =>
-    filteredNodes
-      .filter((node) => node.column === column)
-      .reduce((sum, node) => sum + Math.max(Number(node.value) || 0, 0), 0)
+  const nodesByColumn = columns.map((column) =>
+    filteredNodes.filter((node) => node.column === column)
+  );
+
+  const columnTotals = nodesByColumn.map((nodes) =>
+    nodes.reduce((sum, node) => sum + Math.max(Number(node.value) || 0, 0), 0)
   );
   const maxColumnTotal = Math.max(...columnTotals, 1);
-  const availableHeight = Math.max(height - CHART_PADDING, 120);
+
+  const minHeightNeeded = nodesByColumn.reduce((max, nodes) => {
+    if (!nodes.length) return max;
+    const required =
+      nodes.length * MIN_NODE_HEIGHT + Math.max(nodes.length - 1, 0) * NODE_GAP;
+    return Math.max(max, required);
+  }, 0);
+
+  const baseAvailableHeight = Math.max(height - CHART_PADDING, 120);
+  const availableHeight = Math.max(baseAvailableHeight, minHeightNeeded);
+  const svgHeight = availableHeight + CHART_PADDING;
   const valueScale = availableHeight / maxColumnTotal;
 
   const layout = {};
 
-  columns.forEach((columnKey, columnIndex) => {
-    const columnNodes = filteredNodes
-      .filter((node) => node.column === columnKey)
-      .sort((a, b) => b.value - a.value);
+  nodesByColumn.forEach((columnNodes, columnIndex) => {
+    const sortedNodes = columnNodes.slice().sort((a, b) => b.value - a.value);
 
-    const heights = columnNodes.map((node) =>
+    const heights = sortedNodes.map((node) =>
       Math.max(Number(node.value) * valueScale, MIN_NODE_HEIGHT)
     );
     const totalHeight =
       heights.reduce((sum, h) => sum + h, 0) +
-      (columnNodes.length - 1) * NODE_GAP;
-    let yOffset = Math.max((availableHeight - totalHeight) / 2, 0) + CHART_PADDING / 2;
-    columnNodes.forEach((node, idx) => {
+      (sortedNodes.length - 1) * NODE_GAP;
+    let yOffset =
+      Math.max((availableHeight - totalHeight) / 2, 0) + CHART_PADDING / 2;
+    sortedNodes.forEach((node, idx) => {
       layout[node.id] = {
         ...node,
         width: NODE_WIDTH,
@@ -124,8 +131,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
       flowOffsets[link.source] = sourceOffset;
       flowOffsets[link.target] = targetOffset;
 
-      const x1 = source.x + source.width;
-      const x2 = target.x;
+      const x1 = source.x + Math.max(source.width - LINK_OFFSET, 0);
+      const x2 = target.x + Math.min(LINK_OFFSET, target.width || LINK_OFFSET);
       const curvature = (x2 - x1) * 0.5;
 
       const path = `
@@ -143,6 +150,8 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
           stroke={link.color || "rgba(255,255,255,0.25)"}
           strokeWidth={thickness}
           strokeOpacity={0.85}
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       );
     })
@@ -201,9 +210,9 @@ function FlowSankey({ nodes = [], links = [], height = 420 }) {
   return (
     <div ref={containerRef} className="w-full overflow-x-auto">
       <svg
-        viewBox={`0 0 ${svgWidth} ${height}`}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         width={svgWidth}
-        height={height}
+        height={svgHeight}
         role="img"
         aria-label="Cash flow Sankey chart"
         className="min-w-full"
