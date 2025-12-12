@@ -36,6 +36,7 @@ import {
   computeNetTransactions,
   normalizeAccounts,
   mergeTransactions,
+  importTransactionsWithDetection,
 } from "./lib/accounts.js";
 import { getThemeConfig } from "./themeConfig.js";
 
@@ -941,7 +942,7 @@ function App() {
   }
 
   function handleCsvImported(transactions, rawText) {
-    const nonZero = transactions.filter(
+    const nonZero = (transactions || []).filter(
       (tx) => typeof tx.amount === "number" && tx.amount !== 0
     );
     if (!nonZero.length) {
@@ -952,32 +953,30 @@ function App() {
       return;
     }
 
-    const accountType = guessAccountTypeFromRows(nonZero);
-    const bankName = guessBankNameFromText(rawText) || "Imported Account";
+    const sourceName = guessBankNameFromText(rawText) || "";
 
-    const hasOnlyDefaultAccount =
-      accounts.length === 1 && accounts[0].id === "main";
-    const defaultHasNoTransactions =
-      hasOnlyDefaultAccount &&
-      (!accounts[0].transactions || accounts[0].transactions.length === 0);
-
-    if (defaultHasNoTransactions) {
-      handleImportIntoExistingAccount("main", nonZero);
-      return;
-    }
-
-    const createNew = window.confirm(
-      `Detected ${nonZero.length} transactions. Create a new "${bankName}" ${accountType} account for this file?\n\nPress OK to create a new account.\nPress Cancel to import into your currently selected account.`
+    const result = importTransactionsWithDetection(
+      accounts,
+      currentAccountId,
+      nonZero,
+      sourceName
     );
 
-    if (createNew) {
-      handleCreateAccountFromCsv({
-        bankName,
-        accountType,
-        transactions: nonZero,
+    setAccounts(normalizeAccounts(result.accounts));
+    setCurrentAccountId(result.targetAccountId);
+
+    if (result.createdNew) {
+      setToast({
+        message: `Created "${result.targetAccountName}" with ${nonZero.length} transactions.`,
+        accountId: result.targetAccountId,
+        variant: "success",
       });
     } else {
-      handleImportIntoExistingAccount(currentAccountId, nonZero);
+      setToast({
+        message: `Imported ${nonZero.length} transactions into "${result.targetAccountName}".`,
+        accountId: result.targetAccountId,
+        variant: "success",
+      });
     }
   }
 
