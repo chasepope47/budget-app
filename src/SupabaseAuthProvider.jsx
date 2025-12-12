@@ -3,6 +3,12 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 const AuthContext = createContext(null);
+const isDev = import.meta.env.DEV;
+const logDev = (...args) => {
+  if (isDev) {
+    console.log(...args);
+  }
+};
 
 export function SupabaseAuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -42,7 +48,7 @@ export function SupabaseAuthProvider({ children }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("Auth state changed:", event);
+      logDev("Auth state changed:", event);
       
       if (!ignore) {
         setUser(session?.user ?? null);
@@ -50,7 +56,7 @@ export function SupabaseAuthProvider({ children }) {
 
       // Handle token refresh errors by signing out
       if (event === "TOKEN_REFRESHED") {
-        console.log("Token refreshed successfully");
+        logDev("Token refreshed successfully");
       } else if (event === "SIGNED_OUT") {
         setUser(null);
       }
