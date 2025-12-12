@@ -47,6 +47,21 @@ function ReportsPage({
     ];
   }, [accounts]);
 
+  const chartHeight = React.useMemo(() => {
+    const nodes = data?.nodes || [];
+    if (!nodes.length) return 420;
+    const perColumn = {};
+    nodes.forEach((node) => {
+      const col = node.column ?? 0;
+      perColumn[col] = (perColumn[col] || 0) + 1;
+    });
+    const maxNodesInColumn = Object.values(perColumn).reduce(
+      (max, count) => Math.max(max, count),
+      0
+    );
+    return Math.min(660, 420 + Math.max(0, maxNodesInColumn - 4) * 28);
+  }, [data?.nodes]);
+
   const handleSelectChange =
     (field) =>
     (event) => {
@@ -164,7 +179,13 @@ function ReportsPage({
           </div>
         </div>
 
-        <FlowSankey nodes={data?.nodes || []} links={data?.links || []} height={420} />
+        <div className="-mx-2 rounded-2xl border border-slate-800/70 bg-slate-950/40 px-2 py-3 sm:mx-0">
+          <FlowSankey
+            nodes={data?.nodes || []}
+            links={data?.links || []}
+            height={chartHeight}
+          />
+        </div>
       </Card>
 
       <Card title="REPORT SETTINGS">

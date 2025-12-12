@@ -1,13 +1,31 @@
 import React from "react";
 import { formatCurrency } from "./ui.js";
 
-const NODE_WIDTH = 140;
+const NODE_WIDTH = 150;
 const NODE_GAP = 18;
 const CHART_PADDING = 32;
 const MIN_NODE_HEIGHT = 14;
 const MIN_LINK_THICKNESS = 2;
+const MIN_COLUMN_SPACING = 140;
+const BASE_COLUMN_SPACING = 220;
 
-function FlowSankey({ nodes = [], links = [], height = 360 }) {
+function FlowSankey({ nodes = [], links = [], height = 420 }) {
+  const containerRef = React.useRef(null);
+  const [containerWidth, setContainerWidth] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!containerRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect?.width) {
+          setContainerWidth(Math.max(entry.contentRect.width, 320));
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const filteredNodes = (nodes || []).filter(
     (node) => Number.isFinite(Number(node.value)) && Number(node.value) >= 0
   );
@@ -25,9 +43,27 @@ function FlowSankey({ nodes = [], links = [], height = 360 }) {
     new Set(filteredNodes.map((node) => node.column ?? 0))
   ).sort((a, b) => a - b);
   const columnCount = columns.length || 1;
-  const columnSpacing = 220;
+  const spanCount = Math.max(columnCount - 1, 1);
+
+  const minWidth =
+    CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * MIN_COLUMN_SPACING;
+  const measuredWidth = containerWidth || minWidth;
+
+  const expandedWidth = Math.max(
+    measuredWidth,
+    CHART_PADDING * 2 + NODE_WIDTH + Math.max(columnCount - 1, 0) * BASE_COLUMN_SPACING
+  );
+
+  const columnSpacing =
+    columnCount > 1
+      ? Math.max(
+          MIN_COLUMN_SPACING,
+          (expandedWidth - CHART_PADDING * 2 - NODE_WIDTH) / spanCount
+        )
+      : 0;
+
   const svgWidth =
-    CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * (columnCount - 1);
+    CHART_PADDING * 2 + NODE_WIDTH + columnSpacing * Math.max(columnCount - 1, 0);
 
   const columnTotals = columns.map((column) =>
     filteredNodes
@@ -163,21 +199,26 @@ function FlowSankey({ nodes = [], links = [], height = 360 }) {
   });
 
   return (
-    <svg
-      viewBox={`0 0 ${svgWidth} ${height}`}
-      className="w-full h-auto"
-      role="img"
-      aria-label="Cash flow Sankey chart"
-    >
-      <defs>
-        <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
-          <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
-        </linearGradient>
-      </defs>
-      {renderLinks}
-      {renderNodes}
-    </svg>
+    <div ref={containerRef} className="w-full overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${svgWidth} ${height}`}
+        width={svgWidth}
+        height={height}
+        role="img"
+        aria-label="Cash flow Sankey chart"
+        className="min-w-full"
+        preserveAspectRatio="xMidYMid meet"
+      >
+        <defs>
+          <linearGradient id="nodeOverlay" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(15,23,42,0.45)" />
+            <stop offset="100%" stopColor="rgba(15,23,42,0.85)" />
+          </linearGradient>
+        </defs>
+        {renderLinks}
+        {renderNodes}
+      </svg>
+    </div>
   );
 }
 
