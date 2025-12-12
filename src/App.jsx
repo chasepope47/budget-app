@@ -472,6 +472,12 @@ function App() {
   const totals = useMemo(() => computeTotals(budget), [budget]);
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
 
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.body.dataset.theme = theme;
+    }
+  }, [theme]);
+
   const accountsById = useMemo(() => {
     const map = {};
     for (const acc of accounts) {

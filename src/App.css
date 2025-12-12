@@ -4,6 +4,36 @@
   width: 100%;
 }
 
+:root {
+  --surface-card-bg: #0b0c14;
+  --surface-card-border: rgba(15, 23, 42, 0.8);
+  --surface-card-shadow: 0 0 20px rgba(0, 255, 224, 0.08);
+}
+
+body[data-theme="light"] {
+  --surface-card-bg: #ffffff;
+  --surface-card-border: rgba(15, 23, 42, 0.15);
+  --surface-card-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+body[data-theme="midnight"] {
+  --surface-card-bg: #0c1024;
+  --surface-card-border: rgba(99, 102, 241, 0.35);
+  --surface-card-shadow: 0 15px 30px rgba(76, 29, 149, 0.35);
+}
+
+body[data-theme="aurora"] {
+  --surface-card-bg: rgba(4, 31, 37, 0.85);
+  --surface-card-border: rgba(16, 185, 129, 0.35);
+  --surface-card-shadow: 0 20px 40px rgba(16, 185, 129, 0.2);
+}
+
+.card-surface {
+  background: var(--surface-card-bg);
+  border-color: var(--surface-card-border);
+  box-shadow: var(--surface-card-shadow);
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
