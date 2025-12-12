@@ -4,6 +4,7 @@ import "./App.css";
 
 import { useSupabaseAuth } from "./SupabaseAuthProvider.jsx";
 import { loadUserState, saveUserState } from "./userStateApi.js";
+import { loadOrCreateUserProfile, updateUserProfile } from "./userMetadataApi.js";
 import { supabase } from "./supabaseClient";
 
 // Components
@@ -11,6 +12,7 @@ import NavButton from "./components/NavButton.jsx";
 import ActionsMenu from "./components/ActionsMenu.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
+import ProfileMenu from "./components/ProfileMenu.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -461,6 +463,8 @@ function App() {
   );
   const [toast, setToast] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   // Derived things
   const totals = useMemo(() => computeTotals(budget), [budget]);
@@ -556,6 +560,39 @@ function App() {
     };
   }, [user?.id]);
 
+  // ---- Load lightweight profile metadata (username/avatar) ----
+  useEffect(() => {
+    if (!user || !user.id) {
+      setUserProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+
+    let ignore = false;
+    setProfileLoading(true);
+
+    loadOrCreateUserProfile(user)
+      .then((profileData) => {
+        if (!ignore) {
+          setUserProfile(profileData);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          console.error("Failed to load profile metadata:", err);
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setProfileLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [user?.id]);
+
   // ---- Initial load from Supabase user_state ----
   useEffect(() => {
     if (!user || !user.id) return;
@@ -636,6 +673,26 @@ function App() {
   ]);
 
   // ---------- Handlers ----------
+
+  async function handleProfileUpdate(partialUpdates) {
+    if (!user || !user.id) return false;
+    try {
+      const saved = await updateUserProfile(user.id, partialUpdates);
+      setUserProfile(saved);
+      setToast({
+        message: "Profile updated.",
+        variant: "success",
+      });
+      return true;
+    } catch (err) {
+      console.error("Failed to update profile metadata:", err);
+      setToast({
+        message: "Couldn't update profile. Try again in a bit.",
+        variant: "info",
+      });
+      return false;
+    }
+  }
 
   function moveItem(list, index, delta) {
     const nextIndex = index + delta;
@@ -917,6 +974,13 @@ function App() {
                 onClick={() => setCurrentPage(pageKey)}
               />
             ))}
+
+            <ProfileMenu
+              profile={userProfile}
+              email={user?.email}
+              loading={profileLoading}
+              onUpdateProfile={handleProfileUpdate}
+            />
 
             <ActionsMenu
               customizeMode={customizeMode}
