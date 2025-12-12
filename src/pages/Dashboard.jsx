@@ -25,6 +25,7 @@ function Dashboard({
   currentAccountId,
   onChangeCurrentAccount = () => {},
   onOpenGoal = () => {},
+  onCreateGoal = () => {},
   onTransactionsUpdate = () => {},
   currentAccountBalance = 0,
   totalBalance = 0,
@@ -155,7 +156,11 @@ function Dashboard({
                   ))}
                 </div>
 
-                <button className="mt-1 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition">
+                <button
+                  type="button"
+                  onClick={onCreateGoal}
+                  className="mt-1 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+                >
                   + Add Goal
                 </button>
               </div>

@@ -13,6 +13,7 @@ import ActionsMenu from "./components/ActionsMenu.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
+import GoalEditorModal from "./components/GoalEditorModal.jsx";
 import ThemeSelector from "./components/ThemeSelector.jsx";
 
 // Pages
@@ -467,10 +468,19 @@ function App() {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [goalEditorState, setGoalEditorState] = useState({
+    open: false,
+    mode: "create",
+    goalId: null,
+  });
 
   // Derived things
   const totals = useMemo(() => computeTotals(budget), [budget]);
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
+  const goalBeingEdited = useMemo(() => {
+    if (!goalEditorState.goalId) return null;
+    return goals.find((goal) => goal.id === goalEditorState.goalId) || null;
+  }, [goalEditorState.goalId, goals]);
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -701,6 +711,79 @@ function App() {
       });
       return false;
     }
+  }
+
+  function openGoalEditor(mode, goalId = null) {
+    setGoalEditorState({ open: true, mode, goalId });
+  }
+
+  function closeGoalEditor() {
+    setGoalEditorState({ open: false, mode: "create", goalId: null });
+  }
+
+  function normalizeGoalInput(data, existingId = null) {
+    const sanitizedName = data?.name?.trim() || "Untitled Goal";
+    const current = Math.max(0, Number(data?.current) || 0);
+    const target = Math.max(0, Number(data?.target) || 0);
+    const monthlyPlan = Math.max(0, Number(data?.monthlyPlan) || 0);
+    return {
+      id: existingId || `goal-${Date.now()}`,
+      name: sanitizedName,
+      target,
+      current,
+      saved: current,
+      monthlyPlan,
+      emoji: (data?.emoji && data.emoji.trim()) || "🎯",
+      description: data?.description?.trim() || "",
+    };
+  }
+
+  function handleGoalEditorSave(formData) {
+    if (goalEditorState.mode === "edit" && goalEditorState.goalId) {
+      const updated = normalizeGoalInput(formData, goalEditorState.goalId);
+      setGoals((prev) =>
+        prev.map((goal) => (goal.id === updated.id ? { ...goal, ...updated } : goal))
+      );
+      setToast({
+        message: `Updated goal "${updated.name}".`,
+        variant: "success",
+      });
+    } else {
+      const created = normalizeGoalInput(formData);
+      setGoals((prev) => [...prev, created]);
+      setSelectedGoalId(created.id);
+      setToast({
+        message: `Created goal "${created.name}".`,
+        variant: "success",
+      });
+    }
+
+    closeGoalEditor();
+  }
+
+  function handleGoalDelete(goalId) {
+    if (!goalId) return;
+    const filtered = goals.filter((goal) => goal.id !== goalId);
+    setGoals(filtered);
+
+    if (selectedGoalId === goalId) {
+      setSelectedGoalId(filtered[0]?.id ?? null);
+    }
+
+    closeGoalEditor();
+    setToast({
+      message: "Goal deleted.",
+      variant: "success",
+    });
+  }
+
+  function handleStartCreateGoal() {
+    openGoalEditor("create", null);
+  }
+
+  function handleStartEditGoal(goalId) {
+    if (!goalId) return;
+    openGoalEditor("edit", goalId);
   }
 
   function moveItem(list, index, delta) {
@@ -1156,6 +1239,7 @@ function App() {
               setSelectedGoalId(goalId);
               setCurrentPage("goalDetail");
             }}
+            onCreateGoal={handleStartCreateGoal}
             onTransactionsUpdate={(updatedTransactions) => {
               setAccounts((prev) =>
                 prev.map((acc) =>
@@ -1235,7 +1319,11 @@ function App() {
         )}
 
         {currentPage === "goalDetail" && (
-          <GoalDetailPage goal={currentGoal} />
+          <GoalDetailPage
+            goal={currentGoal}
+            onEditGoal={handleStartEditGoal}
+            onDeleteGoal={handleGoalDelete}
+          />
         )}
       </main>
 
@@ -1256,6 +1344,15 @@ function App() {
           onClose={() => setToast(null)}
         />
       )}
+
+      <GoalEditorModal
+        open={goalEditorState.open}
+        mode={goalEditorState.mode}
+        initialGoal={goalBeingEdited}
+        onClose={closeGoalEditor}
+        onSave={handleGoalEditorSave}
+        onDelete={handleGoalDelete}
+      />
     </div>
   );
 }

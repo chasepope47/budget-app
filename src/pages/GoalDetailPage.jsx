@@ -2,7 +2,7 @@ import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
 
-function GoalDetailPage({ goal }) {
+function GoalDetailPage({ goal, onEditGoal = () => {}, onDeleteGoal = () => {} }) {
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
   const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
@@ -48,12 +48,31 @@ function GoalDetailPage({ goal }) {
           date.
         </p>
 
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <button className="px-3 py-1.5 text-xs rounded-md border border-pink-400/70 text-pink-200 bg-pink-500/10 hover:bg-pink-500/20 transition">
             Add Contribution
           </button>
-          <button className="px-3 py-1.5 text-xs rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition">
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition"
+            onClick={() => onEditGoal(goal?.id)}
+          >
             Edit Goal
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-md border border-rose-500/60 text-rose-200 hover:border-rose-400 transition"
+            onClick={() => {
+              if (!goal?.id) return;
+              const confirmed = window.confirm(
+                `Delete goal "${goal.name || "this goal"}"?`
+              );
+              if (confirmed) {
+                onDeleteGoal(goal.id);
+              }
+            }}
+          >
+            Delete Goal
           </button>
         </div>
       </Card>
