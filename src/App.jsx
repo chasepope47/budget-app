@@ -1312,15 +1312,6 @@ function App() {
               setCurrentPage("goalDetail");
             }}
             onCreateGoal={handleStartCreateGoal}
-            onTransactionsUpdate={(updatedTransactions) => {
-              setAccounts((prev) =>
-                prev.map((acc) =>
-                  acc.id === currentAccountId
-                    ? { ...acc, transactions: updatedTransactions }
-                    : acc
-                )
-              );
-            }}
             currentAccountBalance={currentAccountBalance}
             totalBalance={totalBalance}
             sectionsOrder={dashboardSectionsOrder}

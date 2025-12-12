@@ -26,7 +26,7 @@ function Dashboard({
   onChangeCurrentAccount = () => {},
   onOpenGoal = () => {},
   onCreateGoal = () => {},
-  onTransactionsUpdate = () => {},
+  onCsvImported = () => {},
   currentAccountBalance = 0,
   totalBalance = 0,
   sectionsOrder,
@@ -172,7 +172,7 @@ function Dashboard({
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
-                <BankImportCard onTransactionsParsed={onTransactionsUpdate} />
+                <BankImportCard onTransactionsParsed={onCsvImported} />
 
                 {Array.isArray(transactions) && transactions.length > 0 && (
                   <div className="mt-4">
