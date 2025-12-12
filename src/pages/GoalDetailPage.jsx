@@ -7,6 +7,8 @@ function GoalDetailPage({
   goal,
   onEditGoal = () => {},
   onDeleteGoal = () => {},
+  onDuplicateGoal = () => {},
+  onExportGoal = () => {},
 }) {
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
@@ -37,6 +39,8 @@ function GoalDetailPage({
             if (!goal?.id) return;
             onDeleteGoal(goal.id);
           }}
+          onDuplicate={() => onDuplicateGoal(goal?.id)}
+          onExport={() => onExportGoal(goal?.id)}
         />
       </header>
 

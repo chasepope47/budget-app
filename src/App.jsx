@@ -786,6 +786,78 @@ function App() {
     openGoalEditor("edit", goalId);
   }
 
+  function handleGoalDuplicate(goalId) {
+    const goal = goals.find((g) => g.id === goalId);
+    if (!goal) return;
+    const duplicate = {
+      ...goal,
+      id: `goal-${Date.now()}`,
+      name: `${goal.name || "Goal"} copy`,
+    };
+    setGoals((prev) => [...prev, duplicate]);
+    setToast({
+      message: `Duplicated goal "${goal.name || "Goal"}".`,
+      variant: "success",
+    });
+  }
+
+  function handleGoalExport(goalId) {
+    const goal = goals.find((g) => g.id === goalId);
+    if (!goal) {
+      setToast({
+        message: "Goal not found to export.",
+        variant: "info",
+      });
+      return;
+    }
+
+    const exportData = {
+      name: goal.name,
+      target: goal.target,
+      saved: goal.current ?? goal.saved,
+      monthlyPlan: goal.monthlyPlan,
+      description: goal.description,
+      progressPct:
+        goal.target > 0
+          ? Number((((goal.current ?? goal.saved ?? 0) / goal.target) * 100).toFixed(2))
+          : 0,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    const text = JSON.stringify(exportData, null, 2);
+
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setToast({
+            message: "Copied goal progress to clipboard.",
+            variant: "success",
+          });
+        })
+        .catch(() => {
+          downloadExport(text, goal.name || "goal");
+        });
+    } else {
+      downloadExport(text, goal.name || "goal");
+    }
+  }
+
+  function downloadExport(text, name) {
+    const blob = new Blob([text], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(name || "goal").toLowerCase().replace(/\s+/g, "-")}-progress.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setToast({
+      message: "Downloaded goal progress .json file.",
+      variant: "success",
+    });
+  }
+
   function moveItem(list, index, delta) {
     const nextIndex = index + delta;
     if (nextIndex < 0 || nextIndex >= list.length) return list;
@@ -1323,6 +1395,8 @@ function App() {
             goal={currentGoal}
             onEditGoal={handleStartEditGoal}
             onDeleteGoal={handleGoalDelete}
+            onDuplicateGoal={handleGoalDuplicate}
+            onExportGoal={handleGoalExport}
           />
         )}
       </main>

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-function GoalActionsMenu({ onEdit, onDelete }) {
+function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
   const [open, setOpen] = useState(false);
 
   function handleDelete() {
@@ -34,6 +34,26 @@ function GoalActionsMenu({ onEdit, onDelete }) {
           }}
         >
           Edit goal
+        </button>
+        <button
+          type="button"
+          className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
+          onClick={() => {
+            setOpen(false);
+            onDuplicate?.();
+          }}
+        >
+          Duplicate goal
+        </button>
+        <button
+          type="button"
+          className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
+          onClick={() => {
+            setOpen(false);
+            onExport?.();
+          }}
+        >
+          Export progress
         </button>
         <button
           type="button"
