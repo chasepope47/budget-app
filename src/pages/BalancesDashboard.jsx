@@ -69,8 +69,6 @@ function BalancesDashboard({
                       return bTime - aTime;
                     })
                 : [];
-              const previewTransactions = sortedTransactions.slice(0, 3);
-              const hasPreviewTransactions = previewTransactions.length > 0;
               const hasTransactions = sortedTransactions.length > 0;
               const isExpanded = expandedAccounts.includes(acc.id);
 
@@ -149,53 +147,11 @@ function BalancesDashboard({
                   </div>
 
                   <div className="border-t border-slate-800/70 pt-2">
-                    <p className="text-[0.6rem] uppercase tracking-[0.18em] text-slate-500">
-                      {isExpanded ? "All transactions" : "Recent activity"}
-                    </p>
-                    {!hasPreviewTransactions && (
+                    {!hasTransactions && (
                       <p className="mt-1 text-[0.65rem] text-slate-500">
                         No transactions imported yet.
                       </p>
                     )}
-
-                    {hasPreviewTransactions && (
-                      <ul className="mt-1 divide-y divide-slate-800/60">
-                        {previewTransactions.map((tx, index) => {
-                          const amountValue = Number(tx.amount);
-                          const amountDisplay = Number.isFinite(amountValue)
-                            ? `$${amountValue.toFixed(2)}`
-                            : "-";
-                          return (
-                            <li
-                              key={tx.id || `${acc.id}-preview-${index}`}
-                              className="flex items-center justify-between py-1 text-[0.7rem]"
-                            >
-                              <div className="min-w-0 pr-2">
-                                <p className="truncate text-slate-100">
-                                  {tx.description || "Untitled transaction"}
-                                </p>
-                                <p className="text-[0.6rem] text-slate-500">
-                                  {tx.date || "No date"}
-                                  {tx.category
-                                    ? ` · ${tx.category}`
-                                    : ""}
-                                </p>
-                              </div>
-                              <span
-                                className={`font-mono ${
-                                  amountValue < 0
-                                    ? "text-rose-300"
-                                    : "text-emerald-300"
-                                }`}
-                              >
-                                {amountDisplay}
-                              </span>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-
                     {isExpanded && hasTransactions && (
                       <div className="mt-2 max-h-72 overflow-auto rounded-md border border-slate-800/50">
                         <table className="w-full text-[0.7rem] text-left">
