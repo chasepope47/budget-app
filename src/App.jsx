@@ -61,6 +61,86 @@ const DASHBOARD_SECTION_LABELS = {
   csvImport: "CSV Import",
 };
 
+function getCurrentMonthKey() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function createSampleBudget() {
+  return {
+    month: getCurrentMonthKey(),
+    income: 5000,
+    fixed: [
+      { id: "rent", label: "Rent / Mortgage", amount: 1500 },
+      { id: "utilities", label: "Utilities & Internet", amount: 250 },
+      { id: "insurance", label: "Insurance", amount: 180 },
+    ],
+    variable: [
+      { id: "groceries", label: "Groceries", amount: 500 },
+      { id: "gas", label: "Gas & Transport", amount: 250 },
+      { id: "fun", label: "Fun / Eating Out", amount: 300 },
+    ],
+  };
+}
+
+function createBlankBudget() {
+  return {
+    month: getCurrentMonthKey(),
+    income: 0,
+    fixed: [],
+    variable: [],
+  };
+}
+
+function createSampleGoals() {
+  return [
+    {
+      id: "emergency",
+      name: "Emergency Fund",
+      target: 3000,
+      current: 600,
+      description: "3–6 months of core expenses to keep you safe.",
+    },
+    {
+      id: "debt",
+      name: "Crush Debt",
+      target: 5000,
+      current: 1200,
+      description: "Throw extra at your highest interest debt.",
+    },
+  ];
+}
+
+function createBlankGoals() {
+  return [];
+}
+
+const BASE_ACCOUNT_ID = "main";
+function createBaseAccount(overrides = {}) {
+  return {
+    id: BASE_ACCOUNT_ID,
+    name: "Main Checking",
+    type: "checking",
+    startingBalance: 0,
+    transactions: [],
+    ...overrides,
+  };
+}
+
+function createSampleAccounts() {
+  return [
+    createBaseAccount({
+      startingBalance: 2500,
+    }),
+  ];
+}
+
+function createBlankAccounts() {
+  return [createBaseAccount()];
+}
+
 function normalizeNavOrder(order) {
   const defaults = NAV_ITEMS.map((n) => n.key);
   if (!Array.isArray(order) || !order.length) return defaults;
@@ -82,49 +162,6 @@ function normalizeDashboardSections(order) {
   );
   return [...cleaned, ...missing];
 }
-
-// ----- Defaults -----
-const EMPTY_BUDGET = {
-  month: "2025-01",
-  income: 5000,
-  fixed: [
-    { id: "rent", label: "Rent / Mortgage", amount: 1500 },
-    { id: "utilities", label: "Utilities & Internet", amount: 250 },
-    { id: "insurance", label: "Insurance", amount: 180 },
-  ],
-  variable: [
-    { id: "groceries", label: "Groceries", amount: 500 },
-    { id: "gas", label: "Gas & Transport", amount: 250 },
-    { id: "fun", label: "Fun / Eating Out", amount: 300 },
-  ],
-};
-
-const EMPTY_GOALS = [
-  {
-    id: "emergency",
-    name: "Emergency Fund",
-    target: 3000,
-    current: 600,
-    description: "3–6 months of core expenses to keep you safe.",
-  },
-  {
-    id: "debt",
-    name: "Crush Debt",
-    target: 5000,
-    current: 1200,
-    description: "Throw extra at your highest interest debt.",
-  },
-];
-
-const EMPTY_ACCOUNTS = [
-  {
-    id: "main",
-    name: "Main Checking",
-    type: "checking",
-    startingBalance: 2500,
-    transactions: [],
-  },
-];
 
 // ----- Helpers -----
 function computeTotals(budget) {
@@ -397,10 +434,10 @@ function App() {
   const [theme, setTheme] = useState(stored?.theme || "dark");
 
   // Core app state
-  const [budget, setBudget] = useState(stored?.budget || EMPTY_BUDGET);
-  const [goals, setGoals] = useState(stored?.goals || EMPTY_GOALS);
+  const [budget, setBudget] = useState(stored?.budget || createSampleBudget());
+  const [goals, setGoals] = useState(stored?.goals || createSampleGoals());
   const [accounts, setAccounts] = useState(
-    normalizeAccounts(stored?.accounts || EMPTY_ACCOUNTS)
+    normalizeAccounts(stored?.accounts || createSampleAccounts())
   );
   const [currentAccountId, setCurrentAccountId] = useState(
     stored?.currentAccountId ||
@@ -457,7 +494,7 @@ function App() {
   const currentGoal =
     goals.find((g) => g.id === selectedGoalId) || goals[0] || null;
 
-  const activeMonth = budget.month || EMPTY_BUDGET.month;
+  const activeMonth = budget.month || getCurrentMonthKey();
 
   let pageTitle = NAV_LABELS[currentPage] || "Dashboard";
   if (currentPage === "goalDetail" && currentGoal) {
@@ -801,10 +838,10 @@ function App() {
 
     window.localStorage.removeItem(STORAGE_KEY);
 
-    setBudget(EMPTY_BUDGET);
-    setGoals(EMPTY_GOALS);
-    setAccounts(EMPTY_ACCOUNTS);
-    setCurrentAccountId(EMPTY_ACCOUNTS[0].id);
+    setBudget(createBlankBudget());
+    setGoals(createBlankGoals());
+    setAccounts(createBlankAccounts());
+    setCurrentAccountId(BASE_ACCOUNT_ID);
     setSelectedGoalId(null);
     setNavOrder(NAV_ITEMS.map((n) => n.key));
     setHomePage("dashboard");
