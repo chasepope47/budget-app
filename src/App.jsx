@@ -13,6 +13,7 @@ import ActionsMenu from "./components/ActionsMenu.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
+import ThemeSelector from "./components/ThemeSelector.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -35,6 +36,7 @@ import {
   normalizeAccounts,
   mergeTransactions,
 } from "./lib/accounts.js";
+import { getThemeConfig } from "./themeConfig.js";
 
 // ----- Navigation -----
 const NAV_ITEMS = [
@@ -468,6 +470,7 @@ function App() {
 
   // Derived things
   const totals = useMemo(() => computeTotals(budget), [budget]);
+  const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
 
   const accountsById = useMemo(() => {
     const map = {};
@@ -931,14 +934,10 @@ function App() {
 
   // ---- App layout ----
   return (
-    <div
-      className={`min-h-screen flex flex-col ${
-        theme === "dark"
-          ? "bg-[#05060A] text-slate-100"
-          : "bg-slate-50 text-slate-900"
-      }`}
-    >
-      <header className="border-b border-[#1f2937] bg-[#05060F]/90 backdrop-blur flex-none">
+    <div className={`min-h-screen flex flex-col ${themeStyles.shellClass}`}>
+      <header
+        className={`flex-none border-b backdrop-blur ${themeStyles.headerClass}`}
+      >
         <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col">
             <span className="text-xs tracking-[0.2em] text-cyan-300">
@@ -955,16 +954,7 @@ function App() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
-            {/* Theme toggle (G) */}
-            <button
-              type="button"
-              onClick={() =>
-                setTheme((prev) => (prev === "dark" ? "light" : "dark"))
-              }
-              className="px-2 py-1 rounded border border-slate-600/70 bg-black/20 hover:bg-black/40"
-            >
-              {theme === "dark" ? "Dark mode" : "Light mode"}
-            </button>
+            <ThemeSelector value={theme} onChange={setTheme} />
 
             {navOrder.map((pageKey) => (
               <NavButton
