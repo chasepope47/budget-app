@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from "react";
+// src/pages/TransactionsPage.jsx
+import React, { useState, useMemo, useEffect } from "react";
 import Card from "../components/Card.jsx";
 import { formatMoney, formatPercent } from "../utils/format.js";
 
@@ -24,6 +25,9 @@ function TransactionsPage({
   onUpdateTransaction = () => {},
   onDeleteTransaction = () => {},
   typeHints = [],
+  // ✅ comes from App.jsx (set when clicking a merchant in Reports)
+  filterText = "",
+  onChangeFilterText = () => {},
 }) {
   const hasData = Array.isArray(transactions) && transactions.length > 0;
 
@@ -36,11 +40,25 @@ function TransactionsPage({
   const [sortBy, setSortBy] = useState("date");
   const [sortDirection, setSortDirection] = useState("desc");
 
+  // ✅ If Reports sets filterText, sync it into the Search box
+  useEffect(() => {
+    const next = (filterText || "").trim();
+    if (!next) return;
+    setFilters((prev) => ({ ...prev, query: next }));
+  }, [filterText]);
+
   const handleFilterChange = (field) => (event) => {
+    const value = event.target.value;
+
     setFilters((prev) => ({
       ...prev,
-      [field]: event.target.value,
+      [field]: value,
     }));
+
+    // ✅ keep App-level filterText in sync when user types in Search
+    if (field === "query") {
+      onChangeFilterText(value);
+    }
   };
 
   const handleClearFilters = () => {
@@ -49,10 +67,11 @@ function TransactionsPage({
       minAmount: "",
       maxAmount: "",
     });
+    // ✅ clear App-level filter too
+    onChangeFilterText("");
   };
 
-  const hasActiveFilter =
-    filters.query || filters.minAmount || filters.maxAmount;
+  const hasActiveFilter = filters.query || filters.minAmount || filters.maxAmount;
 
   const toggleSortDirection = () => {
     setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
@@ -68,10 +87,7 @@ function TransactionsPage({
       const amountNum = Number(tx.amount);
 
       if (q) {
-        const haystack = [
-          tx.description || "",
-          tx.category || "",
-        ]
+        const haystack = [tx.description || "", tx.category || ""]
           .join(" ")
           .toLowerCase();
 
@@ -124,15 +140,31 @@ function TransactionsPage({
     <div className="space-y-4 w-full">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
         <div>
-          <h1 className="text-lg font-semibold text-slate-100">
-            Transactions
-          </h1>
+          <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
           <span className="text-xs text-slate-400">
             Imported from your bank CSV files
           </span>
           <p className="text-[0.65rem] text-slate-500">
-            Currently viewing: <span className="font-semibold text-cyan-200">{accountName || "None"}</span>
+            Currently viewing:{" "}
+            <span className="font-semibold text-cyan-200">
+              {accountName || "None"}
+            </span>
           </p>
+
+          {/* ✅ shows when Reports has set a merchant filter */}
+          {!!filterText.trim() && (
+            <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[0.65rem] text-cyan-200">
+              <span className="font-mono">Report filter:</span>
+              <span className="text-slate-100">{filterText}</span>
+              <button
+                type="button"
+                onClick={() => handleClearFilters()}
+                className="ml-1 rounded border border-cyan-500/40 px-2 py-[2px] text-[0.65rem] hover:bg-cyan-500/10"
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
 
         {hasData && (
@@ -145,8 +177,7 @@ function TransactionsPage({
       <Card title="ALL TRANSACTIONS">
         {!hasData && (
           <p className="text-xs text-slate-400">
-            No transactions yet. Import a CSV on the Dashboard to see them
-            here.
+            No transactions yet. Import a CSV on the Dashboard to see them here.
           </p>
         )}
 
@@ -302,8 +333,7 @@ function TransactionsPage({
                             ))}
                           </select>
                           <span className="text-[0.6rem] text-slate-500">
-                            Detected:{" "}
-                            {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
+                            Detected: {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
                           </span>
                         </div>
                       </td>
@@ -313,20 +343,14 @@ function TransactionsPage({
                           tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
                         }`}
                       >
-                        {isNaN(tx.amount)
-                          ? "-"
-                          : `$${tx.amount.toFixed(2)}`}
+                        {isNaN(tx.amount) ? "-" : `$${tx.amount.toFixed(2)}`}
                       </td>
 
                       <td className="px-2 py-1 text-right">
                         <button
                           className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
                           onClick={() => {
-                            if (
-                              window.confirm(
-                                "Delete this transaction from this account?"
-                              )
-                            ) {
+                            if (window.confirm("Delete this transaction from this account?")) {
                               onDeleteTransaction(index);
                             }
                           }}

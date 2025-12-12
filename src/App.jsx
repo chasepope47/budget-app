@@ -1,4 +1,4 @@
-// App.jsx
+// src/App.jsx
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./App.css";
 
@@ -22,6 +22,7 @@ import BalancesDashboard from "./pages/BalancesDashboard.jsx";
 import BudgetPage from "./pages/BudgetPage.jsx";
 import TransactionsPage from "./pages/TransactionsPage.jsx";
 import GoalDetailPage from "./pages/GoalDetailPage.jsx";
+import ReportsPage from "./pages/ReportsPage.jsx";
 
 // Libs
 import {
@@ -48,6 +49,7 @@ const NAV_ITEMS = [
   { key: "budget", label: "Budget" },
   { key: "transactions", label: "Transactions" },
   { key: "goalDetail", label: "Goals" },
+  { key: "reports", label: "Reports" }
 ];
 
 const NAV_LABELS = NAV_ITEMS.reduce((map, item) => {
@@ -470,6 +472,7 @@ function App() {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
   const [goalEditorState, setGoalEditorState] = useState({
     open: false,
     mode: "create",
@@ -656,6 +659,7 @@ function App() {
     homePage,
     dashboardSectionsOrder,
     theme,
+    txFilter,
   };
 
     // Always keep localStorage up-to-date
@@ -1422,7 +1426,20 @@ function App() {
             onUpdateTransaction={handleUpdateTransaction}
             onDeleteTransaction={handleDeleteTransaction}
             typeHints={transactionFlowMeta.byAccount[currentAccountId] || []}
+            filterText={txFilter}
+            onChangeFilterText={setTxFilter}
           />
+        )}
+
+        {currentPage === "reports" && (
+        <ReportsPage
+          accounts={accounts}
+          monthKey={activeMonth}
+          onMerchantPick={(merchant) => {
+            setTxFilter(merchant);
+            setCurrentPage("transactions");
+          }}
+         />
         )}
 
         {currentPage === "goalDetail" && currentGoal && (
