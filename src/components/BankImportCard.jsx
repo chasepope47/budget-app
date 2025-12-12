@@ -7,6 +7,15 @@ import {
   detectBankFromText,
 } from "../lib/csv.js";
 
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => resolve(String(evt.target?.result || ""));
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsText(file);
+  });
+}
+
 function BankImportCard({ onTransactionsParsed = () => {} }) {
   const [status, setStatus] = React.useState("");
   const [error, setError] = React.useState("");
@@ -24,72 +33,104 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
   function resetState() {
     setStatus("");
     setError("");
+    setFileName("");
+    setDetectedBank("");
     setRawText("");
     setColumns([]);
     setMapping({ date: "", description: "", amount: "" });
     setPreviewRows([]);
   }
 
-  async function handleFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    resetState();
-    setFileName(file.name);
-    setError("");
-
+  async function importOneFile(file) {
     const lower = (file.name || "").toLowerCase();
-    const isPdf =
-      lower.endsWith(".pdf") || file.type === "application/pdf";
+    const isPdf = lower.endsWith(".pdf") || file.type === "application/pdf";
 
     if (isPdf) {
-      setStatus("Extracting transactions from PDF...");
+      setStatus(`Extracting transactions from PDF: ${file.name}`);
+      const { parsePdfTransactions } = await import("../lib/pdf.js");
+      const { text, rows } = await parsePdfTransactions(file);
+
+      const bank = detectBankFromText(text, file.name || "");
+      // for multi-file import we don’t show per-file bank label, but we keep detection for routing logic
+      if (bank) setDetectedBank(bank);
+
+      if (!rows?.length) return { count: 0, text, rows: [] };
+
+      // ✅ keep the app’s existing pipeline (routes to correct account)
+      onTransactionsParsed(rows, text);
+      return { count: rows.length, text, rows };
+    }
+
+    setStatus(`Reading file: ${file.name}`);
+    const text = await readFileAsText(file);
+
+    const bank = detectBankFromText(text, file.name || "");
+    if (bank) setDetectedBank(bank);
+
+    const rows = parseCsvTransactions(text);
+
+    if (!rows?.length) return { count: 0, text, rows: [] };
+
+    onTransactionsParsed(rows, text);
+    return { count: rows.length, text, rows };
+  }
+
+  async function handleFileChange(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    resetState();
+    setError("");
+
+    // ✅ Single file: keep EXACT current behavior (preview + mapping + confirm import)
+    if (files.length === 1) {
+      const file = files[0];
+      setFileName(file.name);
+
+      const lower = (file.name || "").toLowerCase();
+      const isPdf = lower.endsWith(".pdf") || file.type === "application/pdf";
+
+      if (isPdf) {
+        setStatus("Extracting transactions from PDF...");
+        try {
+          const { parsePdfTransactions } = await import("../lib/pdf.js");
+          const { text, rows } = await parsePdfTransactions(file);
+          setRawText(text);
+
+          const bank = detectBankFromText(text, file.name || "");
+          setDetectedBank(bank || "");
+
+          if (!rows.length) {
+            setPreviewRows([]);
+            setStatus("");
+            setError(
+              "We couldn't detect any transactions in that PDF. Try a different export or use CSV."
+            );
+            return;
+          }
+
+          setPreviewRows(rows);
+          setStatus(
+            `Parsed ${rows.length} transactions from PDF. Review the preview below, then import.`
+          );
+        } catch (err) {
+          console.error("PDF parse error:", err);
+          setStatus("");
+          setError(
+            "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
+          );
+        }
+        return;
+      }
+
+      // CSV single-file
+      setStatus("Reading file...");
       try {
-        const { parsePdfTransactions } = await import("../lib/pdf.js");
-        const { text, rows } = await parsePdfTransactions(file);
+        const text = await readFileAsText(file);
         setRawText(text);
 
         const bank = detectBankFromText(text, file.name || "");
         setDetectedBank(bank || "");
-
-        if (!rows.length) {
-          setPreviewRows([]);
-          setStatus("");
-          setError(
-            "We couldn't detect any transactions in that PDF. Try a different export or use CSV."
-          );
-          return;
-        }
-
-        setPreviewRows(rows);
-        setStatus(
-          `Parsed ${rows.length} transactions from PDF. Review the preview below, then import.`
-        );
-      } catch (err) {
-        console.error("PDF parse error:", err);
-        setStatus("");
-        setError(
-          "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
-        );
-      }
-      return;
-    }
-
-    setStatus("Reading file...");
-
-    const reader = new FileReader();
-
-    reader.onload = (evt) => {
-      try {
-        const text = String(evt.target?.result || "");
-        setRawText(text);
-
-        const bank = detectBankFromText(text, file.name || "");
-        if (bank) {
-          setDetectedBank(bank);
-        } else {
-          setDetectedBank("");
-        }
 
         const autoRows = parseCsvTransactions(text);
 
@@ -112,30 +153,65 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
         setError("We couldn't understand this CSV. Try a different export format.");
         setStatus("");
       }
-    };
 
-    reader.onerror = () => {
-      setError("Could not read the file.");
+      return;
+    }
+
+    // ✅ Multi-file: auto-import each file (keeps existing parsing & routing logic)
+    setFileName(`${files.length} files selected`);
+    setStatus(`Importing ${files.length} files...`);
+
+    let totalImported = 0;
+    let importedFiles = 0;
+    let skippedFiles = 0;
+
+    for (const file of files) {
+      try {
+        const result = await importOneFile(file);
+        if (result.count > 0) {
+          totalImported += result.count;
+          importedFiles += 1;
+        } else {
+          skippedFiles += 1;
+        }
+      } catch (err) {
+        console.error("Multi-file import error for", file.name, err);
+        skippedFiles += 1;
+      }
+    }
+
+    if (importedFiles === 0) {
       setStatus("");
-    };
+      setError(
+        "No valid transactions were detected in the selected files. Try different exports or use CSV instead of PDF."
+      );
+    } else {
+      setError("");
+      setStatus(
+        `Imported ${totalImported} transactions from ${importedFiles} file(s)` +
+          (skippedFiles ? ` (skipped ${skippedFiles}).` : ".")
+      );
+    }
 
-    reader.readAsText(file);
+    // clear input so re-selecting same files triggers change event
+    e.target.value = "";
+    setPreviewRows([]); // multi-file doesn’t use preview
+    setRawText("");
+    setColumns([]);
+    setMapping({ date: "", description: "", amount: "" });
   }
 
   function handleApplyMapping() {
     if (!rawText) return;
 
     const config = {
-      dateIndex:
-        mapping.date === "" ? null : Number.parseInt(mapping.date, 10),
+      dateIndex: mapping.date === "" ? null : Number.parseInt(mapping.date, 10),
       descIndex:
         mapping.description === ""
           ? null
           : Number.parseInt(mapping.description, 10),
       amountIndex:
-        mapping.amount === ""
-          ? null
-          : Number.parseInt(mapping.amount, 10),
+        mapping.amount === "" ? null : Number.parseInt(mapping.amount, 10),
     };
 
     const rows = parseCsvWithMapping(rawText, config);
@@ -179,8 +255,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
 
   const previewCount = Math.min(10, previewRows.length);
   const previewTotal = previewRows.reduce(
-    (sum, tx) =>
-      sum + (typeof tx.amount === "number" ? tx.amount : 0),
+    (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
     0
   );
 
@@ -190,15 +265,16 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
         Upload a{" "}
         <span className="text-cyan-300 font-semibold">.csv</span> or{" "}
         <span className="text-cyan-300 font-semibold">.pdf</span> bank
-        statement. We&apos;ll parse basic fields like date, description,
-        and amount, then route it into the right account.
+        statement. We&apos;ll parse basic fields like date, description, and
+        amount, then route it into the right account.
       </p>
 
       <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
-        <span>Choose CSV file</span>
+        <span>Choose CSV/PDF file(s)</span>
         <input
           type="file"
           accept=".csv,text/csv,application/pdf"
+          multiple
           className="hidden"
           onChange={handleFileChange}
         />
@@ -213,21 +289,15 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
       {detectedBank && (
         <p className="text-[0.7rem] text-slate-400">
           Detected bank format:{" "}
-          <span className="text-cyan-300 font-semibold">
-            {detectedBank}
-          </span>
+          <span className="text-cyan-300 font-semibold">{detectedBank}</span>
         </p>
       )}
 
-      {status && (
-        <p className="text-[0.7rem] text-slate-400">{status}</p>
-      )}
+      {status && <p className="text-[0.7rem] text-slate-400">{status}</p>}
 
-      {error && (
-        <p className="text-[0.7rem] text-rose-400">{error}</p>
-      )}
+      {error && <p className="text-[0.7rem] text-rose-400">{error}</p>}
 
-      {/* Column mapping override */}
+      {/* Column mapping override (single-file preview only) */}
       {rawText && columns.length > 0 && (
         <div className="mt-2 border border-slate-700 rounded-md p-2 space-y-2">
           <p className="text-[0.7rem] text-slate-400">
@@ -235,10 +305,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {["date", "description", "amount"].map((fieldKey) => (
-              <label
-                key={fieldKey}
-                className="flex flex-col gap-1 text-[0.7rem]"
-              >
+              <label key={fieldKey} className="flex flex-col gap-1 text-[0.7rem]">
                 <span className="uppercase tracking-[0.16em] text-slate-500">
                   {fieldKey}
                 </span>
@@ -272,7 +339,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
         </div>
       )}
 
-      {/* Preview table BEFORE import */}
+      {/* Preview table BEFORE import (single-file only) */}
       {previewRows.length > 0 && (
         <div className="mt-2 border border-slate-700 rounded-md p-2 space-y-2">
           <div className="flex items-center justify-between text-[0.7rem] text-slate-400">
@@ -282,9 +349,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
             <span>
               Net amount:{" "}
               <span
-                className={
-                  previewTotal < 0 ? "text-rose-300" : "text-emerald-300"
-                }
+                className={previewTotal < 0 ? "text-rose-300" : "text-emerald-300"}
               >
                 {previewTotal < 0 ? "-" : ""}
                 ${Math.abs(previewTotal).toFixed(2)}
@@ -296,9 +361,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 bg-[#05060F]">
                 <tr className="border-b border-slate-700">
-                  <th className="py-1 pr-2 font-semibold text-slate-300">
-                    Date
-                  </th>
+                  <th className="py-1 pr-2 font-semibold text-slate-300">Date</th>
                   <th className="py-1 pr-2 font-semibold text-slate-300">
                     Description
                   </th>
@@ -310,12 +373,8 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
               <tbody>
                 {previewRows.slice(0, previewCount).map((tx, idx) => (
                   <tr key={idx} className="border-b border-slate-800/60">
-                    <td className="py-1 pr-2 text-slate-200">
-                      {tx.date}
-                    </td>
-                    <td className="py-1 pr-2 text-slate-300">
-                      {tx.description}
-                    </td>
+                    <td className="py-1 pr-2 text-slate-200">{tx.date}</td>
+                    <td className="py-1 pr-2 text-slate-300">{tx.description}</td>
                     <td
                       className={`py-1 text-right ${
                         tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
@@ -350,8 +409,7 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
       )}
 
       <p className="text-[0.7rem] text-slate-500">
-        Tip: Most banks let you export recent transactions as CSV from
-        their website.
+        Tip: Most banks let you export recent transactions as CSV from their website.
       </p>
     </div>
   );
