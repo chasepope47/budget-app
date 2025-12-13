@@ -118,6 +118,8 @@ function buildSankey({
     links.push({ source: "Income", target: "Leftover", value: leftover });
   }
 
+  const transfersTotal = bucketTotals.get("Transfers") || 0;
+
   const seen = new Set();
   const uniqueNodes = [];
   for (const n of nodes) {
@@ -126,7 +128,15 @@ function buildSankey({
     uniqueNodes.push(n);
   }
 
-  return { nodes: uniqueNodes, links, meta: { incomeTotal } };
+  return { nodes: uniqueNodes, links, meta: { 
+    incomeTotal,
+    totalIncome: incomeTotal, // alias for tooltip logic
+    spentTotal: spent,        // alias for tooltip logic
+    totalSpent: spent,        // alias for tooltip logic
+    transfersTotal,
+    leftover,
+   },
+  };
 }
 
 const DEFAULT_SETTINGS = DEFAULT_REPORT_SETTINGS;
