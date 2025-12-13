@@ -19,7 +19,14 @@ function dollars(n) {
   return Number.isFinite(x) ? x : 0;
 }
 
-function normalizeDesc(desc = "") {
+// --- NEW: separate "matching" vs "display" normalization ---
+function normalizeForMatch(desc = "") {
+  let s = String(desc).trim().toLowerCase();
+  s = s.replace(/\s+/g, " ");
+  return s;
+}
+
+function normalizeForDisplay(desc = "") {
   let s = String(desc).trim();
   s = s.replace(/[*#]{3,}\w{2,}$/g, "").trim();
   s = s.replace(/\b(?:\d{3,}|x{3,}\d+)\b/gi, "").trim();
@@ -28,14 +35,59 @@ function normalizeDesc(desc = "") {
   return s || "Uncategorized";
 }
 
-const FIXED = ["rent", "mortgage", "insurance", "internet", "phone", "utilities", "loan", "payment"];
-const ESSENTIAL = ["grocery", "costco", "walmart", "gas", "fuel", "medical", "pharmacy", "power", "water"];
+// --- UPDATED keyword buckets ---
+const FIXED = [
+  "rent",
+  "mortgage",
+  "apts",
+  "apt",
+  "apartment",
+  "lease",
+  "property management",
+  "hoa",
+  "insurance",
+  "internet",
+  "phone",
+  "utilities",
+  "loan",
+  "payment",
+];
+
+const SUBSCRIPTIONS = [
+  "amazon prime",
+  "prime membership",
+  "netflix",
+  "hulu",
+  "spotify",
+  "youtube premium",
+  "rocket money",
+  "membership",
+  "subscription",
+  "icloud",
+  "google one",
+  "dropbox",
+];
+
+const ESSENTIAL = [
+  "grocery",
+  "costco",
+  "walmart",
+  "gas",
+  "fuel",
+  "medical",
+  "pharmacy",
+  "power",
+  "water",
+];
+
 const TRANSFER = ["transfer", "zelle", "venmo", "cash app", "withdrawal", "deposit"];
 
-function bucketFor(label = "") {
-  const d = label.toLowerCase();
+// --- UPDATED: bucketFor uses match text + subscriptions ---
+function bucketFor(matchText = "") {
+  const d = matchText.toLowerCase();
   if (TRANSFER.some((k) => d.includes(k))) return "Transfers";
   if (FIXED.some((k) => d.includes(k))) return "Fixed";
+  if (SUBSCRIPTIONS.some((k) => d.includes(k))) return "Subscriptions";
   if (ESSENTIAL.some((k) => d.includes(k))) return "Essential";
   return "Variable";
 }
@@ -71,8 +123,10 @@ function buildSankey({
     const amt = dollars(t.amount);
     if (!(amt < 0)) continue;
 
-    const merchant = normalizeDesc(t.description || "");
-    const bucket = bucketFor(merchant);
+    // --- UPDATED: use match vs display versions ---
+    const matchText = normalizeForMatch(t.description || "");
+    const merchant = normalizeForDisplay(t.description || "");
+    const bucket = bucketFor(matchText);
 
     if (!includeTransfers && bucket === "Transfers") continue;
 
@@ -84,11 +138,14 @@ function buildSankey({
     m.set(merchant, (m.get(merchant) || 0) + v);
   }
 
-  if (incomeTotal <= 0 && bucketTotals.size === 0) return { nodes: [], links: [], meta: { incomeTotal: 0 } };
+  if (incomeTotal <= 0 && bucketTotals.size === 0) {
+    return { nodes: [], links: [], meta: { incomeTotal: 0 } };
+  }
 
+  // --- UPDATED: include Subscriptions bucket ---
   const buckets = includeTransfers
-    ? ["Fixed", "Essential", "Variable", "Transfers"]
-    : ["Fixed", "Essential", "Variable"];
+    ? ["Fixed", "Subscriptions", "Essential", "Variable", "Transfers"]
+    : ["Fixed", "Subscriptions", "Essential", "Variable"];
 
   const nodes = [{ name: "Income" }, ...buckets.map((b) => ({ name: b }))];
   const links = [];
@@ -108,10 +165,12 @@ function buildSankey({
     }
   }
 
+  // Transfers are neutral: do NOT count them as "spent"
   const spent = buckets.reduce((s, b) => {
     if (b === "Transfers") return s;
     return s + (bucketTotals.get(b) || 0);
   }, 0);
+
   const leftover = Math.max(0, incomeTotal - spent);
   if (leftover > 0) {
     nodes.push({ name: "Leftover" });
@@ -128,14 +187,17 @@ function buildSankey({
     uniqueNodes.push(n);
   }
 
-  return { nodes: uniqueNodes, links, meta: { 
-    incomeTotal,
-    totalIncome: incomeTotal, // alias for tooltip logic
-    spentTotal: spent,        // alias for tooltip logic
-    totalSpent: spent,        // alias for tooltip logic
-    transfersTotal,
-    leftover,
-   },
+  return {
+    nodes: uniqueNodes,
+    links,
+    meta: {
+      incomeTotal,
+      totalIncome: incomeTotal,
+      spentTotal: spent,
+      totalSpent: spent,
+      transfersTotal,
+      leftover,
+    },
   };
 }
 
@@ -162,7 +224,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
 
   const [userId, setUserId] = React.useState(null);
 
-  // Get current user (works even if you don't have your auth hook imported here)
   React.useEffect(() => {
     let mounted = true;
 
@@ -175,7 +236,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
     return () => { mounted = false; };
   }, []);
 
-  // Load settings from Supabase
   React.useEffect(() => {
     let cancelled = false;
     if (!userId) {
@@ -190,7 +250,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
         if (cancelled) return;
 
         if (remote) {
-          // merge with defaults to avoid missing fields
           setSettings({ ...DEFAULT_SETTINGS, ...remote });
         } else {
           setSettings(DEFAULT_SETTINGS);
@@ -206,7 +265,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
     return () => { cancelled = true; };
   }, [userId]);
 
-  // Build sankey when inputs change
   React.useEffect(() => {
     let cancelled = false;
     const id = setTimeout(() => {
@@ -226,7 +284,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
     };
   }, [accounts, monthKey, settings.topNPerBucket, settings.maxRows, settings.includeTransfers]);
 
-  // Debounced save to Supabase whenever settings change
   React.useEffect(() => {
     if (!userId) return;
     if (settingsStatus.loading) return;
@@ -252,7 +309,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
 
   return (
     <div className="space-y-3">
-      {/* Tabs + status */}
       <div className="flex items-center justify-between gap-3">
         <div className="inline-flex rounded-xl border border-slate-800 bg-slate-950/40 p-1">
           <button
@@ -292,7 +348,7 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
               data={data}
               height={560}
               onNodeClick={(name) => {
-                const isBucket = ["Income", "Fixed", "Essential", "Variable", "Transfers", "Leftover"].includes(name);
+                const isBucket = ["Income", "Fixed", "Subscriptions", "Essential", "Variable", "Transfers", "Leftover"].includes(name);
                 if (!isBucket && typeof onMerchantPick === "function") onMerchantPick(name);
               }}
             />
@@ -302,7 +358,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
 
       {tab === "settings" && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-5">
-          {/* Presets */}
           <div className="space-y-2">
             <div className="text-sm font-medium text-slate-100">Presets</div>
             <div className="flex flex-wrap gap-2">
@@ -327,7 +382,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
             </p>
           </div>
 
-          {/* Controls */}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <label className="text-slate-100 text-sm font-medium">Top merchants per bucket</label>
