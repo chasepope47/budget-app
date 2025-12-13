@@ -108,7 +108,10 @@ function buildSankey({
     }
   }
 
-  const spent = buckets.reduce((s, b) => s + (bucketTotals.get(b) || 0), 0);
+  const spent = buckets.reduce((s, b) => {
+    if (b === "Transfers") return s;
+    return s + (bucketTotals.get(b) || 0);
+  }, 0);
   const leftover = Math.max(0, incomeTotal - spent);
   if (leftover > 0) {
     nodes.push({ name: "Leftover" });
@@ -129,9 +132,9 @@ function buildSankey({
 const DEFAULT_SETTINGS = DEFAULT_REPORT_SETTINGS;
 
 const PRESETS = {
-  Minimal: { topNPerBucket: 6, maxRows: 15000, includeTransfers: false, preset: "Minimal" },
-  Detailed: { topNPerBucket: 14, maxRows: 60000, includeTransfers: true, preset: "Detailed" },
-  Audit: { topNPerBucket: 25, maxRows: 200000, includeTransfers: true, preset: "Audit" },
+  Minimal: { topNPerBucket: 5, maxRows: 10000, includeTransfers: false, preset: "Minimal" },
+  Detailed: { topNPerBucket: 12, maxRows: 60000, includeTransfers: true, preset: "Detailed" },
+  Audit: { topNPerBucket: 30, maxRows: 200000, includeTransfers: true, preset: "Audit" },
 };
 
 function clampInt(v, min, max, fallback) {
@@ -234,7 +237,7 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
   function applyPreset(name) {
     const p = PRESETS[name];
     if (!p) return;
-    setSettings((s) => ({ ...s, ...p }));
+    setSettings((s) => ({ ...s, ...p, preset: name }));
   }
 
   return (
@@ -303,7 +306,7 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
                 </button>
               ))}
               <button
-                onClick={() => setSettings((s) => ({ ...DEFAULT_SETTINGS, preset: "Custom" }))}
+                onClick={() => setSettings({ ...DEFAULT_SETTINGS, preset: "Custom" })}
                 className="text-sm px-3 py-2 rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-100"
               >
                 Reset
