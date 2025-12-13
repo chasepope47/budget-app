@@ -45,7 +45,13 @@ function topNEntries(map, n) {
   return arr;
 }
 
-function buildSankey({ accounts = [], monthKey, topNPerBucket = 10, maxRows = 20000 }) {
+function buildSankey({
+  accounts = [],
+  monthKey,
+  topNPerBucket = 10,
+  maxRows = 20000,
+  includeTransfers = true,
+}) {
   const txs = (accounts || []).flatMap((a) => a.transactions || []);
 
   const scoped = monthKey ? txs.filter((t) => monthKeyFromISO(t.date) === monthKey) : txs;
@@ -62,6 +68,9 @@ function buildSankey({ accounts = [], monthKey, topNPerBucket = 10, maxRows = 20
 
     const merchant = normalizeDesc(t.description || "");
     const bucket = bucketFor(merchant);
+
+    if (!includeTransfers && bucket === "Transfers") continue;
+
     const v = Math.abs(amt);
 
     bucketTotals.set(bucket, (bucketTotals.get(bucket) || 0) + v);
@@ -73,7 +82,9 @@ function buildSankey({ accounts = [], monthKey, topNPerBucket = 10, maxRows = 20
 
   if (incomeTotal <= 0 && bucketTotals.size === 0) return { nodes: [], links: [], meta: { incomeTotal: 0 } };
 
-  const buckets = ["Fixed", "Essential", "Variable", "Transfers"];
+  const buckets = includeTransfers
+    ? ["Fixed", "Essential", "Variable", "Transfers"]
+    : ["Fixed", "Essential", "Variable"];
 
   const nodes = [{ name: "Income" }, ...buckets.map((b) => ({ name: b }))];
   const links = [];
@@ -115,13 +126,122 @@ function buildSankey({ accounts = [], monthKey, topNPerBucket = 10, maxRows = 20
   return { nodes: uniqueNodes, links, meta: { incomeTotal } };
 }
 
+function ReportsSettingsPanel({ open, onClose, settings, onChange }) {
+  if (!open) return null;
+
+  const setField = (key, value) => onChange({ ...settings, [key]: value });
+
+  return (
+    <div className="fixed inset-0 z-50">
+      {/* Backdrop */}
+      <button
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+        aria-label="Close settings"
+      />
+
+      {/* Panel */}
+      <div className="absolute right-0 top-0 h-full w-[92%] max-w-md bg-slate-950 border-l border-slate-800 shadow-xl">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <h2 className="text-slate-100 font-semibold">Report Settings</h2>
+          <button
+            onClick={onClose}
+            className="text-slate-300 hover:text-slate-100 text-sm px-3 py-1 rounded-md border border-slate-800"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="p-4 space-y-5">
+          {/* Top N */}
+          <div className="space-y-2">
+            <label className="text-slate-100 text-sm font-medium">
+              Top merchants per bucket
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={settings.topNPerBucket}
+              onChange={(e) => setField("topNPerBucket", Math.max(1, Math.min(50, Number(e.target.value) || 10)))}
+              className="w-full bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-slate-100"
+            />
+            <p className="text-xs text-slate-400">
+              Higher = more nodes/links (can get busy).
+            </p>
+          </div>
+
+          {/* Max Rows */}
+          <div className="space-y-2">
+            <label className="text-slate-100 text-sm font-medium">
+              Max rows to process
+            </label>
+            <input
+              type="number"
+              min={1000}
+              max={200000}
+              step={1000}
+              value={settings.maxRows}
+              onChange={(e) => {
+                const v = Number(e.target.value) || 20000;
+                setField("maxRows", Math.max(1000, Math.min(200000, v)));
+              }}
+              className="w-full bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-slate-100"
+            />
+            <p className="text-xs text-slate-400">
+              Caps how many transactions are used for the chart.
+            </p>
+          </div>
+
+          {/* Transfers toggle */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-slate-100 text-sm font-medium">Include Transfers</p>
+              <p className="text-slate-400 text-xs">Show/hide “Transfers” bucket.</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!settings.includeTransfers}
+              onChange={(e) => setField("includeTransfers", e.target.checked)}
+              className="h-5 w-5"
+            />
+          </div>
+
+          {/* Reset */}
+          <button
+            onClick={() =>
+              onChange({ topNPerBucket: 10, maxRows: 20000, includeTransfers: true })
+            }
+            className="w-full bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-md px-3 py-2 text-slate-100"
+          >
+            Reset to defaults
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportsPage({ accounts = [], monthKey, onMerchantPick }) {
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [reportSettings, setReportSettings] = React.useState({
+    topNPerBucket: 10,
+    maxRows: 20000,
+    includeTransfers: true,
+  });
+
   const [data, setData] = React.useState({ nodes: [], links: [], meta: { incomeTotal: 0 } });
 
   React.useEffect(() => {
     let cancelled = false;
     const id = setTimeout(() => {
-      const next = buildSankey({ accounts, monthKey, topNPerBucket: 10, maxRows: 20000 });
+      const next = buildSankey({
+        accounts,
+        monthKey,
+        topNPerBucket: reportSettings.topNPerBucket,
+        maxRows: reportSettings.maxRows,
+        includeTransfers: reportSettings.includeTransfers,
+      });
       if (!cancelled) setData(next);
     }, 0);
 
@@ -129,23 +249,38 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
       cancelled = true;
       clearTimeout(id);
     };
-  }, [accounts, monthKey]);
+  }, [accounts, monthKey, reportSettings.topNPerBucket, reportSettings.maxRows, reportSettings.includeTransfers]);
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => setSettingsOpen(true)}
+          className="text-sm px-3 py-2 rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-100"
+        >
+          Settings
+        </button>
+      </div>
+
       <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
         <div className="min-h-[560px]">
           <FlowSankey
             data={data}
             height={560}
             onNodeClick={(name, node) => {
-              // only treat right-side nodes (merchants) as clickable
               const isBucket = ["Income", "Fixed", "Essential", "Variable", "Transfers", "Leftover"].includes(name);
               if (!isBucket && typeof onMerchantPick === "function") onMerchantPick(name);
             }}
           />
         </div>
       </div>
+
+      <ReportsSettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={reportSettings}
+        onChange={setReportSettings}
+      />
     </div>
   );
 }
