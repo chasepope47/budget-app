@@ -1,6 +1,10 @@
 import React from "react";
 import FlowSankey from "../components/FlowSankey.jsx";
-import { fetchReportSettings, saveReportSettings } from "../api/reportSettingsApi.js";
+import {
+  fetchReportSettings,
+  saveReportSettings,
+  DEFAULT_REPORT_SETTINGS,
+} from "../api/reportSettingsApi.js";
 import { supabase } from "../supabaseClient";
 
 function monthKeyFromISO(dateStr) {
@@ -121,12 +125,7 @@ function buildSankey({
   return { nodes: uniqueNodes, links, meta: { incomeTotal } };
 }
 
-const DEFAULT_SETTINGS = {
-  topNPerBucket: 10,
-  maxRows: 20000,
-  includeTransfers: true,
-  preset: "Custom",
-};
+const DEFAULT_SETTINGS = DEFAULT_REPORT_SETTINGS;
 
 const PRESETS = {
   Minimal: { topNPerBucket: 6, maxRows: 15000, includeTransfers: false, preset: "Minimal" },
