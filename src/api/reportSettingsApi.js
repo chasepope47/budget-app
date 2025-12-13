@@ -1,3 +1,4 @@
+// arc/api/reportSettingsApi.js
 import { supabase } from "../supabaseClient";
 
 export const REPORT_SETTINGS_SCHEMA_VERSION = 1;
