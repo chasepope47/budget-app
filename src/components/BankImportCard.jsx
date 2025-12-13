@@ -16,395 +16,609 @@ function readFileAsText(file) {
   });
 }
 
-function BankImportCard({ onTransactionsParsed = () => {} }) {
-  const [status, setStatus] = React.useState("");
-  const [error, setError] = React.useState("");
-  const [fileName, setFileName] = React.useState("");
-  const [detectedBank, setDetectedBank] = React.useState("");
-  const [rawText, setRawText] = React.useState("");
-  const [columns, setColumns] = React.useState([]);
-  const [mapping, setMapping] = React.useState({
-    date: "",
-    description: "",
-    amount: "",
-  });
-  const [previewRows, setPreviewRows] = React.useState([]);
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
 
-  function resetState() {
-    setStatus("");
-    setError("");
-    setFileName("");
-    setDetectedBank("");
-    setRawText("");
-    setColumns([]);
-    setMapping({ date: "", description: "", amount: "" });
-    setPreviewRows([]);
+function makeId() {
+  // crypto.randomUUID is ideal, fallback if not supported
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `f-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function fileKind(file) {
+  const lower = (file?.name || "").toLowerCase();
+  if (lower.endsWith(".pdf") || file?.type === "application/pdf") return "pdf";
+  return "csv";
+}
+
+// A queue item (one per selected file)
+function makeItem(file) {
+  return {
+    id: makeId(),
+    file,
+    name: file?.name || "unknown",
+    kind: fileKind(file), // csv | pdf
+    detectedBank: "",
+    rawText: "",
+    columns: [],
+    mapping: { date: "", description: "", amount: "" },
+    previewRows: [],
+    status: "pending", // pending | parsing | needsMapping | ready | importing | imported | error
+    error: "",
+    importedCount: 0,
+    createdAt: Date.now(),
+  };
+}
+
+export default function BankImportCard({ onTransactionsParsed = () => {} }) {
+  const [items, setItems] = React.useState([]);
+  const [activeId, setActiveId] = React.useState(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+
+  const active = React.useMemo(
+    () => items.find((x) => x.id === activeId) || null,
+    [items, activeId]
+  );
+
+  const importedCount = items.filter((x) => x.status === "imported").length;
+  const readyCount = items.filter((x) => x.status === "ready").length;
+  const errorCount = items.filter((x) => x.status === "error").length;
+
+  function addFiles(files = []) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (!list.length) return;
+
+    const next = list.map(makeItem);
+
+    setItems((prev) => {
+      // de-dupe by (name + size + lastModified) to avoid accidental duplicates
+      const seen = new Set(
+        prev.map((p) => `${p.name}::${p.file?.size}::${p.file?.lastModified}`)
+      );
+      const filtered = next.filter((n) => {
+        const key = `${n.name}::${n.file?.size}::${n.file?.lastModified}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      return [...prev, ...filtered];
+    });
+
+    // set active to first newly added file
+    setActiveId((curr) => curr || next[0].id);
   }
 
-  async function importOneFile(file) {
-    const lower = (file.name || "").toLowerCase();
-    const isPdf = lower.endsWith(".pdf") || file.type === "application/pdf";
+  async function parseItem(itemId) {
+    // mark parsing
+    setItems((prev) =>
+      prev.map((x) =>
+        x.id === itemId ? { ...x, status: "parsing", error: "" } : x
+      )
+    );
 
-    if (isPdf) {
-      setStatus(`Extracting transactions from PDF: ${file.name}`);
-      const { parsePdfTransactions } = await import("../lib/pdf.js");
-      const { text, rows } = await parsePdfTransactions(file);
+    const item = items.find((x) => x.id === itemId);
+    if (!item) return;
 
-      const bank = detectBankFromText(text, file.name || "");
-      // for multi-file import we don’t show per-file bank label, but we keep detection for routing logic
-      if (bank) setDetectedBank(bank);
+    try {
+      if (item.kind === "pdf") {
+        const { parsePdfTransactions } = await import("../lib/pdf.js");
+        const { text, rows } = await parsePdfTransactions(item.file);
 
-      if (!rows?.length) return { count: 0, text, rows: [] };
+        const bank = detectBankFromText(text, item.name || "");
+        const parsedRows = Array.isArray(rows) ? rows : [];
 
-      // ✅ keep the app’s existing pipeline (routes to correct account)
-      onTransactionsParsed(rows, text);
-      return { count: rows.length, text, rows };
-    }
-
-    setStatus(`Reading file: ${file.name}`);
-    const text = await readFileAsText(file);
-
-    const bank = detectBankFromText(text, file.name || "");
-    if (bank) setDetectedBank(bank);
-
-    const rows = parseCsvTransactions(text);
-
-    if (!rows?.length) return { count: 0, text, rows: [] };
-
-    onTransactionsParsed(rows, text);
-    return { count: rows.length, text, rows };
-  }
-
-  async function handleFileChange(e) {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-
-    resetState();
-    setError("");
-
-    // ✅ Single file: keep EXACT current behavior (preview + mapping + confirm import)
-    if (files.length === 1) {
-      const file = files[0];
-      setFileName(file.name);
-
-      const lower = (file.name || "").toLowerCase();
-      const isPdf = lower.endsWith(".pdf") || file.type === "application/pdf";
-
-      if (isPdf) {
-        setStatus("Extracting transactions from PDF...");
-        try {
-          const { parsePdfTransactions } = await import("../lib/pdf.js");
-          const { text, rows } = await parsePdfTransactions(file);
-          setRawText(text);
-
-          const bank = detectBankFromText(text, file.name || "");
-          setDetectedBank(bank || "");
-
-          if (!rows.length) {
-            setPreviewRows([]);
-            setStatus("");
-            setError(
-              "We couldn't detect any transactions in that PDF. Try a different export or use CSV."
-            );
-            return;
-          }
-
-          setPreviewRows(rows);
-          setStatus(
-            `Parsed ${rows.length} transactions from PDF. Review the preview below, then import.`
-          );
-        } catch (err) {
-          console.error("PDF parse error:", err);
-          setStatus("");
-          setError(
-            "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
-          );
-        }
+        setItems((prev) =>
+          prev.map((x) => {
+            if (x.id !== itemId) return x;
+            if (!parsedRows.length) {
+              return {
+                ...x,
+                rawText: text || "",
+                detectedBank: bank || "",
+                previewRows: [],
+                columns: [],
+                status: "error",
+                error:
+                  "We couldn't detect any transactions in that PDF. Try a different export or use CSV.",
+              };
+            }
+            return {
+              ...x,
+              rawText: text || "",
+              detectedBank: bank || "",
+              previewRows: parsedRows,
+              columns: [], // mapping not used for PDF right now
+              status: "ready",
+              error: "",
+            };
+          })
+        );
         return;
       }
 
-      // CSV single-file
-      setStatus("Reading file...");
-      try {
-        const text = await readFileAsText(file);
-        setRawText(text);
+      // CSV
+      const text = await readFileAsText(item.file);
+      const bank = detectBankFromText(text, item.name || "");
 
-        const bank = detectBankFromText(text, file.name || "");
-        setDetectedBank(bank || "");
+      const autoRows = parseCsvTransactions(text);
+      const cols = getCsvColumnsForMapping(text);
 
-        const autoRows = parseCsvTransactions(text);
+      setItems((prev) =>
+        prev.map((x) => {
+          if (x.id !== itemId) return x;
 
-        setColumns(getCsvColumnsForMapping(text));
+          if (!autoRows.length) {
+            return {
+              ...x,
+              rawText: text,
+              detectedBank: bank || "",
+              columns: cols,
+              previewRows: [],
+              status: "needsMapping",
+              error:
+                "We couldn't automatically detect the right columns. Use the mapping controls and click Re-parse.",
+            };
+          }
 
-        if (!autoRows.length) {
-          setPreviewRows([]);
-          setStatus(
-            "We couldn't automatically detect the right columns. Use the mapping controls below and click Re-parse."
-          );
-          return;
-        }
-
-        setPreviewRows(autoRows);
-        setStatus(
-          `Parsed ${autoRows.length} transactions. Review the preview below, tweak the mapping if needed, then import.`
-        );
-      } catch (err) {
-        console.error("CSV parse error:", err);
-        setError("We couldn't understand this CSV. Try a different export format.");
-        setStatus("");
-      }
-
-      return;
-    }
-
-    // ✅ Multi-file: auto-import each file (keeps existing parsing & routing logic)
-    setFileName(`${files.length} files selected`);
-    setStatus(`Importing ${files.length} files...`);
-
-    let totalImported = 0;
-    let importedFiles = 0;
-    let skippedFiles = 0;
-
-    for (const file of files) {
-      try {
-        const result = await importOneFile(file);
-        if (result.count > 0) {
-          totalImported += result.count;
-          importedFiles += 1;
-        } else {
-          skippedFiles += 1;
-        }
-      } catch (err) {
-        console.error("Multi-file import error for", file.name, err);
-        skippedFiles += 1;
-      }
-    }
-
-    if (importedFiles === 0) {
-      setStatus("");
-      setError(
-        "No valid transactions were detected in the selected files. Try different exports or use CSV instead of PDF."
+          return {
+            ...x,
+            rawText: text,
+            detectedBank: bank || "",
+            columns: cols,
+            previewRows: autoRows,
+            status: "ready",
+            error: "",
+          };
+        })
       );
-    } else {
-      setError("");
-      setStatus(
-        `Imported ${totalImported} transactions from ${importedFiles} file(s)` +
-          (skippedFiles ? ` (skipped ${skippedFiles}).` : ".")
+    } catch (err) {
+      console.error("Parse error:", err);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === itemId
+            ? {
+                ...x,
+                status: "error",
+                error:
+                  x.kind === "pdf"
+                    ? "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
+                    : "We couldn't understand this CSV. Try a different export format.",
+              }
+            : x
+        )
       );
     }
+  }
 
-    // clear input so re-selecting same files triggers change event
-    e.target.value = "";
-    setPreviewRows([]); // multi-file doesn’t use preview
-    setRawText("");
-    setColumns([]);
-    setMapping({ date: "", description: "", amount: "" });
+  // Auto-parse newly added items (keeps UX smooth)
+  React.useEffect(() => {
+    // parse any "pending" items one-by-one
+    const pending = items.find((x) => x.status === "pending");
+    if (!pending) return;
+
+    // Let UI paint first
+    const t = setTimeout(() => parseItem(pending.id), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  function updateActiveMapping(fieldKey, value) {
+    if (!active) return;
+    setItems((prev) =>
+      prev.map((x) =>
+        x.id === active.id
+          ? { ...x, mapping: { ...x.mapping, [fieldKey]: value } }
+          : x
+      )
+    );
   }
 
   function handleApplyMapping() {
-    if (!rawText) return;
+    if (!active?.rawText) return;
 
     const config = {
-      dateIndex: mapping.date === "" ? null : Number.parseInt(mapping.date, 10),
+      dateIndex:
+        active.mapping.date === "" ? null : Number.parseInt(active.mapping.date, 10),
       descIndex:
-        mapping.description === ""
+        active.mapping.description === ""
           ? null
-          : Number.parseInt(mapping.description, 10),
+          : Number.parseInt(active.mapping.description, 10),
       amountIndex:
-        mapping.amount === "" ? null : Number.parseInt(mapping.amount, 10),
+        active.mapping.amount === "" ? null : Number.parseInt(active.mapping.amount, 10),
     };
 
-    const rows = parseCsvWithMapping(rawText, config);
+    const rows = parseCsvWithMapping(active.rawText, config);
 
     if (!rows.length) {
-      setError(
-        "No rows were parsed with that mapping. Try different columns or reset to auto-detect."
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === active.id
+            ? {
+                ...x,
+                previewRows: [],
+                status: "needsMapping",
+                error:
+                  "No rows were parsed with that mapping. Try different columns or reset to auto-detect.",
+              }
+            : x
+        )
       );
-      setPreviewRows([]);
-      setStatus("");
       return;
     }
 
-    setError("");
-    setPreviewRows(rows);
-    setStatus(
-      `Parsed ${rows.length} transactions with your custom mapping. Review the preview, then import.`
+    setItems((prev) =>
+      prev.map((x) =>
+        x.id === active.id
+          ? {
+              ...x,
+              previewRows: rows,
+              status: "ready",
+              error: "",
+            }
+          : x
+      )
     );
   }
 
-  function handleConfirmImport() {
-    if (!previewRows.length) return;
+  function handleImportOne(itemId) {
+    const item = items.find((x) => x.id === itemId);
+    if (!item) return;
+    if (item.status !== "ready") return;
 
-    const toImport = previewRows;
-    const source = rawText;
-    const label = fileName;
-
-    onTransactionsParsed(toImport, source);
-
-    setStatus(
-      `Imported ${toImport.length} transactions${
-        label ? ` from ${label}` : ""
-      }. View them under the target account.`
+    setItems((prev) =>
+      prev.map((x) => (x.id === itemId ? { ...x, status: "importing" } : x))
     );
 
-    setPreviewRows([]);
-    setRawText("");
-    setColumns([]);
-    setMapping({ date: "", description: "", amount: "" });
+    try {
+      onTransactionsParsed(item.previewRows, item.rawText);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === itemId
+            ? {
+                ...x,
+                status: "imported",
+                importedCount: item.previewRows.length,
+                error: "",
+              }
+            : x
+        )
+      );
+    } catch (err) {
+      console.error("Import error:", err);
+      setItems((prev) =>
+        prev.map((x) =>
+          x.id === itemId
+            ? {
+                ...x,
+                status: "error",
+                error: err?.message || "Import failed.",
+              }
+            : x
+        )
+      );
+    }
   }
 
-  const previewCount = Math.min(10, previewRows.length);
-  const previewTotal = previewRows.reduce(
+  async function handleImportAllReady() {
+    // sequential import keeps state stable
+    const ready = items.filter((x) => x.status === "ready");
+    for (const it of ready) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 0));
+      handleImportOne(it.id);
+    }
+  }
+
+  function removeItem(itemId) {
+    setItems((prev) => prev.filter((x) => x.id !== itemId));
+    if (activeId === itemId) {
+      const remaining = items.filter((x) => x.id !== itemId);
+      setActiveId(remaining[0]?.id || null);
+    }
+  }
+
+  function clearAll() {
+    setItems([]);
+    setActiveId(null);
+    setIsDragging(false);
+  }
+
+  const previewCount = Math.min(10, active?.previewRows?.length || 0);
+  const previewTotal = (active?.previewRows || []).reduce(
     (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
     0
   );
 
   return (
-    <div className="space-y-2 text-xs">
+    <div
+      className={`space-y-2 text-xs rounded-xl border p-3 transition ${
+        isDragging
+          ? "border-cyan-400/70 bg-cyan-500/5"
+          : "border-slate-800 bg-slate-950/30"
+      }`}
+      onDragEnter={(e) => {
+        preventDefaults(e);
+        setIsDragging(true);
+      }}
+      onDragOver={(e) => {
+        preventDefaults(e);
+        setIsDragging(true);
+      }}
+      onDragLeave={(e) => {
+        preventDefaults(e);
+        setIsDragging(false);
+      }}
+      onDrop={(e) => {
+        preventDefaults(e);
+        setIsDragging(false);
+        addFiles(e.dataTransfer?.files || []);
+      }}
+    >
       <p className="text-slate-400">
-        Upload a{" "}
+        Upload{" "}
         <span className="text-cyan-300 font-semibold">.csv</span> or{" "}
-        <span className="text-cyan-300 font-semibold">.pdf</span> bank
-        statement. We&apos;ll parse basic fields like date, description, and
-        amount, then route it into the right account.
+        <span className="text-cyan-300 font-semibold">.pdf</span> bank statements.
+        You can drop multiple files here. Click a file to preview/match columns before importing.
       </p>
 
-      <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
-        <span>Choose CSV/PDF file(s)</span>
-        <input
-          type="file"
-          accept=".csv,text/csv,application/pdf"
-          multiple
-          className="hidden"
-          onChange={handleFileChange}
-        />
-      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 cursor-pointer transition">
+          <span>Choose file(s)</span>
+          <input
+            type="file"
+            accept=".csv,.pdf,text/csv,application/pdf,text/plain"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files || []);
+              e.target.value = "";
+            }}
+          />
+        </label>
 
-      {fileName && (
-        <p className="text-[0.7rem] text-slate-500">
-          Selected: <span className="text-slate-300">{fileName}</span>
-        </p>
-      )}
+        {items.length > 0 && (
+          <>
+            <button
+              type="button"
+              onClick={handleImportAllReady}
+              disabled={readyCount === 0}
+              className="px-3 py-1.5 rounded-md border border-emerald-400/70 text-emerald-100 bg-emerald-500/10 hover:bg-emerald-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Import all ready ({readyCount})
+            </button>
 
-      {detectedBank && (
-        <p className="text-[0.7rem] text-slate-400">
-          Detected bank format:{" "}
-          <span className="text-cyan-300 font-semibold">{detectedBank}</span>
-        </p>
-      )}
+            <button
+              type="button"
+              onClick={clearAll}
+              className="px-3 py-1.5 rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition"
+            >
+              Clear
+            </button>
 
-      {status && <p className="text-[0.7rem] text-slate-400">{status}</p>}
-
-      {error && <p className="text-[0.7rem] text-rose-400">{error}</p>}
-
-      {/* Column mapping override (single-file preview only) */}
-      {rawText && columns.length > 0 && (
-        <div className="mt-2 border border-slate-700 rounded-md p-2 space-y-2">
-          <p className="text-[0.7rem] text-slate-400">
-            If dates/amounts look wrong, override the mapping:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {["date", "description", "amount"].map((fieldKey) => (
-              <label key={fieldKey} className="flex flex-col gap-1 text-[0.7rem]">
-                <span className="uppercase tracking-[0.16em] text-slate-500">
-                  {fieldKey}
+            <div className="text-[0.7rem] text-slate-500">
+              Imported{" "}
+              <span className="text-slate-200 font-mono">{importedCount}</span>/
+              <span className="text-slate-200 font-mono">{items.length}</span>
+              {errorCount ? (
+                <span className="ml-2 text-rose-400">
+                  ({errorCount} error{errorCount === 1 ? "" : "s"})
                 </span>
-                <select
-                  className="bg-[#05060F] border border-slate-700 rounded px-2 py-1 text-slate-200"
-                  value={mapping[fieldKey] ?? ""}
-                  onChange={(e) =>
-                    setMapping((prev) => ({
-                      ...prev,
-                      [fieldKey]: e.target.value,
-                    }))
-                  }
+              ) : null}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* File queue */}
+      {items.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {items
+            .slice()
+            .sort((a, b) => a.createdAt - b.createdAt)
+            .map((f) => {
+              const isActive = f.id === activeId;
+              const badge =
+                f.status === "imported"
+                  ? "text-emerald-300"
+                  : f.status === "ready"
+                  ? "text-cyan-300"
+                  : f.status === "error"
+                  ? "text-rose-400"
+                  : f.status === "needsMapping"
+                  ? "text-amber-300"
+                  : "text-slate-400";
+
+              return (
+                <div
+                  key={f.id}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded-md border text-[0.7rem] whitespace-nowrap ${
+                    isActive
+                      ? "border-cyan-400/70 bg-cyan-500/10 text-cyan-200"
+                      : "border-slate-700 text-slate-300 hover:border-slate-500"
+                  }`}
                 >
-                  <option value="">Auto detect</option>
-                  {columns.map((label, idx) => (
-                    <option key={idx} value={idx}>
-                      {label} (column {idx + 1})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={handleApplyMapping}
-            className="mt-1 px-3 py-1.5 text-[0.7rem] rounded-md border border-cyan-400/70 text-cyan-100 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
-          >
-            Re-parse with mapping
-          </button>
+                  <button type="button" onClick={() => setActiveId(f.id)}>
+                    {f.name}
+                    <span className={`ml-2 ${badge}`}>• {f.status}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="ml-1 text-slate-500 hover:text-slate-200"
+                    title="Remove"
+                    onClick={() => removeItem(f.id)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
         </div>
       )}
 
-      {/* Preview table BEFORE import (single-file only) */}
-      {previewRows.length > 0 && (
-        <div className="mt-2 border border-slate-700 rounded-md p-2 space-y-2">
-          <div className="flex items-center justify-between text-[0.7rem] text-slate-400">
-            <span>
-              Previewing {previewCount} of {previewRows.length} rows
-            </span>
-            <span>
-              Net amount:{" "}
-              <span
-                className={previewTotal < 0 ? "text-rose-300" : "text-emerald-300"}
-              >
-                {previewTotal < 0 ? "-" : ""}
-                ${Math.abs(previewTotal).toFixed(2)}
-              </span>
-            </span>
+      {/* Active file details */}
+      {active && (
+        <div className="mt-1 space-y-2">
+          <div className="rounded-md border border-slate-800 bg-black/20 p-2 text-[0.7rem] text-slate-400">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+              <div>
+                <span className="text-slate-200 font-semibold">{active.name}</span>{" "}
+                <span className="text-slate-500">({active.kind.toUpperCase()})</span>
+              </div>
+              <div className="text-slate-500">
+                Rows:{" "}
+                <span className="text-slate-200 font-mono">
+                  {active.previewRows?.length || 0}
+                </span>
+                {active.detectedBank ? (
+                  <>
+                    {" "}
+                    • Bank:{" "}
+                    <span className="text-cyan-300 font-semibold">
+                      {active.detectedBank}
+                    </span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            {active.error ? (
+              <div className="mt-1 text-rose-400">{active.error}</div>
+            ) : null}
           </div>
 
-          <div className="max-h-40 overflow-auto text-[0.7rem]">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-[#05060F]">
-                <tr className="border-b border-slate-700">
-                  <th className="py-1 pr-2 font-semibold text-slate-300">Date</th>
-                  <th className="py-1 pr-2 font-semibold text-slate-300">
-                    Description
-                  </th>
-                  <th className="py-1 text-right font-semibold text-slate-300">
-                    Amount
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {previewRows.slice(0, previewCount).map((tx, idx) => (
-                  <tr key={idx} className="border-b border-slate-800/60">
-                    <td className="py-1 pr-2 text-slate-200">{tx.date}</td>
-                    <td className="py-1 pr-2 text-slate-300">{tx.description}</td>
-                    <td
-                      className={`py-1 text-right ${
-                        tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
-                      }`}
+          {/* Mapping override (CSV only) */}
+          {active.kind === "csv" && active.rawText && active.columns.length > 0 && (
+            <div className="border border-slate-700 rounded-md p-2 space-y-2">
+              <p className="text-[0.7rem] text-slate-400">
+                If dates/amounts look wrong, override the mapping:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {["date", "description", "amount"].map((fieldKey) => (
+                  <label
+                    key={fieldKey}
+                    className="flex flex-col gap-1 text-[0.7rem]"
+                  >
+                    <span className="uppercase tracking-[0.16em] text-slate-500">
+                      {fieldKey}
+                    </span>
+                    <select
+                      className="bg-[#05060F] border border-slate-700 rounded px-2 py-1 text-slate-200"
+                      value={active.mapping?.[fieldKey] ?? ""}
+                      onChange={(e) => updateActiveMapping(fieldKey, e.target.value)}
                     >
-                      {tx.amount < 0 ? "-" : ""}
-                      ${Math.abs(tx.amount).toFixed(2)}
-                    </td>
-                  </tr>
+                      <option value="">Auto detect</option>
+                      {active.columns.map((label, idx) => (
+                        <option key={idx} value={idx}>
+                          {label} (column {idx + 1})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
 
-          <div className="flex gap-2 mt-1">
-            <button
-              type="button"
-              onClick={handleConfirmImport}
-              className="px-3 py-1.5 text-[0.7rem] rounded-md border border-emerald-400/70 text-emerald-100 bg-emerald-500/10 hover:bg-emerald-500/20 transition"
-            >
-              Import these transactions
-            </button>
-            <button
-              type="button"
-              onClick={resetState}
-              className="px-3 py-1.5 text-[0.7rem] rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition"
-            >
-              Discard preview
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleApplyMapping}
+                className="mt-1 px-3 py-1.5 text-[0.7rem] rounded-md border border-cyan-400/70 text-cyan-100 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+              >
+                Re-parse with mapping
+              </button>
+
+              {active.status === "needsMapping" ? (
+                <p className="text-[0.7rem] text-amber-300">
+                  This file needs mapping before it can be imported.
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {/* Preview table */}
+          {active.previewRows?.length > 0 && (
+            <div className="border border-slate-700 rounded-md p-2 space-y-2">
+              <div className="flex items-center justify-between text-[0.7rem] text-slate-400">
+                <span>
+                  Previewing {previewCount} of {active.previewRows.length} rows
+                </span>
+                <span>
+                  Net amount:{" "}
+                  <span
+                    className={
+                      previewTotal < 0 ? "text-rose-300" : "text-emerald-300"
+                    }
+                  >
+                    {previewTotal < 0 ? "-" : ""}
+                    ${Math.abs(previewTotal).toFixed(2)}
+                  </span>
+                </span>
+              </div>
+
+              <div className="max-h-40 overflow-auto text-[0.7rem]">
+                <table className="w-full text-left border-collapse">
+                  <thead className="sticky top-0 bg-[#05060F]">
+                    <tr className="border-b border-slate-700">
+                      <th className="py-1 pr-2 font-semibold text-slate-300">
+                        Date
+                      </th>
+                      <th className="py-1 pr-2 font-semibold text-slate-300">
+                        Description
+                      </th>
+                      <th className="py-1 text-right font-semibold text-slate-300">
+                        Amount
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {active.previewRows.slice(0, previewCount).map((tx, idx) => (
+                      <tr key={idx} className="border-b border-slate-800/60">
+                        <td className="py-1 pr-2 text-slate-200">{tx.date}</td>
+                        <td className="py-1 pr-2 text-slate-300">
+                          {tx.description}
+                        </td>
+                        <td
+                          className={`py-1 text-right ${
+                            tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
+                          }`}
+                        >
+                          {tx.amount < 0 ? "-" : ""}
+                          ${Math.abs(tx.amount).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => handleImportOne(active.id)}
+                  disabled={active.status !== "ready"}
+                  className="px-3 py-1.5 text-[0.7rem] rounded-md border border-emerald-400/70 text-emerald-100 bg-emerald-500/10 hover:bg-emerald-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Import this file
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => parseItem(active.id)}
+                  className="px-3 py-1.5 text-[0.7rem] rounded-md border border-slate-600 text-slate-200 hover:border-slate-400 transition"
+                >
+                  Re-parse
+                </button>
+              </div>
+            </div>
+          )}
+
+          {active.previewRows?.length === 0 && active.status === "ready" ? (
+            <p className="text-[0.7rem] text-slate-500">
+              No rows to preview. If this seems wrong, try re-parsing or mapping.
+            </p>
+          ) : null}
         </div>
       )}
 
@@ -414,5 +628,3 @@ function BankImportCard({ onTransactionsParsed = () => {} }) {
     </div>
   );
 }
-
-export default BankImportCard;
