@@ -15,6 +15,7 @@ import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
 import GoalEditorModal from "./components/GoalEditorModal.jsx";
 import ContributionModal from "./components/ContributionModal.jsx";
+import InstallPWAButton from "./components/InstallPWAButton.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -1322,6 +1323,9 @@ function App() {
               />
             ))}
 
+            {/* Shows only when the browser supports install + app installable */}
+            <InstallPWAButton />
+            
             <ProfileMenu
               profile={userProfile}
               email={user?.email}
