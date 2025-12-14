@@ -77,9 +77,36 @@ function getCurrentMonthKey() {
   return `${year}-${month}`;
 }
 
-function createSampleBudget() {
+function normalizeMonthKey(value) {
+  if (!value) return null;
+  const trimmed = value.trim();
+
+  const direct = trimmed.match(/^(\d{4})-(\d{1,2})$/);
+  if (direct) {
+    const year = Number(direct[1]);
+    const month = Number(direct[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year.toString().padStart(4, "0")}-${month
+        .toString()
+        .padStart(2, "0")}`;
+    }
+  }
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    const year = parsed.getFullYear();
+    const month = parsed.getMonth() + 1;
+    return `${year.toString().padStart(4, "0")}-${month
+      .toString()
+      .padStart(2, "0")}`;
+  }
+
+  return null;
+}
+
+function createSampleBudget(monthKey = getCurrentMonthKey()) {
   return {
-    month: getCurrentMonthKey(),
+    month: monthKey,
     income: 5000,
     fixed: [
       { id: "rent", label: "Rent / Mortgage", amount: 1500 },
@@ -94,12 +121,60 @@ function createSampleBudget() {
   };
 }
 
-function createBlankBudget() {
+function createBlankBudget(monthKey = getCurrentMonthKey()) {
   return {
-    month: getCurrentMonthKey(),
+    month: monthKey,
     income: 0,
     fixed: [],
     variable: [],
+  };
+}
+
+function normalizeBudgetForMonth(budget, monthKey) {
+  const safeMonth = monthKey || budget?.month || getCurrentMonthKey();
+  const base = budget || createBlankBudget(safeMonth);
+
+  return {
+    ...base,
+    month: safeMonth,
+    income: Number.isFinite(Number(base.income)) ? Number(base.income) : 0,
+    fixed: Array.isArray(base.fixed) ? base.fixed.map((item) => ({ ...item })) : [],
+    variable: Array.isArray(base.variable) ? base.variable.map((item) => ({ ...item })) : [],
+  };
+}
+
+function buildInitialBudgetState(stored) {
+  const currentMonth = getCurrentMonthKey();
+
+  if (stored?.budgetsByMonth && typeof stored.budgetsByMonth === "object") {
+    const normalized = {};
+    for (const [monthKey, value] of Object.entries(stored.budgetsByMonth)) {
+      if (!monthKey) continue;
+      normalized[monthKey] = normalizeBudgetForMonth(value, monthKey);
+    }
+
+    if (!normalized[currentMonth]) {
+      normalized[currentMonth] = createBlankBudget(currentMonth);
+    }
+
+    const activeMonth =
+      (stored?.activeMonth && normalized[stored.activeMonth]
+        ? stored.activeMonth
+        : null) ||
+      (normalized[currentMonth] ? currentMonth : null) ||
+      Object.keys(normalized)[0] ||
+      currentMonth;
+
+    return { budgetsByMonth: normalized, activeMonth };
+  }
+
+  const fallbackBudget = stored?.budget || createSampleBudget(currentMonth);
+  const monthKey = fallbackBudget.month || currentMonth;
+  const normalizedBudget = normalizeBudgetForMonth(fallbackBudget, monthKey);
+
+  return {
+    budgetsByMonth: { [monthKey]: normalizedBudget },
+    activeMonth: monthKey,
   };
 }
 
@@ -439,11 +514,18 @@ function App() {
   }
   const stored = initialStoredRef.current;
 
+  const initialBudgetStateRef = useRef(buildInitialBudgetState(stored));
+
   // Theme per user (G)
   const [theme, setTheme] = useState(stored?.theme || "dark");
 
   // Core app state
-  const [budget, setBudget] = useState(stored?.budget || createSampleBudget());
+  const [budgetsByMonth, setBudgetsByMonth] = useState(
+    initialBudgetStateRef.current.budgetsByMonth
+  );
+  const [activeMonth, setActiveMonth] = useState(
+    initialBudgetStateRef.current.activeMonth
+  );
   const [goals, setGoals] = useState(stored?.goals || createSampleGoals());
   const [accounts, setAccounts] = useState(
     normalizeAccounts(stored?.accounts || createSampleAccounts())
@@ -483,8 +565,17 @@ function App() {
     goalId: null,
   });
 
+  const activeBudget =
+    budgetsByMonth[activeMonth] || createBlankBudget(activeMonth);
+
+  const monthOptions = useMemo(
+    () =>
+      Object.keys(budgetsByMonth || {}).sort((a, b) => b.localeCompare(a)),
+    [budgetsByMonth]
+  );
+
   // Derived things
-  const totals = useMemo(() => computeTotals(budget), [budget]);
+  const totals = useMemo(() => computeTotals(activeBudget), [activeBudget]);
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
   const goalBeingEdited = useMemo(() => {
     if (!goalEditorState.goalId) return null;
@@ -526,8 +617,6 @@ function App() {
   const currentGoal =
     goals.find((g) => g.id === selectedGoalId) || goals[0] || null;
 
-  const activeMonth = budget.month || getCurrentMonthKey();
-
   const transactionFlowMeta = useMemo(
     () => buildTransactionFlowMeta(accounts),
     [accounts]
@@ -545,7 +634,12 @@ function App() {
     applyingRemoteRef.current = true;
 
     try {
-      if (remote.budget) setBudget(remote.budget);
+      if (remote.budgetsByMonth || remote.budget) {
+        const { budgetsByMonth: remoteBudgets, activeMonth: remoteActive } =
+          buildInitialBudgetState(remote);
+        setBudgetsByMonth(remoteBudgets);
+        setActiveMonth(remoteActive);
+      }
       if (remote.goals) setGoals(remote.goals);
       if (remote.accounts)
         setAccounts(normalizeAccounts(remote.accounts || []));
@@ -649,18 +743,20 @@ function App() {
 
   // ---- Persist state with debounce (F + G) ----
   useEffect(() => {
-  const state = {
-    budget,
-    goals,
-    accounts,
-    currentAccountId,
-    selectedGoalId,
-    navOrder,
-    homePage,
-    dashboardSectionsOrder,
-    theme,
-    txFilter,
-  };
+    const state = {
+      budgetsByMonth,
+      activeMonth,
+      budget: activeBudget,
+      goals,
+      accounts,
+      currentAccountId,
+      selectedGoalId,
+      navOrder,
+      homePage,
+      dashboardSectionsOrder,
+      theme,
+      txFilter,
+    };
 
     // Always keep localStorage up-to-date
     saveStoredState(state);
@@ -695,7 +791,8 @@ function App() {
     };
   }, [
     user,
-    budget,
+    budgetsByMonth,
+    activeMonth,
     goals,
     accounts,
     currentAccountId,
@@ -704,6 +801,7 @@ function App() {
     homePage,
     dashboardSectionsOrder,
     theme,
+    txFilter,
   ]);
 
   // ---------- Handlers ----------
@@ -916,7 +1014,59 @@ function App() {
   }
 
   function handleBudgetChange(nextBudget) {
-    setBudget(nextBudget);
+    const targetMonth = nextBudget?.month || activeMonth;
+    setBudgetsByMonth((prev) => ({
+      ...prev,
+      [targetMonth]: normalizeBudgetForMonth(nextBudget, targetMonth),
+    }));
+    setActiveMonth(targetMonth);
+  }
+
+  function ensureBudgetMonth(monthKey, templateBudget = null) {
+    if (!monthKey) return;
+    setBudgetsByMonth((prev) => {
+      if (prev[monthKey]) return prev;
+      const base = templateBudget || prev[activeMonth] || createBlankBudget(monthKey);
+      return {
+        ...prev,
+        [monthKey]: normalizeBudgetForMonth({ ...base, month: monthKey }, monthKey),
+      };
+    });
+  }
+
+  function handleSelectMonth(monthKey) {
+    if (!monthKey) return;
+    ensureBudgetMonth(monthKey);
+    setActiveMonth(monthKey);
+  }
+
+  function handleAddMonth() {
+    const input = window.prompt(
+      "Enter the month to view or create (YYYY-MM):",
+      activeMonth
+    );
+    if (!input) return;
+    const normalized = normalizeMonthKey(input);
+    if (!normalized) {
+      window.alert("Please enter a valid month in the format YYYY-MM.");
+      return;
+    }
+    ensureBudgetMonth(normalized);
+    setActiveMonth(normalized);
+    setToast({
+      message: `Switched to ${normalized}.`,
+      variant: "success",
+    });
+  }
+
+  function handleJumpToCurrentMonth() {
+    const current = getCurrentMonthKey();
+    ensureBudgetMonth(current, createBlankBudget(current));
+    setActiveMonth(current);
+    setToast({
+      message: `Now viewing ${current}.`,
+      variant: "success",
+    });
   }
 
   function handleSetHomePage(pageKey) {
@@ -1105,7 +1255,9 @@ function App() {
 
     window.localStorage.removeItem(STORAGE_KEY);
 
-    setBudget(createBlankBudget());
+    const resetMonth = getCurrentMonthKey();
+    setBudgetsByMonth({ [resetMonth]: createBlankBudget(resetMonth) });
+    setActiveMonth(resetMonth);
     setGoals(createBlankGoals());
     setAccounts(createBlankAccounts());
     setCurrentAccountId(BASE_ACCOUNT_ID);
@@ -1324,17 +1476,47 @@ function App() {
             </p>
           </div>
 
-          <div className="flex flex-col items-end text-xs text-slate-400">
-            <span>
-              Month:{" "}
-              <span className="font-mono text-slate-100">{activeMonth}</span>
-            </span>
-            <span>
-              Total Balance:{" "}
-              <span className="font-mono text-emerald-300">
-                ${(Number.isFinite(totalBalance) ? totalBalance : 0).toFixed(2)}
+          <div className="flex flex-col items-end gap-2 text-xs text-slate-400">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                Budget month
               </span>
-            </span>
+              <select
+                className="bg-[#05060F] border border-slate-700 rounded-md px-2 py-1 text-[0.75rem] text-slate-100"
+                value={activeMonth}
+                onChange={(e) => handleSelectMonth(e.target.value)}
+              >
+                {monthOptions.map((monthKey) => (
+                  <option key={monthKey} value={monthKey}>
+                    {monthKey}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-cyan-400/60 text-cyan-200 hover:bg-cyan-500/10 transition"
+                onClick={handleAddMonth}
+              >
+                + Add month
+              </button>
+              <button
+                type="button"
+                className="px-2 py-1 rounded border border-slate-600/70 text-slate-200 hover:border-cyan-400 transition"
+                onClick={handleJumpToCurrentMonth}
+              >
+                Current month
+              </button>
+            </div>
+            <div className="text-right">
+              <span>
+                Total Balance:{" "}
+                <span className="font-mono text-emerald-300">
+                  ${(Number.isFinite(totalBalance) ? totalBalance : 0).toFixed(2)}
+                </span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1342,7 +1524,7 @@ function App() {
         {currentPage === "dashboard" && (
           <Dashboard
             month={activeMonth}
-            income={budget.income}
+            income={activeBudget.income}
             fixed={totals.fixedTotal}
             variable={totals.variableTotal}
             leftover={totals.leftover}
@@ -1411,7 +1593,7 @@ function App() {
         {currentPage === "budget" && (
           <BudgetPage
             month={activeMonth}
-            budget={budget}
+            budget={activeBudget}
             totals={totals}
             onBudgetChange={handleBudgetChange}
           />
