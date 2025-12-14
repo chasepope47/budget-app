@@ -6,8 +6,6 @@ function isIOS() {
 }
 
 function isStandalone() {
-  // iOS: navigator.standalone
-  // Others: display-mode media query
   if (typeof window === "undefined") return false;
   return (
     window.matchMedia?.("(display-mode: standalone)")?.matches ||
@@ -21,14 +19,8 @@ export default function InstallPWAButton() {
   const [showIOSHint, setShowIOSHint] = React.useState(false);
 
   React.useEffect(() => {
-    // If already installed/running as an app, never show prompts
-    if (isStandalone()) {
-      setCanInstall(false);
-      setShowIOSHint(false);
-      return;
-    }
+    if (isStandalone()) return;
 
-    // iOS Safari has no beforeinstallprompt
     if (isIOS()) {
       setShowIOSHint(true);
       return;
@@ -57,21 +49,17 @@ export default function InstallPWAButton() {
 
   async function handleInstall() {
     if (!deferredPrompt) return;
-
     deferredPrompt.prompt();
     await deferredPrompt.userChoice;
-
-    // Prompt can only be used once
     setDeferredPrompt(null);
     setCanInstall(false);
   }
 
-  // iOS helper (optional)
   if (showIOSHint) {
     return (
       <div className="px-3 py-2 rounded-lg border border-white/15 bg-white/10 text-xs text-slate-200">
-        On iPhone: tap <span className="font-semibold">Share</span> →{" "}
-        <span className="font-semibold">Add to Home Screen</span>
+        On iPhone: tap <strong>Share</strong> →{" "}
+        <strong>Add to Home Screen</strong>
         <button
           className="ml-3 underline text-slate-300 hover:text-white"
           onClick={() => setShowIOSHint(false)}
