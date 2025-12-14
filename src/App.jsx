@@ -78,6 +78,33 @@ function getCurrentMonthKey() {
   return `${year}-${month}`;
 }
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function formatMonthDisplay(monthKey) {
+  const fallback = { label: monthKey || "Unknown", year: "" };
+  if (!monthKey || typeof monthKey !== "string") return fallback;
+  const [year, month] = monthKey.split("-");
+  const monthNum = Number(month);
+  if (!Number.isInteger(monthNum) || monthNum < 1 || monthNum > 12) {
+    return fallback;
+  }
+  const label = MONTH_NAMES[monthNum - 1] || monthKey;
+  return { label, year: year || "" };
+}
+
 function normalizeMonthKey(value) {
   if (!value) return null;
   const trimmed = value.trim();
@@ -573,6 +600,18 @@ function App() {
     () =>
       Object.keys(budgetsByMonth || {}).sort((a, b) => b.localeCompare(a)),
     [budgetsByMonth]
+  );
+  const monthOptionsWithLabels = useMemo(
+    () =>
+      monthOptions.map((key) => ({
+        key,
+        label: formatMonthDisplay(key).label,
+      })),
+    [monthOptions]
+  );
+  const activeMonthDisplay = useMemo(
+    () => formatMonthDisplay(activeMonth),
+    [activeMonth]
   );
 
   // Derived things
@@ -1490,12 +1529,18 @@ function App() {
                 value={activeMonth}
                 onChange={(e) => handleSelectMonth(e.target.value)}
               >
-                {monthOptions.map((monthKey) => (
-                  <option key={monthKey} value={monthKey}>
-                    {monthKey}
+                {monthOptionsWithLabels.map((month) => (
+                  <option key={month.key} value={month.key}>
+                    {month.label}
                   </option>
                 ))}
               </select>
+            </div>
+            <div className="text-[0.7rem] text-slate-500">
+              Year{" "}
+              <span className="font-mono text-slate-200">
+                {activeMonthDisplay.year || "—"}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <button
