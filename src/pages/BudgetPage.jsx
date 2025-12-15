@@ -1,7 +1,7 @@
 import React from "react";
 import Card from "../components/Card.jsx";
 
-function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
+function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
   const fixedTotal = totals?.fixedTotal ?? 0;
   const variableTotal = totals?.variableTotal ?? 0;
   const leftover = totals?.leftover ?? 0;
@@ -27,9 +27,7 @@ function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
     const name = window.prompt(`New ${sectionKey} item name:`);
     if (!name) return;
 
-    const amountInput = window.prompt(
-      `Amount for "${name}" (numbers only):`
-    );
+    const amountInput = window.prompt(`Amount for "${name}" (numbers only):`);
     const amount = Number(amountInput);
     if (!Number.isFinite(amount)) {
       window.alert("That didn't look like a valid number.");
@@ -41,8 +39,7 @@ function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
       label: name,
       amount,
     };
-    const currentList =
-      sectionKey === "fixed" ? fixedItems : variableItems;
+    const currentList = sectionKey === "fixed" ? fixedItems : variableItems;
     const updatedSection = [...currentList, nextItem];
     const updatedBudget = { ...budget, [sectionKey]: updatedSection };
     onBudgetChange(updatedBudget);
@@ -50,8 +47,7 @@ function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
 
   function handleDeleteExpense(sectionKey, index) {
     if (!window.confirm("Delete this item?")) return;
-    const currentList =
-      sectionKey === "fixed" ? fixedItems : variableItems;
+    const currentList = sectionKey === "fixed" ? fixedItems : variableItems;
     const updatedSection = currentList.filter((_, i) => i !== index);
     const updatedBudget = { ...budget, [sectionKey]: updatedSection };
     onBudgetChange(updatedBudget);
@@ -60,9 +56,7 @@ function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-slate-100">
-          {month} Budget
-        </h1>
+        <h1 className="text-lg font-semibold text-slate-100">{month} Budget</h1>
         <span className="text-xs text-slate-400">
           Income → Expenses → Goals
         </span>
@@ -141,9 +135,7 @@ function ListWithTotal({ items = [], total = 0, onDelete }) {
           >
             <div className="flex-1 flex justify-between">
               <span>{label}</span>
-              <span className="text-slate-300">
-                ${amount.toFixed(2)}
-              </span>
+              <span className="text-slate-300">${amount.toFixed(2)}</span>
             </div>
             {onDelete && (
               <button
