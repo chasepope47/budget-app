@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AVATAR_CHOICES } from "../userMetadataApi.js";
+import { AVATAR_CHOICES } from "../userProfileApi.firebase.js";
 
 function AvatarSwatch({ emoji, active, onSelect }) {
   return (

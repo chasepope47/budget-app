@@ -1,12 +1,7 @@
 // src/pages/ReportsPage.jsx
 import React from "react";
 import FlowSankey from "../components/FlowSankey.jsx";
-import {
-  fetchReportSettings,
-  saveReportSettings,
-  DEFAULT_REPORT_SETTINGS,
-} from "../api/reportSettingsApi.js";
-import { supabase } from "../supabaseClient";
+import { DEFAULT_REPORT_SETTINGS, fetchReportSettings, saveReportSettings, } from "../api/reportSettingsApi.js"; // keep the defaults only
 
 function monthKeyFromISO(dateStr) {
   if (!dateStr || typeof dateStr !== "string") return null;
@@ -19,7 +14,6 @@ function dollars(n) {
   return Number.isFinite(x) ? x : 0;
 }
 
-// --- NEW: separate "matching" vs "display" normalization ---
 function normalizeForMatch(desc = "") {
   let s = String(desc).trim().toLowerCase();
   s = s.replace(/\s+/g, " ");
@@ -35,54 +29,24 @@ function normalizeForDisplay(desc = "") {
   return s || "Uncategorized";
 }
 
-// --- UPDATED keyword buckets ---
 const FIXED = [
-  "rent",
-  "mortgage",
-  "apts",
-  "apt",
-  "apartment",
-  "lease",
-  "property management",
-  "hoa",
-  "insurance",
-  "internet",
-  "phone",
-  "utilities",
-  "loan",
-  "payment",
+  "rent", "mortgage", "apts", "apt", "apartment", "lease", "property management",
+  "hoa", "insurance", "internet", "phone", "utilities", "loan", "payment",
 ];
 
 const SUBSCRIPTIONS = [
-  "amazon prime",
-  "prime membership",
-  "netflix",
-  "hulu",
-  "spotify",
-  "youtube premium",
-  "rocket money",
-  "membership",
-  "subscription",
-  "icloud",
-  "google one",
-  "dropbox",
+  "amazon prime", "prime membership", "netflix", "hulu", "spotify",
+  "youtube premium", "rocket money", "membership", "subscription",
+  "icloud", "google one", "dropbox",
 ];
 
 const ESSENTIAL = [
-  "grocery",
-  "costco",
-  "walmart",
-  "gas",
-  "fuel",
-  "medical",
-  "pharmacy",
-  "power",
-  "water",
+  "grocery", "costco", "walmart", "gas", "fuel", "medical",
+  "pharmacy", "power", "water",
 ];
 
 const TRANSFER = ["transfer", "zelle", "venmo", "cash app", "withdrawal", "deposit"];
 
-// --- UPDATED: bucketFor uses match text + subscriptions ---
 function bucketFor(matchText = "") {
   const d = matchText.toLowerCase();
   if (TRANSFER.some((k) => d.includes(k))) return "Transfers";
@@ -110,11 +74,13 @@ function buildSankey({
   includeTransfers = true,
 }) {
   const txs = (accounts || []).flatMap((a) => a.transactions || []);
-
   const scoped = monthKey ? txs.filter((t) => monthKeyFromISO(t.date) === monthKey) : txs;
   const capped = scoped.length > maxRows ? scoped.slice(-maxRows) : scoped;
 
-  const incomeTotal = capped.reduce((s, t) => s + (dollars(t.amount) > 0 ? dollars(t.amount) : 0), 0);
+  const incomeTotal = capped.reduce(
+    (s, t) => s + (dollars(t.amount) > 0 ? dollars(t.amount) : 0),
+    0
+  );
 
   const bucketTotals = new Map();
   const bucketMerchants = new Map();
@@ -123,7 +89,6 @@ function buildSankey({
     const amt = dollars(t.amount);
     if (!(amt < 0)) continue;
 
-    // --- UPDATED: use match vs display versions ---
     const matchText = normalizeForMatch(t.description || "");
     const merchant = normalizeForDisplay(t.description || "");
     const bucket = bucketFor(matchText);
@@ -142,7 +107,6 @@ function buildSankey({
     return { nodes: [], links: [], meta: { incomeTotal: 0 } };
   }
 
-  // --- UPDATED: include Subscriptions bucket ---
   const buckets = includeTransfers
     ? ["Fixed", "Subscriptions", "Essential", "Variable", "Transfers"]
     : ["Fixed", "Subscriptions", "Essential", "Variable"];
@@ -165,19 +129,13 @@ function buildSankey({
     }
   }
 
-  // Transfers are neutral: do NOT count them as "spent"
-  const spent = buckets.reduce((s, b) => {
-    if (b === "Transfers") return s;
-    return s + (bucketTotals.get(b) || 0);
-  }, 0);
-
+  const spent = buckets.reduce((s, b) => (b === "Transfers" ? s : s + (bucketTotals.get(b) || 0)), 0);
   const leftover = Math.max(0, incomeTotal - spent);
+
   if (leftover > 0) {
     nodes.push({ name: "Leftover" });
     links.push({ source: "Income", target: "Leftover", value: leftover });
   }
-
-  const transfersTotal = bucketTotals.get("Transfers") || 0;
 
   const seen = new Set();
   const uniqueNodes = [];
@@ -195,13 +153,13 @@ function buildSankey({
       totalIncome: incomeTotal,
       spentTotal: spent,
       totalSpent: spent,
-      transfersTotal,
+      transfersTotal: bucketTotals.get("Transfers") || 0,
       leftover,
     },
   };
 }
 
-const DEFAULT_SETTINGS = DEFAULT_REPORT_SETTINGS;
+const SETTINGS_KEY = "budgetApp_reportSettings_v1";
 
 const PRESETS = {
   Minimal: { topNPerBucket: 5, maxRows: 10000, includeTransfers: false, preset: "Minimal" },
@@ -216,90 +174,44 @@ function clampInt(v, min, max, fallback) {
 }
 
 export default function ReportsPage({ accounts = [], monthKey, onMerchantPick }) {
-  const [tab, setTab] = React.useState("overview"); // "overview" | "settings"
+  const [tab, setTab] = React.useState("overview");
   const [data, setData] = React.useState({ nodes: [], links: [], meta: { incomeTotal: 0 } });
 
-  const [settings, setSettings] = React.useState(DEFAULT_SETTINGS);
-  const [settingsStatus, setSettingsStatus] = React.useState({ loading: true, saving: false, error: null });
-
-  const [userId, setUserId] = React.useState(null);
-
-  React.useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!mounted) return;
-      setUserId(data?.user?.id || null);
-    })();
-
-    return () => { mounted = false; };
-  }, []);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    if (!userId) {
-      setSettingsStatus((s) => ({ ...s, loading: false }));
-      return;
+  const [settings, setSettings] = React.useState(() => {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return { ...DEFAULT_REPORT_SETTINGS, ...(parsed || {}) };
+    } catch {
+      return { ...DEFAULT_REPORT_SETTINGS };
     }
-
-    (async () => {
-      try {
-        setSettingsStatus({ loading: true, saving: false, error: null });
-        const remote = await fetchReportSettings(userId);
-        if (cancelled) return;
-
-        if (remote) {
-          setSettings({ ...DEFAULT_SETTINGS, ...remote });
-        } else {
-          setSettings(DEFAULT_SETTINGS);
-        }
-
-        setSettingsStatus({ loading: false, saving: false, error: null });
-      } catch (e) {
-        if (cancelled) return;
-        setSettingsStatus({ loading: false, saving: false, error: e?.message || "Failed to load settings" });
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [userId]);
+  });
 
   React.useEffect(() => {
-    let cancelled = false;
     const id = setTimeout(() => {
-      const next = buildSankey({
-        accounts,
-        monthKey,
-        topNPerBucket: settings.topNPerBucket,
-        maxRows: settings.maxRows,
-        includeTransfers: settings.includeTransfers,
-      });
-      if (!cancelled) setData(next);
+      setData(
+        buildSankey({
+          accounts,
+          monthKey,
+          topNPerBucket: settings.topNPerBucket,
+          maxRows: settings.maxRows,
+          includeTransfers: settings.includeTransfers,
+        })
+      );
     }, 0);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(id);
-    };
+    return () => clearTimeout(id);
   }, [accounts, monthKey, settings.topNPerBucket, settings.maxRows, settings.includeTransfers]);
 
   React.useEffect(() => {
-    if (!userId) return;
-    if (settingsStatus.loading) return;
-
-    const t = setTimeout(async () => {
+    const t = setTimeout(() => {
       try {
-        setSettingsStatus((s) => ({ ...s, saving: true, error: null }));
-        await saveReportSettings(userId, settings);
-        setSettingsStatus((s) => ({ ...s, saving: false }));
-      } catch (e) {
-        setSettingsStatus((s) => ({ ...s, saving: false, error: e?.message || "Failed to save settings" }));
-      }
-    }, 600);
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      } catch {}
+    }, 300);
 
     return () => clearTimeout(t);
-  }, [userId, settings, settingsStatus.loading]);
+  }, [settings]);
 
   function applyPreset(name) {
     const p = PRESETS[name];
@@ -314,9 +226,7 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
           <button
             onClick={() => setTab("overview")}
             className={`px-3 py-1.5 text-sm rounded-lg ${
-              tab === "overview"
-                ? "bg-slate-900 text-slate-100"
-                : "text-slate-300 hover:text-slate-100"
+              tab === "overview" ? "bg-slate-900 text-slate-100" : "text-slate-300 hover:text-slate-100"
             }`}
           >
             Overview
@@ -324,20 +234,11 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
           <button
             onClick={() => setTab("settings")}
             className={`px-3 py-1.5 text-sm rounded-lg ${
-              tab === "settings"
-                ? "bg-slate-900 text-slate-100"
-                : "text-slate-300 hover:text-slate-100"
+              tab === "settings" ? "bg-slate-900 text-slate-100" : "text-slate-300 hover:text-slate-100"
             }`}
           >
             Settings
           </button>
-        </div>
-
-        <div className="text-xs text-slate-400">
-          {settingsStatus.loading && "Loading settings…"}
-          {!settingsStatus.loading && settingsStatus.saving && "Saving…"}
-          {!settingsStatus.loading && !settingsStatus.saving && settings.preset && `Preset: ${settings.preset}`}
-          {settingsStatus.error ? ` • ${settingsStatus.error}` : ""}
         </div>
       </div>
 
@@ -371,15 +272,12 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
                 </button>
               ))}
               <button
-                onClick={() => setSettings({ ...DEFAULT_SETTINGS, preset: "Custom" })}
+                onClick={() => setSettings({ ...DEFAULT_REPORT_SETTINGS, preset: "Custom" })}
                 className="text-sm px-3 py-2 rounded-md border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-100"
               >
                 Reset
               </button>
             </div>
-            <p className="text-xs text-slate-400">
-              Presets change chart density/performance. You can still fine-tune below.
-            </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -399,7 +297,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
                 }
                 className="w-full bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-slate-100"
               />
-              <p className="text-xs text-slate-400">Higher = more nodes/links.</p>
             </div>
 
             <div className="space-y-2">
@@ -419,7 +316,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
                 }
                 className="w-full bg-slate-900 border border-slate-800 rounded-md px-3 py-2 text-slate-100"
               />
-              <p className="text-xs text-slate-400">Performance cap for huge CSV imports.</p>
             </div>
 
             <div className="flex items-center justify-between gap-4 md:col-span-2">
@@ -441,12 +337,6 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
               />
             </div>
           </div>
-
-          {!userId && (
-            <div className="text-xs text-amber-300">
-              Not signed in — settings will not persist across devices.
-            </div>
-          )}
         </div>
       )}
     </div>
