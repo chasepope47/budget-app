@@ -1,7 +1,10 @@
 import React from "react";
 import Card from "../components/Card.jsx";
 
-function BudgetPage({ month, budget, totals, onBudgetChange }) {
+function BudgetPage({ month, budget, totals, = {}, onBudgetChange }) {
+  const fixedTotal = totals?.fixedTotal ?? 0;
+  const variableTotal = totals?.variableTotal ?? 0;
+  const leftover = totals?.leftover ?? 0;
   const incomeValue = Number(budget?.income ?? 0);
   const fixedItems = Array.isArray(budget?.fixed) ? budget.fixed : [];
   const variableItems = Array.isArray(budget?.variable) ? budget.variable : [];
