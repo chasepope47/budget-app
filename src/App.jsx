@@ -294,7 +294,55 @@ function App() {
             onChangeCurrentAccount={setCurrentAccountId}
           />
         )}
-      </main>
+      {currentPage === "balances" && (
+    <BalancesDashboard
+      accounts={accounts}
+      currentAccountId={currentAccountId}
+      onChangeCurrentAccount={setCurrentAccountId}
+      onAccountsChange={setAccounts}   // use whatever prop your page expects
+    />
+  )}
+
+  {currentPage === "budget" && (
+    <BudgetPage
+      month={activeMonth}
+      budget={activeBudget}
+      budgetsByMonth={budgetsByMonth}
+      onBudgetsByMonthChange={setBudgetsByMonth}
+    />
+  )}
+
+  {currentPage === "transactions" && (
+    <TransactionsPage
+      accounts={accounts}
+      currentAccountId={currentAccountId}
+      transactions={activeBudget.transactions || []} // adjust if your tx live elsewhere
+      filter={txFilter}
+      onFilterChange={setTxFilter}
+      onUpdateBudget={(nextBudget) =>
+        setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
+      }
+    />
+  )}
+
+  {currentPage === "goalDetail" && (
+    <GoalDetailPage
+      goals={goals}
+      selectedGoalId={selectedGoalId}
+      onSelectGoal={setSelectedGoalId}
+      onGoalsChange={setGoals}
+    />
+  )}
+
+  {currentPage === "reports" && (
+    <ReportsPage
+      budgetsByMonth={budgetsByMonth}
+      accounts={accounts}
+      goals={goals}
+      theme={theme}
+    />
+  )}
+</main>
 
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
     </div>
