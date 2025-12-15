@@ -1333,11 +1333,11 @@ function App() {
 
   // ---- App layout ----
   return (
-    <div className={`min-h-screen flex flex-col ${themeStyles.shellClass}`}>
+  <div className={`app-shell min-h-screen flex flex-col ${themeStyles.shellClass}`}>
       <header
         className={`flex-none border-b backdrop-blur ${themeStyles.headerClass}`}
       >
-        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="content py-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-col">
             <span className="text-xs tracking-[0.2em] text-cyan-300">
               BUDGET CENTER
@@ -1384,7 +1384,8 @@ function App() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-5xl mx-auto px-4 py-4 space-y-3">
+      <main className="flex-1 w-full">
+        <div className="content py-4 space-y-3">
         {customizeMode && (
           <div className="border border-cyan-500/40 rounded-xl bg-cyan-500/5 p-4 space-y-4 shadow-lg">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -1683,6 +1684,7 @@ function App() {
             onAddContributionRequest={handleOpenContribution}
           />
         )}
+        </div>
       </main>
 
       {toast && (
