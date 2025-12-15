@@ -36,15 +36,10 @@ import {
   saveStoredState,
   migrateStoredState,
 } from "./lib/storage.js";
-
 import {
   sumAmounts,
-  computeNetTransactions,
   normalizeAccounts,
-  mergeTransactions,
-  importTransactionsWithDetection,
 } from "./lib/accounts.js";
-import { buildTransactionFlowMeta } from "./lib/reports.js";
 import { getThemeConfig } from "./themeConfig.js";
 
 /* ---------------- Navigation ---------------- */
@@ -58,9 +53,7 @@ const NAV_ITEMS = [
   { key: "reports", label: "Reports" },
 ];
 
-const NAV_LABELS = Object.fromEntries(
-  NAV_ITEMS.map((n) => [n.key, n.label])
-);
+const NAV_LABELS = Object.fromEntries(NAV_ITEMS.map((n) => [n.key, n.label]));
 
 const DEFAULT_DASHBOARD_SECTIONS = [
   "monthOverview",
@@ -69,14 +62,10 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "csvImport",
 ];
 
-/* ---------------- Helpers ---------------- */
-
 function getCurrentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-
-/* ---------------- App ---------------- */
 
 function App() {
   const {
@@ -89,21 +78,16 @@ function App() {
   } = useFirebaseAuth();
 
   const activeWorkspaceId = user?.uid || null;
-
   const applyingRemoteRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const initialStoredRef = useRef(null);
 
-  /* -------- Load local once -------- */
-
   if (initialStoredRef.current === null) {
     initialStoredRef.current = migrateStoredState(loadStoredState());
   }
-
   const stored = initialStoredRef.current;
 
   /* -------- State -------- */
-
   const [theme, setTheme] = useState(stored?.theme || "dark");
   const [budgetsByMonth, setBudgetsByMonth] = useState(
     stored?.budgetsByMonth || {}
@@ -121,13 +105,12 @@ function App() {
   const [navOrder, setNavOrder] = useState(
     stored?.navOrder || NAV_ITEMS.map((n) => n.key)
   );
-
-  // Safety net – ensures navOrder always has the default tabs
-useEffect(() => {
-  if (!Array.isArray(navOrder) || navOrder.length === 0) {
-    setNavOrder(NAV_ITEMS.map((n) => n.key));
-  }
-}, [homePage, setHomePage]);
+  // Ensure navOrder always has default tabs
+  useEffect(() => {
+    if (!Array.isArray(navOrder) || navOrder.length === 0) {
+      setNavOrder(NAV_ITEMS.map((n) => n.key));
+    }
+  }, [navOrder]);
 
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
@@ -145,27 +128,19 @@ useEffect(() => {
   const [profileLoading, setProfileLoading] = useState(false);
 
   /* -------- Derived -------- */
-
   const activeBudget =
     budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
-
   const totals = useMemo(() => {
     const fixed = sumAmounts(activeBudget.fixed || []);
     const variable = sumAmounts(activeBudget.variable || []);
-    return {
-      fixed,
-      variable,
-      leftover: (activeBudget.income || 0) - fixed - variable,
-    };
+    return { fixed, variable, leftover: activeBudget.income - fixed - variable };
   }, [activeBudget]);
 
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
 
   /* -------- Profile -------- */
-
   useEffect(() => {
     if (!user?.uid) return;
-
     setProfileLoading(true);
     loadOrCreateUserProfile(user)
       .then(setUserProfile)
@@ -173,16 +148,12 @@ useEffect(() => {
   }, [user?.uid]);
 
   /* -------- Realtime Firestore sync -------- */
-
   useEffect(() => {
     if (!activeWorkspaceId) return;
-
     const ref = doc(db, "workspaces", activeWorkspaceId);
-
     const unsub = onSnapshot(ref, (snap) => {
       const remote = snap.data()?.state;
       if (!remote) return;
-
       applyingRemoteRef.current = true;
       setBudgetsByMonth(remote.budgetsByMonth || {});
       setActiveMonth(remote.activeMonth || activeMonth);
@@ -195,15 +166,12 @@ useEffect(() => {
       );
       setTheme(remote.theme || "dark");
     });
-
     return () => unsub();
   }, [activeWorkspaceId]);
 
   /* -------- Initial Firestore load -------- */
-
   useEffect(() => {
     if (!activeWorkspaceId) return;
-
     loadWorkspaceState(activeWorkspaceId).then((remote) => {
       if (remote) {
         applyingRemoteRef.current = true;
@@ -216,7 +184,6 @@ useEffect(() => {
   }, [activeWorkspaceId]);
 
   /* -------- Persist -------- */
-
   useEffect(() => {
     const state = {
       budgetsByMonth,
@@ -230,15 +197,12 @@ useEffect(() => {
       theme,
       txFilter,
     };
-
     saveStoredState(state);
-
     if (!activeWorkspaceId) return;
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false;
       return;
     }
-
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveWorkspaceState(activeWorkspaceId, state).then(() =>
@@ -260,20 +224,16 @@ useEffect(() => {
   ]);
 
   /* -------- Reset -------- */
-
   async function handleResetAllData() {
     if (!window.confirm("Reset all data?")) return;
-
     if (activeWorkspaceId) {
       await deleteDoc(doc(db, "workspaces", activeWorkspaceId));
     }
-
     localStorage.removeItem(STORAGE_KEY);
     window.location.reload();
   }
 
   /* -------- Auth gate -------- */
-
   if (!user) {
     return (
       <AuthScreen
@@ -286,13 +246,22 @@ useEffect(() => {
   }
 
   /* -------- UI -------- */
-
   return (
     <div className={`app-shell ${themeStyles.shellClass}`}>
       {/* HEADER */}
       <header className={themeStyles.headerClass}>
         <div className="content flex justify-between items-center">
-          <span>BUDGET CENTER</span>
+          <div className="flex items-center gap-4">
+            <span>BUDGET CENTER</span>
+            {navOrder.map((pageKey) => (
+              <NavButton
+                key={pageKey}
+                label={NAV_LABELS[pageKey]}
+                active={currentPage === pageKey}
+                onClick={() => setCurrentPage(pageKey)}
+              />
+            ))}
+          </div>
           <ProfileMenu
             profile={userProfile}
             email={user.email}
