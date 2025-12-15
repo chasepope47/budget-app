@@ -121,6 +121,14 @@ function App() {
   const [navOrder, setNavOrder] = useState(
     stored?.navOrder || NAV_ITEMS.map((n) => n.key)
   );
+
+  // Safety net – ensures navOrder always has the default tabs
+useEffect(() => {
+  if (!Array.isArray(navOrder) || navOrder.length === 0) {
+    setNavOrder(NAV_ITEMS.map((n) => n.key));
+  }
+}, [homePage, setHomePage]);
+
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
     stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
