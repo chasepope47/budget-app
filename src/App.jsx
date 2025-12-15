@@ -307,8 +307,12 @@ function App() {
     <BudgetPage
       month={activeMonth}
       budget={activeBudget}
+      totals={totals}
       budgetsByMonth={budgetsByMonth}
-      onBudgetsByMonthChange={setBudgetsByMonth}
+      onBudgetChange={(nextBudget) =>
+       setBudgetsByMonth((prev) => ({ ...prev, 
+  [activeMonth]: nextBudget }))
+      } 
     />
   )}
 
