@@ -17,9 +17,6 @@ import ActionsMenu from "./components/ActionsMenu.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
-import GoalEditorModal from "./components/GoalEditorModal.jsx";
-import ContributionModal from "./components/ContributionModal.jsx";
-import InstallPWAButton from "./components/InstallPWAButton.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -36,10 +33,7 @@ import {
   saveStoredState,
   migrateStoredState,
 } from "./lib/storage.js";
-import {
-  sumAmounts,
-  normalizeAccounts,
-} from "./lib/accounts.js";
+import { sumAmounts, normalizeAccounts } from "./lib/accounts.js";
 import { getThemeConfig } from "./themeConfig.js";
 
 /* ---------------- Navigation ---------------- */
@@ -105,6 +99,7 @@ function App() {
   const [navOrder, setNavOrder] = useState(
     stored?.navOrder || NAV_ITEMS.map((n) => n.key)
   );
+
   // Ensure navOrder always has default tabs
   useEffect(() => {
     if (!Array.isArray(navOrder) || navOrder.length === 0) {
@@ -130,6 +125,7 @@ function App() {
   /* -------- Derived -------- */
   const activeBudget =
     budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
+
   const totals = useMemo(() => {
     const fixed = sumAmounts(activeBudget.fixed || []);
     const variable = sumAmounts(activeBudget.variable || []);
@@ -154,6 +150,7 @@ function App() {
     const unsub = onSnapshot(ref, (snap) => {
       const remote = snap.data()?.state;
       if (!remote) return;
+
       applyingRemoteRef.current = true;
       setBudgetsByMonth(remote.budgetsByMonth || {});
       setActiveMonth(remote.activeMonth || activeMonth);
@@ -167,6 +164,7 @@ function App() {
       setTheme(remote.theme || "dark");
     });
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
   /* -------- Initial Firestore load -------- */
@@ -181,6 +179,7 @@ function App() {
         setAccounts(normalizeAccounts(remote.accounts || []));
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
   /* -------- Persist -------- */
@@ -197,12 +196,16 @@ function App() {
       theme,
       txFilter,
     };
+
     saveStoredState(state);
+
     if (!activeWorkspaceId) return;
+
     if (applyingRemoteRef.current) {
       applyingRemoteRef.current = false;
       return;
     }
+
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
       saveWorkspaceState(activeWorkspaceId, state).then(() =>
@@ -250,32 +253,39 @@ function App() {
     <div className={`app-shell ${themeStyles.shellClass}`}>
       {/* HEADER */}
       <header className={themeStyles.headerClass}>
-        <div className="content flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <span>BUDGET CENTER</span>
-            {navOrder.map((pageKey) => (
-              <NavButton
-                key={pageKey}
-                label={NAV_LABELS[pageKey]}
-                active={currentPage === pageKey}
-                onClick={() => setCurrentPage(pageKey)}
-              />
-            ))}
+        <div className="content headerRow">
+          <div className="brandAndNav">
+            <span className="appTitle">BUDGET CENTER</span>
+
+            {/* mobile-safe: scrollable row */}
+            <div className="navRow" aria-label="Primary navigation">
+              {navOrder.map((pageKey) => (
+                <NavButton
+                  key={pageKey}
+                  label={NAV_LABELS[pageKey]}
+                  active={currentPage === pageKey}
+                  onClick={() => setCurrentPage(pageKey)}
+                />
+              ))}
+            </div>
           </div>
-          <ProfileMenu
-            profile={userProfile}
-            email={user.email}
-            loading={profileLoading}
-            onUpdateProfile={(p) =>
-              updateUserProfile(user.uid, p).then(setUserProfile)
-            }
-          />
-          <ActionsMenu
-            onReset={handleResetAllData}
-            onSignOut={signOut}
-            themeValue={theme}
-            onChangeTheme={setTheme}
-          />
+
+          <div className="headerRight">
+            <ProfileMenu
+              profile={userProfile}
+              email={user.email}
+              loading={profileLoading}
+              onUpdateProfile={(p) =>
+                updateUserProfile(user.uid, p).then(setUserProfile)
+              }
+            />
+            <ActionsMenu
+              onReset={handleResetAllData}
+              onSignOut={signOut}
+              themeValue={theme}
+              onChangeTheme={setTheme}
+            />
+          </div>
         </div>
       </header>
 
@@ -294,59 +304,65 @@ function App() {
             onChangeCurrentAccount={setCurrentAccountId}
           />
         )}
-      {currentPage === "balances" && (
-    <BalancesDashboard
-      accounts={accounts}
-      currentAccountId={currentAccountId}
-      onChangeCurrentAccount={setCurrentAccountId}
-      onAccountsChange={setAccounts}   // use whatever prop your page expects
-    />
-  )}
 
-  {currentPage === "budget" && (
-    <BudgetPage
-      month={activeMonth}
-      budget={activeBudget}
-      totals={totals}
-      budgetsByMonth={budgetsByMonth}
-      onBudgetChange={(nextBudget) =>
-       setBudgetsByMonth((prev) => ({ ...prev, 
-  [activeMonth]: nextBudget }))
-      } 
-    />
-  )}
+        {currentPage === "balances" && (
+          <BalancesDashboard
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            onChangeCurrentAccount={setCurrentAccountId}
+            onAccountsChange={setAccounts}
+          />
+        )}
 
-  {currentPage === "transactions" && (
-    <TransactionsPage
-      accounts={accounts}
-      currentAccountId={currentAccountId}
-      transactions={activeBudget.transactions || []} // adjust if your tx live elsewhere
-      filter={txFilter}
-      onFilterChange={setTxFilter}
-      onUpdateBudget={(nextBudget) =>
-        setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
-      }
-    />
-  )}
+        {currentPage === "budget" && (
+          <BudgetPage
+            month={activeMonth}
+            budget={activeBudget}
+            totals={totals}
+            budgetsByMonth={budgetsByMonth}
+            onBudgetChange={(nextBudget) =>
+              setBudgetsByMonth((prev) => ({
+                ...prev,
+                [activeMonth]: nextBudget,
+              }))
+            }
+          />
+        )}
 
-  {currentPage === "goalDetail" && (
-    <GoalDetailPage
-      goals={goals}
-      selectedGoalId={selectedGoalId}
-      onSelectGoal={setSelectedGoalId}
-      onGoalsChange={setGoals}
-    />
-  )}
+        {currentPage === "transactions" && (
+          <TransactionsPage
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            transactions={activeBudget.transactions || []}
+            filter={txFilter}
+            onFilterChange={setTxFilter}
+            onUpdateBudget={(nextBudget) =>
+              setBudgetsByMonth((prev) => ({
+                ...prev,
+                [activeMonth]: nextBudget,
+              }))
+            }
+          />
+        )}
 
-  {currentPage === "reports" && (
-    <ReportsPage
-      budgetsByMonth={budgetsByMonth}
-      accounts={accounts}
-      goals={goals}
-      theme={theme}
-    />
-  )}
-</main>
+        {currentPage === "goalDetail" && (
+          <GoalDetailPage
+            goals={goals}
+            selectedGoalId={selectedGoalId}
+            onSelectGoal={setSelectedGoalId}
+            onGoalsChange={setGoals}
+          />
+        )}
+
+        {currentPage === "reports" && (
+          <ReportsPage
+            budgetsByMonth={budgetsByMonth}
+            accounts={accounts}
+            goals={goals}
+            theme={theme}
+          />
+        )}
+      </main>
 
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
     </div>
