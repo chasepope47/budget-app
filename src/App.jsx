@@ -329,21 +329,19 @@ function App() {
           />
         )}
 
-        {currentPage === "transactions" && (
-          <TransactionsPage
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            transactions={activeBudget.transactions || []}
-            filter={txFilter}
-            onFilterChange={setTxFilter}
-            onUpdateBudget={(nextBudget) =>
-              setBudgetsByMonth((prev) => ({
-                ...prev,
-                [activeMonth]: nextBudget,
-              }))
-            }
-          />
-        )}
+      {currentPage === "transactions" && (
+        <TransactionsPage
+          accounts={accounts}
+          currentAccountId={currentAccountId}
+          transactions={activeBudget.transactions || []}
+          filter={txFilter}
+          onFilterChange={setTxFilter}
+          onUpdateBudget={(nextBudget) =>
+            setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
+          }
+        />
+      )}
+
 
         {currentPage === "goalDetail" && (
           <GoalDetailPage
@@ -356,10 +354,12 @@ function App() {
 
         {currentPage === "reports" && (
           <ReportsPage
-            budgetsByMonth={budgetsByMonth}
             accounts={accounts}
-            goals={goals}
-            theme={theme}
+            monthKey={activeMonth} // optional, but recommended (keeps report month consistent)
+            onMerchantPick={(merchant) => {
+              setTxFilter(merchant);
+              setCurrentPage("transactions");
+            }}
           />
         )}
       </main>
