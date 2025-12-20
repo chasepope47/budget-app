@@ -567,10 +567,10 @@ export function parseCsvTransactions(text) {
       amount = applyTypeSign(amount, cols);
     } else if (debitIndex >= 0 || creditIndex >= 0) {
       // Separate Debit/Credit columns
-      const debit =
-        debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
-      const credit =
-        creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
+      const debitRaw = debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
+      const creditRaw = creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
+      const debit = Number.isFinite(debitRaw) ? debitRaw : 0;
+      const credit = Number.isFinite(creditRaw) ? creditRaw : 0;
       // Convention: money in = +, money out = -
       amount = credit - debit;
     }
@@ -627,6 +627,19 @@ export function parseCsvWithMapping(
     let amount = NaN;
     if (amountIndex != null && amountIndex >= 0) {
       amount = parseAmountCell(cols[amountIndex]);
+      // applyTypeSign not used in mapping mode
+    } else if (debitIndex != null || creditIndex != null) {
+      const debitRaw =
+        debitIndex != null && debitIndex >= 0
+          ? parseAmountCell(cols[debitIndex])
+          : 0;
+      const creditRaw =
+        creditIndex != null && creditIndex >= 0
+          ? parseAmountCell(cols[creditIndex])
+          : 0;
+      const debit = Number.isFinite(debitRaw) ? debitRaw : 0;
+      const credit = Number.isFinite(creditRaw) ? creditRaw : 0;
+      amount = credit - debit;
     }
 
     if (!date && !description && Number.isNaN(amount)) continue;
