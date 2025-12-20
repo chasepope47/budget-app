@@ -37,14 +37,35 @@ export function detectBankFromText(text = "", fileName = "") {
 // Detect delimiter by sampling the header line; fallback to comma.
 function detectDelimiter(text = "") {
   const firstLine =
-    text.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
-  const commaCount = (firstLine.match(/,/g) || []).length;
-  const semiCount = (firstLine.match(/;/g) || []).length;
-  const tabCount = (firstLine.match(/\t/g) || []).length;
+    text.split(/\r\n|\n|\r/).find((l) => l.trim().length > 0) || "";
 
-  if (semiCount > commaCount && semiCount >= tabCount) return ";";
-  if (tabCount > commaCount && tabCount > semiCount) return "\t";
-  return ",";
+  let comma = 0;
+  let semi = 0;
+  let tab = 0;
+  let pipe = 0;
+  let inQuotes = false;
+
+  for (let i = 0; i < firstLine.length; i++) {
+    const ch = firstLine[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (inQuotes) continue;
+    if (ch === ",") comma++;
+    else if (ch === ";") semi++;
+    else if (ch === "\t") tab++;
+    else if (ch === "|") pipe++;
+  }
+
+  const counts = [
+    { d: ",", c: comma },
+    { d: ";", c: semi },
+    { d: "\t", c: tab },
+    { d: "|", c: pipe },
+  ].sort((a, b) => b.c - a.c);
+
+  return counts[0].c > 0 ? counts[0].d : ",";
 }
 
 export function splitCsvLine(line, delimiter = ",") {
@@ -110,6 +131,13 @@ export function parseAmountCell(cell) {
   // strip $ and commas
   cleaned = cleaned.replace(/[$,]/g, "");
 
+  // handle trailing/leading + or - indicators (e.g., 123.45-)
+  if (cleaned.endsWith("-")) {
+    cleaned = "-" + cleaned.slice(0, -1);
+  }
+  if (cleaned.endsWith("+")) {
+    cleaned = cleaned.slice(0, -1);
+  }
   // allow trailing/leading plus sign
   cleaned = cleaned.replace(/^\+/, "");
 
@@ -403,8 +431,12 @@ export function getCsvColumnsForMapping(text) {
  * Handles header-based and header-less CSVs, plus various date/amount formats.
  */
 export function parseCsvTransactions(text) {
+  if (!text) return [];
+  const cleanText = text.replace(/^\uFEFF/, "");
   const delimiter = detectDelimiter(text);
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  const lines = cleanText
+    .split(/\r\n|\n|\r/)
+    .filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
   let header = normalizeHeaderRow(lines[0], delimiter);
@@ -511,8 +543,12 @@ export function parseCsvWithMapping(
   text,
   { dateIndex = null, descIndex = null, amountIndex = null } = {}
 ) {
+  if (!text) return [];
+  const cleanText = text.replace(/^\uFEFF/, "");
   const delimiter = detectDelimiter(text);
-  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  const lines = cleanText
+    .split(/\r\n|\n|\r/)
+    .filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
   const rows = [];
