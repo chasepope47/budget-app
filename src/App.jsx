@@ -38,6 +38,7 @@ import {
   normalizeAccounts,
   importTransactionsWithDetection,
   mergeTransactions,
+  computeAccountBalance,
 } from "./lib/accounts.js";
 import { getThemeConfig } from "./themeConfig.js";
 
@@ -152,6 +153,16 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
   }, [activeBudget]);
 
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
+
+  const { currentAccountBalance, totalBalance } = useMemo(() => {
+    const list = Array.isArray(accounts) ? accounts : [];
+    const current = list.find((a) => a.id === currentAccountId);
+
+    const currentBalance = computeAccountBalance(current);
+    const total = list.reduce((sum, acc) => sum + computeAccountBalance(acc), 0);
+
+    return { currentAccountBalance: currentBalance, totalBalance: total };
+  }, [accounts, currentAccountId]);
 
   /* -------- Profile -------- */
   useEffect(() => {
@@ -438,7 +449,11 @@ function handleImportedTransactions(rows = [], meta = {}) {
             accounts={accounts}
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
+            transactions={activeBudget.transactions || []}
+            currentAccountBalance={currentAccountBalance}
+            totalBalance={totalBalance}
             onCsvImported={handleImportedTransactions}
+            onTransactionsParsed={handleImportedTransactions}
           />
         )}
 

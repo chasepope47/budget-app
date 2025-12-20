@@ -27,10 +27,12 @@ function Dashboard({
   onOpenGoal = () => {},
   onCreateGoal = () => {},
   onCsvImported = () => {},
+  onTransactionsParsed, // alias support for older props
   currentAccountBalance = 0,
   totalBalance = 0,
   sectionsOrder,
 }) {
+  const handleImport = onCsvImported || onTransactionsParsed || (() => {});
   // make sure these are always numbers
   const safeIncome = Number(income) || 0;
   const safeFixed = Number(fixed) || 0;
@@ -184,7 +186,7 @@ function Dashboard({
                 <BankImportCard
                   onTransactionsParsed={(rows, raw) => {
                     setShowAccountTransactions(false);
-                    onCsvImported(rows, raw);
+                    handleImport(rows, raw);
                   }}
                 />
 

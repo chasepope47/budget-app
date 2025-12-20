@@ -25,6 +25,13 @@ export function normalizeAccounts(accs) {
   }));
 }
 
+export function computeAccountBalance(acc) {
+  if (!acc) return 0;
+  const starting = typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
+  const net = computeNetTransactions(acc);
+  return starting + net;
+}
+
 export function mergeTransactions(existing, incoming) {
   // key like "2025-01-01|starbucks|-5.75"
   const makeKey = (tx) =>
