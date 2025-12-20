@@ -74,8 +74,13 @@ function App() {
     signInWithEmail,
     signUpWithEmail,
     signOut,
-    resetPassword,
-  } = useFirebaseAuth();
+  resetPassword,
+} = useFirebaseAuth();
+
+  function makeId(prefix = "id") {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  }
 
 function mergeDedupTx(prevTx = [], nextTx = []) {
   const seen = new Set(prevTx.map((t) => `${t.date}|${t.amount}|${t.description}|${t.accountId}`));
@@ -162,6 +167,16 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     const total = list.reduce((sum, acc) => sum + computeAccountBalance(acc), 0);
 
     return { currentAccountBalance: currentBalance, totalBalance: total };
+  }, [accounts, currentAccountId]);
+
+  // Keep current account id valid after syncs or deletions
+  useEffect(() => {
+    const list = Array.isArray(accounts) ? accounts : [];
+    if (list.length === 0) return;
+    const hasCurrent = list.some((a) => a.id === currentAccountId);
+    if (!hasCurrent) {
+      setCurrentAccountId(list[0].id);
+    }
   }, [accounts, currentAccountId]);
 
   /* -------- Profile -------- */
@@ -395,6 +410,58 @@ function handleImportedTransactions(rows = [], meta = {}) {
 }
 
 
+  function handleCreateAccount() {
+    const nextName = `Account ${accounts.length + 1}`;
+    const newId = makeId("acct");
+    const newAcc = {
+      id: newId,
+      name: nextName,
+      type: "checking",
+      startingBalance: 0,
+      transactions: [],
+      createdAt: Date.now(),
+    };
+    setAccounts((prev) => normalizeAccounts([...(Array.isArray(prev) ? prev : []), newAcc]));
+    setCurrentAccountId(newId);
+    setToast({ variant: "success", message: `Created ${nextName}` });
+  }
+
+  function handleDeleteAccount(id) {
+    if (!id) return;
+    if (!window.confirm("Delete this account? Transactions tied to it will remain in budgets but the account will be removed.")) return;
+    setAccounts((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const remaining = list.filter((a) => a.id !== id);
+      // update currentAccountId if needed
+      if (currentAccountId === id) {
+        setCurrentAccountId(remaining[0]?.id || "main");
+      }
+      return remaining;
+    });
+  }
+
+  function handleSetAccountBalance(id, value) {
+    const nextValue = Number(value);
+    setAccounts((prev) =>
+      normalizeAccounts(
+        (Array.isArray(prev) ? prev : []).map((a) =>
+          a.id === id ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 } : a
+        )
+      )
+    );
+  }
+
+  function handleRenameAccount(id, name) {
+    const cleaned = (name || "").trim() || "Account";
+    setAccounts((prev) =>
+      normalizeAccounts(
+        (Array.isArray(prev) ? prev : []).map((a) =>
+          a.id === id ? { ...a, name: cleaned } : a
+        )
+      )
+    );
+  }
+
   /* -------- UI -------- */
   return (
     <div className={`app-shell ${themeStyles.shellClass}`}>
@@ -463,6 +530,10 @@ function handleImportedTransactions(rows = [], meta = {}) {
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
             onAccountsChange={setAccounts}
+            onCreateAccount={handleCreateAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onSetAccountBalance={handleSetAccountBalance}
+            onRenameAccount={handleRenameAccount}
           />
         )}
 
