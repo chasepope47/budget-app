@@ -263,43 +263,65 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
   }
 
   function handleImportOne(itemId) {
-    const item = items.find((x) => x.id === itemId);
-    if (!item) return;
-    if (item.status !== "ready") return;
+  setItems((prev) => {
+    const item = prev.find((x) => x.id === itemId);
+    if (!item) return prev;
+    if (item.status !== "ready") return prev;
 
-    setItems((prev) =>
-      prev.map((x) => (x.id === itemId ? { ...x, status: "importing" } : x))
+    // mark importing immediately
+    const next = prev.map((x) =>
+      x.id === itemId ? { ...x, status: "importing" } : x
     );
 
-    try {
-      onTransactionsParsed(item.previewRows, item.rawText);
-      setItems((prev) =>
-        prev.map((x) =>
-          x.id === itemId
-            ? {
-                ...x,
-                status: "imported",
-                importedCount: item.previewRows.length,
-                error: "",
-              }
-            : x
-        )
-      );
-    } catch (err) {
-      console.error("Import error:", err);
-      setItems((prev) =>
-        prev.map((x) =>
-          x.id === itemId
-            ? {
-                ...x,
-                status: "error",
-                error: err?.message || "Import failed.",
-              }
-            : x
-        )
-      );
-    }
-  }
+    // fire import AFTER we have the correct item snapshot
+    queueMicrotask(() => {
+      try {
+        const meta = {
+          sourceText: item.rawText,
+          detectedBank: item.detectedBank,
+          fileName: item.name,
+          kind: item.kind, // "csv" | "pdf"
+        };
+
+        // 👇 parent should use meta.detectedBank/fileName to create/select an account
+        onTransactionsParsed(item.previewRows, {
+          detectedBank: item.detectedBank,
+          fileName: item.name,
+          kind: item.kind,
+        });
+
+
+        setItems((p2) =>
+          p2.map((x) =>
+            x.id === itemId
+              ? {
+                  ...x,
+                  status: "imported",
+                  importedCount: item.previewRows.length,
+                  error: "",
+                }
+              : x
+          )
+        );
+      } catch (err) {
+        console.error("Import error:", err);
+        setItems((p2) =>
+          p2.map((x) =>
+            x.id === itemId
+              ? {
+                  ...x,
+                  status: "error",
+                  error: err?.message || "Import failed.",
+                }
+              : x
+          )
+        );
+      }
+    });
+
+    return next;
+  });
+}
 
   async function handleImportAllReady() {
     // sequential import keeps state stable
