@@ -215,15 +215,23 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
   /* -------- Initial Firestore load -------- */
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    loadWorkspaceState(activeWorkspaceId).then((remote) => {
-      if (remote) {
-        applyingRemoteRef.current = true;
-        setBudgetsByMonth(remote.budgetsByMonth || {});
-        setActiveMonth(remote.activeMonth || activeMonth);
-        setGoals(remote.goals || []);
-        setAccounts(normalizeAccounts(remote.accounts || []));
-      }
-    });
+    loadWorkspaceState(activeWorkspaceId)
+      .then((remote) => {
+        if (remote) {
+          applyingRemoteRef.current = true;
+          setBudgetsByMonth(remote.budgetsByMonth || {});
+          setActiveMonth(remote.activeMonth || activeMonth);
+          setGoals(remote.goals || []);
+          setAccounts(normalizeAccounts(remote.accounts || []));
+        }
+      })
+      .catch((err) => {
+        console.error("Initial sync load failed", err);
+        setToast({
+          message: "Could not load your cloud data. Check your connection/Firebase rules.",
+          variant: "info",
+        });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
@@ -253,9 +261,15 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
 
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveWorkspaceState(activeWorkspaceId, state).then(() =>
-        setLastSavedAt(new Date().toLocaleTimeString())
-      );
+      saveWorkspaceState(activeWorkspaceId, state)
+        .then(() => setLastSavedAt(new Date().toLocaleTimeString()))
+        .catch((err) => {
+          console.error("Sync save failed", err);
+          setToast({
+            message: "Sync to cloud failed. Check your connection/Firebase rules.",
+            variant: "info",
+          });
+        });
     }, 600);
   }, [
     activeWorkspaceId,
