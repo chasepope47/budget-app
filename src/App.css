@@ -41,11 +41,8 @@ body {
   overflow-x: hidden;
 
   /* iOS PWA safe-area support */
-  padding:
-    env(safe-area-inset-top)
-    env(safe-area-inset-right)
-    env(safe-area-inset-bottom)
-    env(safe-area-inset-left);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 /* Content container: full width on mobile, max-width on larger screens */
@@ -69,6 +66,85 @@ body {
     padding-left: 2rem;
     padding-right: 2rem;
   }
+}
+
+/* =========================
+   Mobile header + nav fixes (NEW)
+   ========================= */
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brandAndNav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0; /* critical so nav can shrink/scroll instead of forcing overflow */
+}
+
+.appTitle {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.navRow {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto; /* key mobile win */
+  -webkit-overflow-scrolling: touch;
+  white-space: nowrap;
+  max-width: 100%;
+  padding-bottom: 0.25rem;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .headerRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .brandAndNav {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .appTitle {
+    text-align: center;
+  }
+
+  .headerRight {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* =========================
+   Wide element safety net (NEW)
+   ========================= */
+
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+.hScroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
 }
 
 /* =========================
@@ -195,7 +271,7 @@ body[data-theme="crimson"] {
   background: linear-gradient(to right, #22d3ee, #a78bfa, #22d3ee);
   box-shadow: 0 0 20px rgba(34, 211, 238, 0.8);
   position: relative; /* important for shine */
-  overflow: hidden;   /* keep the shine inside the filled bar */
+  overflow: hidden; /* keep the shine inside the filled bar */
 }
 
 .progress-shine {

@@ -1,7 +1,6 @@
 // src/pages/TransactionsPage.jsx
 import React, { useState, useMemo, useEffect } from "react";
 import Card from "../components/Card.jsx";
-import { formatMoney, formatPercent } from "../utils/format.js";
 
 const FLOW_TYPE_OPTIONS = [
   { value: "auto", label: "Auto (detect)" },
@@ -19,16 +18,32 @@ const FLOW_TYPE_LABELS = {
   unknown: "Unknown",
 };
 
-function TransactionsPage({
-  transactions = [],
-  accountName = "",
-  onUpdateTransaction = () => {},
-  onDeleteTransaction = () => {},
-  typeHints = [],
-  // ✅ comes from App.jsx (set when clicking a merchant in Reports)
-  filterText = "",
-  onChangeFilterText = () => {},
-}) {
+function TransactionsPage(props) {
+  // ---- Support BOTH prop styles (so your App.jsx won’t break) ----
+  const {
+    // old/standalone props
+    transactions = [],
+    accountName = "",
+
+    onUpdateTransaction = () => {},
+    onDeleteTransaction = () => {},
+
+    typeHints = [],
+
+    // new App.jsx style props (you showed earlier)
+    filter: filterFromApp,
+    onFilterChange: onFilterChangeFromApp,
+
+    // existing props in this file
+    filterText: filterTextProp,
+    onChangeFilterText: onChangeFilterTextProp,
+  } = props;
+
+  // normalize the filter props
+  const filterText = (filterTextProp ?? filterFromApp ?? "").toString();
+  const onChangeFilterText =
+    onChangeFilterTextProp ?? onFilterChangeFromApp ?? (() => {});
+
   const hasData = Array.isArray(transactions) && transactions.length > 0;
 
   const [filters, setFilters] = useState({
@@ -40,7 +55,7 @@ function TransactionsPage({
   const [sortBy, setSortBy] = useState("date");
   const [sortDirection, setSortDirection] = useState("desc");
 
-  // ✅ If Reports sets filterText, sync it into the Search box
+  // If parent sets filterText, sync it into the Search box
   useEffect(() => {
     const next = (filterText || "").trim();
     if (!next) return;
@@ -55,7 +70,6 @@ function TransactionsPage({
       [field]: value,
     }));
 
-    // ✅ keep App-level filterText in sync when user types in Search
     if (field === "query") {
       onChangeFilterText(value);
     }
@@ -67,7 +81,6 @@ function TransactionsPage({
       minAmount: "",
       maxAmount: "",
     });
-    // ✅ clear App-level filter too
     onChangeFilterText("");
   };
 
@@ -90,7 +103,6 @@ function TransactionsPage({
         const haystack = [tx.description || "", tx.category || ""]
           .join(" ")
           .toLowerCase();
-
         if (!haystack.includes(q)) return false;
       }
 
@@ -138,7 +150,7 @@ function TransactionsPage({
 
   return (
     <div className="space-y-4 w-full">
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
           <span className="text-xs text-slate-400">
@@ -151,14 +163,13 @@ function TransactionsPage({
             </span>
           </p>
 
-          {/* ✅ shows when Reports has set a merchant filter */}
           {!!filterText.trim() && (
             <div className="mt-2 inline-flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2 py-1 text-[0.65rem] text-cyan-200">
               <span className="font-mono">Report filter:</span>
               <span className="text-slate-100">{filterText}</span>
               <button
                 type="button"
-                onClick={() => handleClearFilters()}
+                onClick={handleClearFilters}
                 className="ml-1 rounded border border-cyan-500/40 px-2 py-[2px] text-[0.65rem] hover:bg-cyan-500/10"
               >
                 Clear
@@ -201,7 +212,7 @@ function TransactionsPage({
                 <div className="flex gap-2">
                   <div className="flex flex-col gap-1">
                     <label className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
-                      Min Amount
+                      Min
                     </label>
                     <input
                       type="number"
@@ -213,7 +224,7 @@ function TransactionsPage({
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[0.65rem] uppercase tracking-[0.18em] text-slate-500">
-                      Max Amount
+                      Max
                     </label>
                     <input
                       type="number"
@@ -270,19 +281,24 @@ function TransactionsPage({
         )}
 
         {hasData && rowsToRender.length > 0 && (
-          <div className="w-full overflow-x-auto">
-            <div className="min-w-[760px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
+          // ✅ mobile-friendly: table scrolls *inside* the card
+          <div className="hScroll">
+            <div className="min-w-[640px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
               <table className="w-full text-[0.7rem] sm:text-xs text-left">
                 <thead className="bg-slate-900 text-slate-300 sticky top-0">
                   <tr>
                     <th className="px-2 py-1">Date</th>
                     <th className="px-2 py-1">Description</th>
-                    <th className="px-2 py-1">Category</th>
-                    <th className="px-2 py-1">Type</th>
+
+                    {/* ✅ hide these on phones */}
+                    <th className="px-2 py-1 hidden sm:table-cell">Category</th>
+                    <th className="px-2 py-1 hidden sm:table-cell">Type</th>
+
                     <th className="px-2 py-1 text-right">Amount</th>
                     <th className="px-2 py-1 text-right">Actions</th>
                   </tr>
                 </thead>
+
                 <tbody className="divide-y divide-slate-800">
                   {rowsToRender.map(({ tx, index }) => (
                     <tr key={index} className="hover:bg-slate-900/70">
@@ -300,9 +316,13 @@ function TransactionsPage({
                             })
                           }
                         />
+                        {/* ✅ show category under description on phones */}
+                        <div className="sm:hidden mt-1 text-[0.65rem] text-slate-500">
+                          {(tx.category || "").trim() ? tx.category : "Uncategorized"}
+                        </div>
                       </td>
 
-                      <td className="px-2 py-1 text-slate-300">
+                      <td className="px-2 py-1 text-slate-300 hidden sm:table-cell">
                         <input
                           className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
                           value={tx.category || ""}
@@ -314,7 +334,7 @@ function TransactionsPage({
                         />
                       </td>
 
-                      <td className="px-2 py-1 text-slate-300">
+                      <td className="px-2 py-1 text-slate-300 hidden sm:table-cell">
                         <div className="flex flex-col gap-1">
                           <select
                             className="w-full bg-slate-900/40 rounded-md border border-slate-700 px-2 py-1 text-[0.65rem] focus:outline-none focus:border-cyan-400"
@@ -333,7 +353,8 @@ function TransactionsPage({
                             ))}
                           </select>
                           <span className="text-[0.6rem] text-slate-500">
-                            Detected: {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
+                            Detected:{" "}
+                            {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
                           </span>
                         </div>
                       </td>
@@ -343,14 +364,20 @@ function TransactionsPage({
                           tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
                         }`}
                       >
-                        {isNaN(tx.amount) ? "-" : `$${tx.amount.toFixed(2)}`}
+                        {Number.isFinite(Number(tx.amount))
+                          ? `$${Number(tx.amount).toFixed(2)}`
+                          : "-"}
                       </td>
 
                       <td className="px-2 py-1 text-right">
                         <button
                           className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
                           onClick={() => {
-                            if (window.confirm("Delete this transaction from this account?")) {
+                            if (
+                              window.confirm(
+                                "Delete this transaction from this account?"
+                              )
+                            ) {
                               onDeleteTransaction(index);
                             }
                           }}

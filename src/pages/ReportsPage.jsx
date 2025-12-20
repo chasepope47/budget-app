@@ -1,7 +1,11 @@
 // src/pages/ReportsPage.jsx
 import React from "react";
 import FlowSankey from "../components/FlowSankey.jsx";
-import { DEFAULT_REPORT_SETTINGS, fetchReportSettings, saveReportSettings, } from "../api/reportSettingsApi.js"; // keep the defaults only
+import {
+  DEFAULT_REPORT_SETTINGS,
+  fetchReportSettings,
+  saveReportSettings,
+} from "../api/reportSettingsApi.js"; // keeping your import as-is
 
 function monthKeyFromISO(dateStr) {
   if (!dateStr || typeof dateStr !== "string") return null;
@@ -30,19 +34,47 @@ function normalizeForDisplay(desc = "") {
 }
 
 const FIXED = [
-  "rent", "mortgage", "apts", "apt", "apartment", "lease", "property management",
-  "hoa", "insurance", "internet", "phone", "utilities", "loan", "payment",
+  "rent",
+  "mortgage",
+  "apts",
+  "apt",
+  "apartment",
+  "lease",
+  "property management",
+  "hoa",
+  "insurance",
+  "internet",
+  "phone",
+  "utilities",
+  "loan",
+  "payment",
 ];
 
 const SUBSCRIPTIONS = [
-  "amazon prime", "prime membership", "netflix", "hulu", "spotify",
-  "youtube premium", "rocket money", "membership", "subscription",
-  "icloud", "google one", "dropbox",
+  "amazon prime",
+  "prime membership",
+  "netflix",
+  "hulu",
+  "spotify",
+  "youtube premium",
+  "rocket money",
+  "membership",
+  "subscription",
+  "icloud",
+  "google one",
+  "dropbox",
 ];
 
 const ESSENTIAL = [
-  "grocery", "costco", "walmart", "gas", "fuel", "medical",
-  "pharmacy", "power", "water",
+  "grocery",
+  "costco",
+  "walmart",
+  "gas",
+  "fuel",
+  "medical",
+  "pharmacy",
+  "power",
+  "water",
 ];
 
 const TRANSFER = ["transfer", "zelle", "venmo", "cash app", "withdrawal", "deposit"];
@@ -129,7 +161,10 @@ function buildSankey({
     }
   }
 
-  const spent = buckets.reduce((s, b) => (b === "Transfers" ? s : s + (bucketTotals.get(b) || 0)), 0);
+  const spent = buckets.reduce(
+    (s, b) => (b === "Transfers" ? s : s + (bucketTotals.get(b) || 0)),
+    0
+  );
   const leftover = Math.max(0, incomeTotal - spent);
 
   if (leftover > 0) {
@@ -176,6 +211,20 @@ function clampInt(v, min, max, fallback) {
 export default function ReportsPage({ accounts = [], monthKey, onMerchantPick }) {
   const [tab, setTab] = React.useState("overview");
   const [data, setData] = React.useState({ nodes: [], links: [], meta: { incomeTotal: 0 } });
+
+  // ✅ responsive height: smaller on phones, larger on desktop
+  const [chartHeight, setChartHeight] = React.useState(560);
+
+  React.useEffect(() => {
+    function compute() {
+      // clamp-ish: ~380 on small phones, up to 640+ on large screens
+      const h = Math.max(380, Math.min(680, Math.round(window.innerHeight * 0.55)));
+      setChartHeight(h);
+    }
+    compute();
+    window.addEventListener("resize", compute);
+    return () => window.removeEventListener("resize", compute);
+  }, []);
 
   const [settings, setSettings] = React.useState(() => {
     try {
@@ -244,15 +293,29 @@ export default function ReportsPage({ accounts = [], monthKey, onMerchantPick })
 
       {tab === "overview" && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-          <div className="min-h-[560px]">
-            <FlowSankey
-              data={data}
-              height={560}
-              onNodeClick={(name) => {
-                const isBucket = ["Income", "Fixed", "Subscriptions", "Essential", "Variable", "Transfers", "Leftover"].includes(name);
-                if (!isBucket && typeof onMerchantPick === "function") onMerchantPick(name);
-              }}
-            />
+          {/* ✅ Internal scroll safety net so the chart never forces page-wide overflow */}
+          <div className="hScroll">
+            <div style={{ minHeight: chartHeight }}>
+              <FlowSankey
+                data={data}
+                height={chartHeight}
+                onNodeClick={(name) => {
+                  const isBucket = [
+                    "Income",
+                    "Fixed",
+                    "Subscriptions",
+                    "Essential",
+                    "Variable",
+                    "Transfers",
+                    "Leftover",
+                  ].includes(name);
+
+                  if (!isBucket && typeof onMerchantPick === "function") {
+                    onMerchantPick(name);
+                  }
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

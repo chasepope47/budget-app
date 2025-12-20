@@ -11,20 +11,42 @@ export default function FlowSankey({
   onNodeClick,
 }) {
   const ref = React.useRef(null);
+  const [containerWidth, setContainerWidth] = React.useState(0);
+
+  // ✅ Track container width (mobile-friendly, updates on resize)
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.floor(entries[0]?.contentRect?.width || 0);
+      setContainerWidth(w);
+    });
+
+    ro.observe(el);
+    // initial measure (helps if observer lags)
+    setContainerWidth(Math.floor(el.clientWidth || 0));
+
+    return () => ro.disconnect();
+  }, []);
 
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
 
+    // clear previous render
     el.innerHTML = "";
-    const width = Math.max(700, el.clientWidth || 0);
+
+    // ✅ Use the real container width (no forced 700px min)
+    const width = Math.max(320, containerWidth || el.clientWidth || 0);
 
     const svg = d3
       .select(el)
       .append("svg")
       .attr("width", width)
       .attr("height", height)
-      .attr("viewBox", `0 0 ${width} ${height}`);
+      .attr("viewBox", `0 0 ${width} ${height}`)
+      .style("display", "block"); // avoids inline SVG whitespace quirks
 
     const show = (msg) => {
       svg
@@ -47,8 +69,10 @@ export default function FlowSankey({
 
     const incomeTotal = Number(data?.meta?.incomeTotal || 0);
     const pct = (v) => (incomeTotal > 0 ? (v / incomeTotal) * 100 : 0);
-
     const fmtMoney = (v) => `$${Number(v || 0).toFixed(2)}`;
+
+    // ✅ Slightly smaller labels on narrow screens
+    const labelFont = width < 420 ? 10 : 12;
 
     let raf = requestAnimationFrame(() => {
       try {
@@ -87,7 +111,6 @@ export default function FlowSankey({
             ) {
               return null;
             }
-
             return { source, target, value };
           })
           .filter(Boolean);
@@ -125,16 +148,14 @@ export default function FlowSankey({
           })
           .attr("stroke-width", (d) => Math.max(1, d.width));
 
-        linkSel
-          .append("title")
-          .text((d) => {
-            const value = Number(d.value || 0);
-            const sName = graph.nodes[d.source.index]?.name;
-            const tName = graph.nodes[d.target.index]?.name;
-            return `${sName} → ${tName}\n${fmtMoney(value)} (${pct(value).toFixed(
-              1
-            )}% of income)`;
-          });
+        linkSel.append("title").text((d) => {
+          const value = Number(d.value || 0);
+          const sName = graph.nodes[d.source.index]?.name;
+          const tName = graph.nodes[d.target.index]?.name;
+          return `${sName} → ${tName}\n${fmtMoney(value)} (${pct(value).toFixed(
+            1
+          )}% of income)`;
+        });
 
         // ----- NODES -----
         const nodeSel = svg.append("g").selectAll("g").data(graph.nodes).join("g");
@@ -166,7 +187,7 @@ export default function FlowSankey({
           .attr("y", (d) => (d.y0 + d.y1) / 2)
           .attr("dy", "0.35em")
           .attr("text-anchor", (d) => (d.x0 < width / 2 ? "start" : "end"))
-          .attr("font-size", 12)
+          .attr("font-size", labelFont)
           .attr("fill", "#e2e8f0")
           .text((d) => d.name);
       } catch (err) {
@@ -176,7 +197,8 @@ export default function FlowSankey({
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [data, height, nodeWidth, nodePadding, onNodeClick]);
+  }, [data, height, nodeWidth, nodePadding, onNodeClick, containerWidth]);
 
+  // ✅ Important: this div is what ResizeObserver measures
   return <div ref={ref} style={{ width: "100%" }} />;
 }
