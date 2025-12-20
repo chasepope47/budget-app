@@ -270,9 +270,10 @@ export const HEADER_ALIASES = {
     "transaction description",
     "narrative",
   ],
-  debit: ["debit", "withdrawal", "outflow", "money out", "charge"],
-  credit: ["credit", "deposit", "inflow", "money in", "payment", "credit amount"],
-  amount: ["amount", "amt", "transaction amount", "value"],
+  debit: ["debit", "withdrawal", "outflow", "money out", "charge", "dr"],
+  credit: ["credit", "deposit", "inflow", "money in", "payment", "credit amount", "cr"],
+  amount: ["amount", "amt", "transaction amount", "value", "amount (usd)", "amount (cad)"],
+  type: ["type", "dr/cr", "transaction type", "debit/credit"],
 };
 
 export function normalizeHeaderRow(line, delimiter = ",") {
@@ -286,7 +287,9 @@ export function normalizeHeaderRow(line, delimiter = ",") {
 }
 
 export function findHeaderIndex(header, aliases) {
-  return header.findIndex((h) => aliases.includes(h));
+  return header.findIndex(
+    (h) => aliases.includes(h) || aliases.some((a) => h.includes(a))
+  );
 }
 
 /**
@@ -448,7 +451,8 @@ export function parseCsvTransactions(text) {
     const amountIndex = findHeaderIndex(headerRow, HEADER_ALIASES.amount);
     const debitIndex = findHeaderIndex(headerRow, HEADER_ALIASES.debit);
     const creditIndex = findHeaderIndex(headerRow, HEADER_ALIASES.credit);
-    return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex };
+    const typeIndex = findHeaderIndex(headerRow, HEADER_ALIASES.type);
+    return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex };
   }
 
   let {
@@ -457,6 +461,7 @@ export function parseCsvTransactions(text) {
     amountIndex,
     debitIndex,
     creditIndex,
+    typeIndex,
   } = getIndexes(header);
 
   const noUsefulHeader =
@@ -486,7 +491,60 @@ export function parseCsvTransactions(text) {
       amountIndex,
       debitIndex,
       creditIndex,
+      typeIndex,
     } = getIndexes(header));
+  }
+
+  // Fallback: if no explicit amount/debit/credit columns, guess the most numeric column.
+  function guessAmountIndex() {
+    const maxLook = Math.min(lines.length, 25);
+    const numericCounts = [];
+    for (let i = startIndex; i < maxLook; i++) {
+      const cols = splitCsvLine(lines[i], delimiter);
+      cols.forEach((cell, idx) => {
+        const num = parseAmountCell(cell);
+        if (!Number.isNaN(num)) {
+          numericCounts[idx] = (numericCounts[idx] || 0) + 1;
+        }
+      });
+    }
+    let best = -1;
+    let bestCount = 0;
+    numericCounts.forEach((count, idx) => {
+      if (count > bestCount) {
+        bestCount = count;
+        best = idx;
+      }
+    });
+    return bestCount >= 2 ? best : -1;
+  }
+
+  if (amountIndex < 0 && debitIndex < 0 && creditIndex < 0) {
+    const guessed = guessAmountIndex();
+    if (guessed >= 0) {
+      amountIndex = guessed;
+    }
+  }
+
+  function applyTypeSign(amount, row) {
+    if (!row || typeIndex < 0) return amount;
+    const cell = row[typeIndex]?.toString().toLowerCase() || "";
+    if (!cell) return amount;
+    const debitLike =
+      cell.includes("debit") ||
+      cell.includes("withdrawal") ||
+      cell.includes("payment") ||
+      cell.includes("dr") ||
+      cell === "d";
+    const creditLike =
+      cell.includes("credit") ||
+      cell.includes("deposit") ||
+      cell.includes("refund") ||
+      cell.includes("cr") ||
+      cell === "c";
+    if (debitLike) return -Math.abs(amount);
+    if (creditLike) return Math.abs(amount);
+    return amount;
   }
 
   const rows = [];
@@ -506,6 +564,7 @@ export function parseCsvTransactions(text) {
     if (amountIndex >= 0) {
       // Single Amount column
       amount = parseAmountCell(cols[amountIndex]);
+      amount = applyTypeSign(amount, cols);
     } else if (debitIndex >= 0 || creditIndex >= 0) {
       // Separate Debit/Credit columns
       const debit =
