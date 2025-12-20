@@ -315,6 +315,79 @@ function handleTransactionsParsed(rows, meta) {
     );
   }
 
+  function makeTxId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function safeArray(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function handleImportedTransactions(rows = [], meta = {}) {
+  const cleanRows = safeArray(rows).filter((r) => r && typeof r.amount === "number");
+  if (!cleanRows.length) return;
+
+  // Build an account id from bank/filename (stable-ish)
+  const bankKey = (meta.bank || "import").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const fileKey = (meta.filename || "file").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const accountId = `${bankKey}-${fileKey}`.slice(0, 60);
+
+  // 1) Ensure account exists
+  setAccounts((prev) => {
+    const exists = safeArray(prev).some((a) => a.id === accountId);
+    if (exists) return prev;
+
+    const next = [
+      ...safeArray(prev),
+      {
+        id: accountId,
+        name: meta.bank ? `${meta.bank} (${meta.filename})` : meta.filename || "Imported Account",
+        type: "checking",
+        balance: 0,
+      },
+    ];
+    return next;
+  });
+
+  // 2) Add transactions into the active month budget
+  setBudgetsByMonth((prev) => {
+    const curr = prev?.[activeMonth] || { month: activeMonth, income: 0, fixed: [], variable: [], transactions: [] };
+    const existing = safeArray(curr.transactions);
+
+    // Add ids + accountId; naive dedupe by (date|desc|amount|accountId)
+    const existingKeys = new Set(
+      existing.map((t) => `${t.date}|${t.description}|${t.amount}|${t.accountId || ""}`)
+    );
+
+    const toAdd = cleanRows
+      .map((r) => ({
+        id: r.id || makeTxId(),
+        date: r.date,
+        description: r.description,
+        amount: r.amount,
+        accountId,
+      }))
+      .filter((t) => {
+        const k = `${t.date}|${t.description}|${t.amount}|${t.accountId}`;
+        if (existingKeys.has(k)) return false;
+        existingKeys.add(k);
+        return true;
+      });
+
+    const nextBudget = {
+      ...curr,
+      transactions: [...existing, ...toAdd],
+    };
+
+    return { ...prev, [activeMonth]: nextBudget };
+  });
+
+  // Optional: auto-switch to the imported account so user sees it immediately
+  setCurrentAccountId(accountId);
+}
+
+
   /* -------- UI -------- */
   return (
     <div className={`app-shell ${themeStyles.shellClass}`}>
@@ -369,8 +442,7 @@ function handleTransactionsParsed(rows, meta) {
             accounts={accounts}
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
-            transactions={activeBudget.transactions || []}
-            onTransactionsUpdate={handleTransactionsParsed}
+            onTransactionsParsed={handleImportedTransactions}
           />
         )}
 

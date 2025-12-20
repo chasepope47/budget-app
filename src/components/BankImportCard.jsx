@@ -285,11 +285,11 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
 
         // 👇 parent should use meta.detectedBank/fileName to create/select an account
         onTransactionsParsed(item.previewRows, {
-          detectedBank: item.detectedBank,
-          fileName: item.name,
-          kind: item.kind,
+          rawText: item.rawText,
+          bank: item.detectedBank || "",
+          filename: item.name || "",
+          kind: item.kind || "csv",
         });
-
 
         setItems((p2) =>
           p2.map((x) =>
