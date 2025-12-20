@@ -76,35 +76,6 @@ function App() {
     resetPassword,
   } = useFirebaseAuth();
 
-  function makeId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function ensureAccountIdByName(name) {
-  const safeName = String(name || "Imported").trim() || "Imported";
-
-  const existing = accounts.find(
-    (a) => (a?.name || "").toLowerCase() === safeName.toLowerCase()
-  );
-  if (existing) return existing.id;
-
-  const id = makeId();
-  const newAccount = { id, name: safeName, type: "checking", createdAt: Date.now() };
-  setAccounts((prev) => normalizeAccounts([newAccount, ...prev]));
-  return id;
-}
-
-function normalizeImportedTx(rows, accountId) {
-  return (rows || []).map((r) => ({
-    id: makeId(),
-    date: r.date || "",
-    description: r.description || "",
-    amount: typeof r.amount === "number" ? r.amount : Number(r.amount) || 0,
-    accountId,
-  }));
-}
-
 function mergeDedupTx(prevTx = [], nextTx = []) {
   const seen = new Set(prevTx.map((t) => `${t.date}|${t.amount}|${t.description}|${t.accountId}`));
   const merged = [...prevTx];
@@ -117,30 +88,6 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     }
   }
   return merged;
-}
-
-function handleTransactionsParsed(rows, meta) {
-  // meta can be string (your old BankImportCard) or object (recommended)
-  const bankName =
-    (meta && typeof meta === "object" && (meta.detectedBank || meta.fileName)) ||
-    (typeof meta === "string" ? "Imported" : "Imported");
-
-  const accountId = ensureAccountIdByName(bankName);
-  const incoming = normalizeImportedTx(rows, accountId);
-
-  setBudgetsByMonth((prev) => {
-    const current = prev[activeMonth] || { month: activeMonth, income: 0, fixed: [], variable: [], transactions: [] };
-    const prevTx = Array.isArray(current.transactions) ? current.transactions : [];
-    const nextTx = mergeDedupTx(prevTx, incoming);
-
-    return {
-      ...prev,
-      [activeMonth]: {
-        ...current,
-        transactions: nextTx,
-      },
-    };
-  });
 }
 
   const activeWorkspaceId = user?.uid || null;
@@ -491,7 +438,7 @@ function handleImportedTransactions(rows = [], meta = {}) {
             accounts={accounts}
             currentAccountId={currentAccountId}
             onChangeCurrentAccount={setCurrentAccountId}
-            onTransactionsParsed={handleImportedTransactions}
+            onCsvImported={handleImportedTransactions}
           />
         )}
 
