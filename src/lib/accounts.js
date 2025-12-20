@@ -21,6 +21,7 @@ export function normalizeAccounts(accs) {
     ...acc,
     startingBalance:
       typeof acc.startingBalance === "number" ? acc.startingBalance : 0,
+    transactions: Array.isArray(acc.transactions) ? acc.transactions : [],
   }));
 }
 

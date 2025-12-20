@@ -33,7 +33,12 @@ import {
   saveStoredState,
   migrateStoredState,
 } from "./lib/storage.js";
-import { sumAmounts, normalizeAccounts } from "./lib/accounts.js";
+import {
+  sumAmounts,
+  normalizeAccounts,
+  importTransactionsWithDetection,
+  mergeTransactions,
+} from "./lib/accounts.js";
 import { getThemeConfig } from "./themeConfig.js";
 
 /* ---------------- Navigation ---------------- */
@@ -325,66 +330,110 @@ function safeArray(v) {
 }
 
 function handleImportedTransactions(rows = [], meta = {}) {
-  const cleanRows = safeArray(rows).filter((r) => r && typeof r.amount === "number");
-  if (!cleanRows.length) return;
-
-  // Build an account id from bank/filename (stable-ish)
-  const bankKey = (meta.bank || "import").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const fileKey = (meta.filename || "file").toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const accountId = `${bankKey}-${fileKey}`.slice(0, 60);
-
-  // 1) Ensure account exists
-  setAccounts((prev) => {
-    const exists = safeArray(prev).some((a) => a.id === accountId);
-    if (exists) return prev;
-
-    const next = [
-      ...safeArray(prev),
-      {
-        id: accountId,
-        name: meta.bank ? `${meta.bank} (${meta.filename})` : meta.filename || "Imported Account",
-        type: "checking",
-        balance: 0,
-      },
-    ];
-    return next;
-  });
-
-  // 2) Add transactions into the active month budget
-  setBudgetsByMonth((prev) => {
-    const curr = prev?.[activeMonth] || { month: activeMonth, income: 0, fixed: [], variable: [], transactions: [] };
-    const existing = safeArray(curr.transactions);
-
-    // Add ids + accountId; naive dedupe by (date|desc|amount|accountId)
-    const existingKeys = new Set(
-      existing.map((t) => `${t.date}|${t.description}|${t.amount}|${t.accountId || ""}`)
-    );
-
-    const toAdd = cleanRows
-      .map((r) => ({
+  const parsedRows = safeArray(rows)
+    .map((r) => {
+      const amount = typeof r.amount === "number" ? r.amount : Number(r.amount);
+      return {
         id: r.id || makeTxId(),
-        date: r.date,
-        description: r.description,
-        amount: r.amount,
-        accountId,
-      }))
-      .filter((t) => {
-        const k = `${t.date}|${t.description}|${t.amount}|${t.accountId}`;
-        if (existingKeys.has(k)) return false;
-        existingKeys.add(k);
-        return true;
-      });
+        date: r.date || "",
+        description: r.description || "",
+        category: r.category || "",
+        amount: Number.isFinite(amount) ? amount : NaN,
+      };
+    })
+    .filter((r) => Number.isFinite(r.amount));
 
-    const nextBudget = {
-      ...curr,
-      transactions: [...existing, ...toAdd],
-    };
+  if (!parsedRows.length) {
+    setToast({
+      message: "No valid transactions were found in that file.",
+      variant: "info",
+    });
+    return;
+  }
 
-    return { ...prev, [activeMonth]: nextBudget };
+  const sourceName =
+    meta.bank ||
+    meta.detectedBank ||
+    meta.filename ||
+    meta.fileName ||
+    "Imported";
+
+  const detection = importTransactionsWithDetection(
+    accounts,
+    currentAccountId,
+    parsedRows,
+    sourceName
+  );
+
+  const targetAccountId = detection.targetAccountId;
+  const targetAccountName =
+    detection.targetAccountName || sourceName || "Imported Account";
+
+  const rowsWithAccount = parsedRows.map((tx) => ({
+    ...tx,
+    accountId: targetAccountId,
+  }));
+
+  setAccounts((prev) => {
+    const list = Array.isArray(prev) ? prev : [];
+    const exists = list.some((a) => a.id === targetAccountId);
+
+    if (detection.createdNew || !exists) {
+      const newAccount = {
+        id: targetAccountId,
+        name: targetAccountName,
+        type:
+          detection.accounts?.find((a) => a.id === targetAccountId)?.type ||
+          "checking",
+        startingBalance: 0,
+        transactions: rowsWithAccount,
+      };
+      return normalizeAccounts([...list, newAccount]);
+    }
+
+    return normalizeAccounts(
+      list.map((acc) =>
+        acc.id === targetAccountId
+          ? {
+              ...acc,
+              transactions: mergeTransactions(
+                acc.transactions || [],
+                rowsWithAccount
+              ),
+            }
+          : acc
+      )
+    );
   });
 
-  // Optional: auto-switch to the imported account so user sees it immediately
-  setCurrentAccountId(accountId);
+  setBudgetsByMonth((prev) => {
+    const curr =
+      prev?.[activeMonth] || {
+        month: activeMonth,
+        income: 0,
+        fixed: [],
+        variable: [],
+        transactions: [],
+      };
+    const existing = Array.isArray(curr.transactions) ? curr.transactions : [];
+    const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
+
+    return {
+      ...prev,
+      [activeMonth]: {
+        ...curr,
+        transactions: nextTransactions,
+      },
+    };
+  });
+
+  setCurrentAccountId(targetAccountId);
+  setToast({
+    variant: "success",
+    message: detection.createdNew
+      ? `Created "${targetAccountName}" and imported ${rowsWithAccount.length} transactions.`
+      : `Imported ${rowsWithAccount.length} transactions into "${targetAccountName}".`,
+  });
 }
 
 
