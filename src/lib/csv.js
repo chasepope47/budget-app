@@ -34,7 +34,20 @@ export function detectBankFromText(text = "", fileName = "") {
 }
 
 // super-simple CSV splitter that respects quotes
-export function splitCsvLine(line) {
+// Detect delimiter by sampling the header line; fallback to comma.
+function detectDelimiter(text = "") {
+  const firstLine =
+    text.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const semiCount = (firstLine.match(/;/g) || []).length;
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+
+  if (semiCount > commaCount && semiCount >= tabCount) return ";";
+  if (tabCount > commaCount && tabCount > semiCount) return "\t";
+  return ",";
+}
+
+export function splitCsvLine(line, delimiter = ",") {
   const result = [];
   let current = "";
   let inQuotes = false;
@@ -43,11 +56,17 @@ export function splitCsvLine(line) {
     const ch = line[i];
 
     if (ch === '"') {
+      // support escaped quotes by double-double-quote inside quoted field
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+        continue;
+      }
       inQuotes = !inQuotes;
       continue;
     }
 
-    if (ch === "," && !inQuotes) {
+    if (ch === delimiter && !inQuotes) {
       result.push(current);
       current = "";
     } else {
@@ -75,15 +94,34 @@ export function parseAmountCell(cell) {
     cleaned = cleaned.slice(1, -1);
   }
 
+  // handle trailing CR/DR markers common in some bank exports
+  let isCreditMarker = false;
+  let isDebitMarker = false;
+  if (/[a-z]/i.test(cleaned.slice(-1))) {
+    if (cleaned.trim().toUpperCase().endsWith("CR")) {
+      isCreditMarker = true;
+      cleaned = cleaned.replace(/cr$/i, "");
+    } else if (cleaned.trim().toUpperCase().endsWith("DR")) {
+      isDebitMarker = true;
+      cleaned = cleaned.replace(/dr$/i, "");
+    }
+  }
+
   // strip $ and commas
   cleaned = cleaned.replace(/[$,]/g, "");
+
+  // allow trailing/leading plus sign
+  cleaned = cleaned.replace(/^\+/, "");
 
   if (cleaned === "") return NaN;
 
   const num = Number(cleaned);
   if (Number.isNaN(num)) return NaN;
 
-  return negative ? -num : num;
+  let val = negative ? -num : num;
+  if (isCreditMarker) val = Math.abs(val);
+  if (isDebitMarker) val = -Math.abs(val);
+  return val;
 }
 
 // heuristic categorization by description + amount sign
@@ -209,8 +247,8 @@ export const HEADER_ALIASES = {
   amount: ["amount", "amt", "transaction amount", "value"],
 };
 
-export function normalizeHeaderRow(line) {
-  const parts = splitCsvLine(line).map((h) => h.trim());
+export function normalizeHeaderRow(line, delimiter = ",") {
+  const parts = splitCsvLine(line, delimiter).map((h) => h.trim());
 
   return parts.map((cell) => {
     let h = cell.toLowerCase().replace(/"/g, "");
@@ -340,11 +378,12 @@ export function parseDateCell(cell) {
  * If the first line looks header-less, we synthesize "Column 1", etc.
  */
 export function getCsvColumnsForMapping(text) {
+  const delimiter = detectDelimiter(text);
   const firstLine =
     text.split(/\r?\n/).find((l) => l.trim().length > 0) || "";
   if (!firstLine) return [];
 
-  const rawCols = splitCsvLine(firstLine).map((c) =>
+  const rawCols = splitCsvLine(firstLine, delimiter).map((c) =>
     c.trim().replace(/^"|"$/g, "")
   );
 
@@ -364,10 +403,11 @@ export function getCsvColumnsForMapping(text) {
  * Handles header-based and header-less CSVs, plus various date/amount formats.
  */
 export function parseCsvTransactions(text) {
+  const delimiter = detectDelimiter(text);
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
-  let header = normalizeHeaderRow(lines[0]);
+  let header = normalizeHeaderRow(lines[0], delimiter);
   let startIndex = 1;
 
   function getIndexes(headerRow) {
@@ -396,7 +436,7 @@ export function parseCsvTransactions(text) {
 
   // If we didn't recognize ANY header columns, assume it's header-less.
   if (noUsefulHeader) {
-    const firstCols = splitCsvLine(lines[0]).map((c) => c.trim());
+    const firstCols = splitCsvLine(lines[0], delimiter).map((c) => c.trim());
 
     const syntheticHeader = firstCols.map((_, idx) => {
       if (idx === 0) return "date";
@@ -421,7 +461,7 @@ export function parseCsvTransactions(text) {
 
   for (let i = startIndex; i < lines.length; i++) {
     const raw = lines[i];
-    const cols = splitCsvLine(raw).map((c) => c.trim());
+    const cols = splitCsvLine(raw, delimiter).map((c) => c.trim());
 
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
 
@@ -471,6 +511,7 @@ export function parseCsvWithMapping(
   text,
   { dateIndex = null, descIndex = null, amountIndex = null } = {}
 ) {
+  const delimiter = detectDelimiter(text);
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
 
@@ -479,7 +520,7 @@ export function parseCsvWithMapping(
   // Assume first line is header for mapping purposes
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
-    const cols = splitCsvLine(raw).map((c) => c.trim());
+    const cols = splitCsvLine(raw, delimiter).map((c) => c.trim());
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
 
     const rawDate =
