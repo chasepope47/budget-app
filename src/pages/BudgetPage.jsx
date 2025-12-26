@@ -2,8 +2,8 @@ import React from "react";
 import Card from "../components/Card.jsx";
 
 function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
-  const fixedTotal = totals?.fixedTotal ?? 0;
-  const variableTotal = totals?.variableTotal ?? 0;
+  const fixedTotal = Number(totals?.fixed ?? totals?.fixedTotal ?? 0);
+  const variableTotal = Number(totals?.variable ?? totals?.variableTotal ?? 0);
   const leftover = totals?.leftover ?? 0;
   const incomeValue = Number(budget?.income ?? 0);
   const fixedItems = Array.isArray(budget?.fixed) ? budget.fixed : [];
@@ -81,7 +81,7 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
         <Card title="FIXED EXPENSES">
           <ListWithTotal
             items={fixedItems}
-            total={totals.fixedTotal}
+            total={fixedTotal}
             onDelete={(index) => handleDeleteExpense("fixed", index)}
           />
           <button
@@ -95,7 +95,7 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
         <Card title="VARIABLE SPENDING">
           <ListWithTotal
             items={variableItems}
-            total={totals.variableTotal}
+            total={variableTotal}
             onDelete={(index) => handleDeleteExpense("variable", index)}
           />
           <button
