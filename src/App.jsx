@@ -168,9 +168,6 @@ function App() {
       .finally(() => setProfileLoading(false));
   }, [user?.uid]);
 
-  /* ============================================================
-     ✅ FIX #1: Realtime Firestore sync (no stale closures)
-     ============================================================ */
   useEffect(() => {
     if (!activeWorkspaceId) return;
 
@@ -200,37 +197,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
-  /* -------- Initial Firestore load -------- */
-  useEffect(() => {
-    if (!activeWorkspaceId) return;
-    loadWorkspaceState(activeWorkspaceId)
-      .then((remote) => {
-        if (!remote) return;
-        applyingRemoteRef.current = true;
-        setBudgetsByMonth(remote.budgetsByMonth || {});
-        setActiveMonth(remote.activeMonth || getCurrentMonthKey());
-        setGoals(remote.goals || []);
-        setAccounts(normalizeAccounts(remote.accounts || []));
-        setCurrentAccountId(remote.currentAccountId || "main");
-        setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
-        setDashboardSectionsOrder(remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS);
-        setTheme(remote.theme || "dark");
-        setTxFilter(remote.txFilter || "");
-        setHomePage(remote.homePage || "dashboard");
-      })
-      .catch((err) => {
-        console.error("Initial sync load failed", err);
-        setToast({
-          message: "Could not load your cloud data. Check your connection/Firebase rules.",
-          variant: "info",
-        });
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
-
-  /* ============================================================
-     ✅ FIX #2: Force-save helper for “important” operations (imports)
-     ============================================================ */
   async function forceCloudSave(nextState) {
     if (!activeWorkspaceId) return;
     try {
@@ -326,9 +292,6 @@ function App() {
     return Array.isArray(v) ? v : [];
   }
 
-  /* ============================================================
-     ✅ FIX #3: Import writes + immediate cloud save (no “wait 600ms”)
-     ============================================================ */
   function handleImportedTransactions(rows = [], meta = {}) {
     const parsedRows = safeArray(rows)
       .map((r) => {

@@ -16,15 +16,22 @@ export async function loadWorkspaceState(workspaceId) {
 
 export async function saveWorkspaceState(workspaceId, state) {
   if (!workspaceId) return;
+  const ref = doc(db, "workspaces", workspaceId);
+
   try {
-    const ref = doc(db, "workspaces", workspaceId);
-    await setDoc(
-      ref,
-      { state, updatedAt: serverTimestamp() },
-      { merge: true }
-    );
+    // update if exists (fast path)
+    await updateDoc(ref, {
+      state,
+      updatedAt: serverTimestamp(),
+    });
     return true;
   } catch (err) {
+    // if doc doesn't exist yet, create it
+    // Firestore uses "not-found" for updateDoc on missing doc
+    if (err?.code === "not-found") {
+      await setDoc(ref, { state, updatedAt: serverTimestamp() }, { merge: true });
+      return true;
+    }
     console.error("saveWorkspaceState failed", err);
     throw err;
   }
