@@ -159,6 +159,10 @@ function App() {
     if (!hasCurrent) setCurrentAccountId(list[0].id);
   }, [accounts, currentAccountId]);
 
+  useEffect(() => {
+  console.log("AUTH USER:", user?.uid, user?.email);
+}, [user]);
+
   /* -------- Profile -------- */
   useEffect(() => {
     if (!user?.uid) return;
