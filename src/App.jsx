@@ -68,33 +68,29 @@ function getCurrentMonthKey() {
 }
 
 function App() {
-  const {
-    user,
-    authLoading,
-    signInWithEmail,
-    signUpWithEmail,
-    signOut,
-  resetPassword,
-} = useFirebaseAuth();
+  const { user, authLoading, signInWithEmail, signUpWithEmail, signOut, resetPassword } =
+    useFirebaseAuth();
 
   function makeId(prefix = "id") {
     if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-function mergeDedupTx(prevTx = [], nextTx = []) {
-  const seen = new Set(prevTx.map((t) => `${t.date}|${t.amount}|${t.description}|${t.accountId}`));
-  const merged = [...prevTx];
+  function mergeDedupTx(prevTx = [], nextTx = []) {
+    const seen = new Set(
+      prevTx.map((t) => `${t.date}|${t.amount}|${t.description}|${t.accountId}`)
+    );
+    const merged = [...prevTx];
 
-  for (const t of nextTx) {
-    const sig = `${t.date}|${t.amount}|${t.description}|${t.accountId}`;
-    if (!seen.has(sig)) {
-      seen.add(sig);
-      merged.push(t);
+    for (const t of nextTx) {
+      const sig = `${t.date}|${t.amount}|${t.description}|${t.accountId}`;
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        merged.push(t);
+      }
     }
+    return merged;
   }
-  return merged;
-}
 
   const activeWorkspaceId = user?.uid || null;
   const applyingRemoteRef = useRef(false);
@@ -108,22 +104,24 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
 
   /* -------- State -------- */
   const [theme, setTheme] = useState(stored?.theme || "dark");
-  const [budgetsByMonth, setBudgetsByMonth] = useState(
-    stored?.budgetsByMonth || {}
-  );
-  const [activeMonth, setActiveMonth] = useState(
-    stored?.activeMonth || getCurrentMonthKey()
-  );
+  const [budgetsByMonth, setBudgetsByMonth] = useState(stored?.budgetsByMonth || {});
+  const [activeMonth, setActiveMonth] = useState(stored?.activeMonth || getCurrentMonthKey());
   const [goals, setGoals] = useState(stored?.goals || []);
-  const [accounts, setAccounts] = useState(
-    normalizeAccounts(stored?.accounts || [])
+  const [accounts, setAccounts] = useState(normalizeAccounts(stored?.accounts || []));
+  const [currentAccountId, setCurrentAccountId] = useState(stored?.currentAccountId || "main");
+  const [navOrder, setNavOrder] = useState(stored?.navOrder || NAV_ITEMS.map((n) => n.key));
+  const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
+  const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
+    stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
   );
-  const [currentAccountId, setCurrentAccountId] = useState(
-    stored?.currentAccountId || "main"
-  );
-  const [navOrder, setNavOrder] = useState(
-    stored?.navOrder || NAV_ITEMS.map((n) => n.key)
-  );
+  const [currentPage, setCurrentPage] = useState(stored?.homePage || "dashboard");
+  const [selectedGoalId, setSelectedGoalId] = useState(stored?.selectedGoalId || null);
+  const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
+  const [toast, setToast] = useState(null);
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+
+  const [userProfile, setUserProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   // Ensure navOrder always has default tabs
   useEffect(() => {
@@ -132,24 +130,8 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     }
   }, [navOrder]);
 
-  const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
-  const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
-    stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
-  );
-  const [currentPage, setCurrentPage] = useState(homePage);
-  const [selectedGoalId, setSelectedGoalId] = useState(
-    stored?.selectedGoalId || null
-  );
-  const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
-  const [toast, setToast] = useState(null);
-  const [lastSavedAt, setLastSavedAt] = useState(null);
-
-  const [userProfile, setUserProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-
   /* -------- Derived -------- */
-  const activeBudget =
-    budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
+  const activeBudget = budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
 
   const totals = useMemo(() => {
     const fixed = sumAmounts(activeBudget.fixed || []);
@@ -174,9 +156,7 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     const list = Array.isArray(accounts) ? accounts : [];
     if (list.length === 0) return;
     const hasCurrent = list.some((a) => a.id === currentAccountId);
-    if (!hasCurrent) {
-      setCurrentAccountId(list[0].id);
-    }
+    if (!hasCurrent) setCurrentAccountId(list[0].id);
   }, [accounts, currentAccountId]);
 
   /* -------- Profile -------- */
@@ -188,26 +168,34 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
       .finally(() => setProfileLoading(false));
   }, [user?.uid]);
 
-  /* -------- Realtime Firestore sync -------- */
+  /* ============================================================
+     ✅ FIX #1: Realtime Firestore sync (no stale closures)
+     ============================================================ */
   useEffect(() => {
     if (!activeWorkspaceId) return;
+
     const ref = doc(db, "workspaces", activeWorkspaceId);
     const unsub = onSnapshot(ref, (snap) => {
       const remote = snap.data()?.state;
       if (!remote) return;
 
       applyingRemoteRef.current = true;
+
       setBudgetsByMonth(remote.budgetsByMonth || {});
-      setActiveMonth(remote.activeMonth || activeMonth);
+      setActiveMonth(remote.activeMonth || getCurrentMonthKey());
       setGoals(remote.goals || []);
       setAccounts(normalizeAccounts(remote.accounts || []));
       setCurrentAccountId(remote.currentAccountId || "main");
-      setNavOrder(remote.navOrder || navOrder);
-      setDashboardSectionsOrder(
-        remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
-      );
+      setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
+      setDashboardSectionsOrder(remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS);
       setTheme(remote.theme || "dark");
+      setTxFilter(remote.txFilter || "");
+      setHomePage(remote.homePage || "dashboard");
+
+      // keep current page stable; if you want it to follow homePage, uncomment:
+      // setCurrentPage(remote.homePage || "dashboard");
     });
+
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
@@ -217,13 +205,18 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     if (!activeWorkspaceId) return;
     loadWorkspaceState(activeWorkspaceId)
       .then((remote) => {
-        if (remote) {
-          applyingRemoteRef.current = true;
-          setBudgetsByMonth(remote.budgetsByMonth || {});
-          setActiveMonth(remote.activeMonth || activeMonth);
-          setGoals(remote.goals || []);
-          setAccounts(normalizeAccounts(remote.accounts || []));
-        }
+        if (!remote) return;
+        applyingRemoteRef.current = true;
+        setBudgetsByMonth(remote.budgetsByMonth || {});
+        setActiveMonth(remote.activeMonth || getCurrentMonthKey());
+        setGoals(remote.goals || []);
+        setAccounts(normalizeAccounts(remote.accounts || []));
+        setCurrentAccountId(remote.currentAccountId || "main");
+        setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
+        setDashboardSectionsOrder(remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS);
+        setTheme(remote.theme || "dark");
+        setTxFilter(remote.txFilter || "");
+        setHomePage(remote.homePage || "dashboard");
       })
       .catch((err) => {
         console.error("Initial sync load failed", err);
@@ -235,7 +228,24 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
-  /* -------- Persist -------- */
+  /* ============================================================
+     ✅ FIX #2: Force-save helper for “important” operations (imports)
+     ============================================================ */
+  async function forceCloudSave(nextState) {
+    if (!activeWorkspaceId) return;
+    try {
+      await saveWorkspaceState(activeWorkspaceId, nextState);
+      setLastSavedAt(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error("Force save failed", err);
+      setToast({
+        message: "Sync to cloud failed. Check your connection/Firebase rules.",
+        variant: "info",
+      });
+    }
+  }
+
+  /* -------- Persist (debounced) -------- */
   useEffect(() => {
     const state = {
       budgetsByMonth,
@@ -308,122 +318,125 @@ function mergeDedupTx(prevTx = [], nextTx = []) {
   }
 
   function makeTxId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
-}
-
-function handleImportedTransactions(rows = [], meta = {}) {
-  const parsedRows = safeArray(rows)
-    .map((r) => {
-      const amount = typeof r.amount === "number" ? r.amount : Number(r.amount);
-      return {
-        id: r.id || makeTxId(),
-        date: r.date || "",
-        description: r.description || "",
-        category: r.category || "",
-        amount: Number.isFinite(amount) ? amount : NaN,
-      };
-    })
-    .filter((r) => Number.isFinite(r.amount));
-
-  if (!parsedRows.length) {
-    setToast({
-      message: "No valid transactions were found in that file.",
-      variant: "info",
-    });
-    return;
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    return `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  const sourceName =
-    meta.bank ||
-    meta.detectedBank ||
-    meta.filename ||
-    meta.fileName ||
-    "Imported";
+  function safeArray(v) {
+    return Array.isArray(v) ? v : [];
+  }
 
-  const detection = importTransactionsWithDetection(
-    accounts,
-    currentAccountId,
-    parsedRows,
-    sourceName
-  );
+  /* ============================================================
+     ✅ FIX #3: Import writes + immediate cloud save (no “wait 600ms”)
+     ============================================================ */
+  function handleImportedTransactions(rows = [], meta = {}) {
+    const parsedRows = safeArray(rows)
+      .map((r) => {
+        const amount = typeof r.amount === "number" ? r.amount : Number(r.amount);
+        return {
+          id: r.id || makeTxId(),
+          date: r.date || "",
+          description: r.description || "",
+          category: r.category || "",
+          amount: Number.isFinite(amount) ? amount : NaN,
+        };
+      })
+      .filter((r) => Number.isFinite(r.amount));
 
-  const targetAccountId = detection.targetAccountId;
-  const targetAccountName =
-    detection.targetAccountName || sourceName || "Imported Account";
-
-  const rowsWithAccount = parsedRows.map((tx) => ({
-    ...tx,
-    accountId: targetAccountId,
-  }));
-
-  setAccounts((prev) => {
-    const list = Array.isArray(prev) ? prev : [];
-    const exists = list.some((a) => a.id === targetAccountId);
-
-    if (detection.createdNew || !exists) {
-      const newAccount = {
-        id: targetAccountId,
-        name: targetAccountName,
-        type:
-          detection.accounts?.find((a) => a.id === targetAccountId)?.type ||
-          "checking",
-        startingBalance: 0,
-        transactions: rowsWithAccount,
-      };
-      return normalizeAccounts([...list, newAccount]);
+    if (!parsedRows.length) {
+      setToast({ message: "No valid transactions were found in that file.", variant: "info" });
+      return;
     }
 
-    return normalizeAccounts(
-      list.map((acc) =>
-        acc.id === targetAccountId
-          ? {
-              ...acc,
-              transactions: mergeTransactions(
-                acc.transactions || [],
-                rowsWithAccount
-              ),
-            }
-          : acc
-      )
+    const sourceName =
+      meta.bank || meta.detectedBank || meta.filename || meta.fileName || "Imported";
+
+    const detection = importTransactionsWithDetection(
+      accounts,
+      currentAccountId,
+      parsedRows,
+      sourceName
     );
-  });
 
-  setBudgetsByMonth((prev) => {
-    const curr =
-      prev?.[activeMonth] || {
-        month: activeMonth,
-        income: 0,
-        fixed: [],
-        variable: [],
-        transactions: [],
+    const targetAccountId = detection.targetAccountId;
+    const targetAccountName = detection.targetAccountName || sourceName || "Imported Account";
+
+    const rowsWithAccount = parsedRows.map((tx) => ({ ...tx, accountId: targetAccountId }));
+
+    // Compute nextAccounts (no setState yet)
+    const nextAccounts = (() => {
+      const list = Array.isArray(accounts) ? accounts : [];
+      const exists = list.some((a) => a.id === targetAccountId);
+
+      if (detection.createdNew || !exists) {
+        const newAccount = {
+          id: targetAccountId,
+          name: targetAccountName,
+          type:
+            detection.accounts?.find((a) => a.id === targetAccountId)?.type || "checking",
+          startingBalance: 0,
+          transactions: rowsWithAccount,
+        };
+        return normalizeAccounts([...list, newAccount]);
+      }
+
+      return normalizeAccounts(
+        list.map((acc) =>
+          acc.id === targetAccountId
+            ? { ...acc, transactions: mergeTransactions(acc.transactions || [], rowsWithAccount) }
+            : acc
+        )
+      );
+    })();
+
+    // Compute nextBudgetsByMonth (no setState yet)
+    const nextBudgetsByMonth = (() => {
+      const curr =
+        budgetsByMonth?.[activeMonth] || {
+          month: activeMonth,
+          income: 0,
+          fixed: [],
+          variable: [],
+          transactions: [],
+        };
+
+      const existing = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
+
+      return {
+        ...budgetsByMonth,
+        [activeMonth]: { ...curr, transactions: nextTransactions },
       };
-    const existing = Array.isArray(curr.transactions) ? curr.transactions : [];
-    const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
+    })();
 
-    return {
-      ...prev,
-      [activeMonth]: {
-        ...curr,
-        transactions: nextTransactions,
-      },
-    };
-  });
+    // Apply state
+    setAccounts(nextAccounts);
+    setBudgetsByMonth(nextBudgetsByMonth);
+    setCurrentAccountId(targetAccountId);
 
-  setCurrentAccountId(targetAccountId);
-  setToast({
-    variant: "success",
-    message: detection.createdNew
-      ? `Created "${targetAccountName}" and imported ${rowsWithAccount.length} transactions.`
-      : `Imported ${rowsWithAccount.length} transactions into "${targetAccountName}".`,
-  });
-}
+    // Immediate cloud write with the same computed snapshot
+    forceCloudSave({
+      budgetsByMonth: nextBudgetsByMonth,
+      activeMonth,
+      goals,
+      accounts: nextAccounts,
+      currentAccountId: targetAccountId,
+      navOrder,
+      homePage,
+      dashboardSectionsOrder,
+      theme,
+      txFilter,
+    });
 
+    setToast({
+      variant: "success",
+      message: detection.createdNew
+        ? `Created "${targetAccountName}" and imported ${rowsWithAccount.length} transactions.`
+        : `Imported ${rowsWithAccount.length} transactions into "${targetAccountName}".`,
+    });
+  }
 
+  /* -------- Accounts UI actions (unchanged) -------- */
   function handleCreateAccount() {
     const nextName = `Account ${accounts.length + 1}`;
     const newId = makeId("acct");
@@ -442,14 +455,17 @@ function handleImportedTransactions(rows = [], meta = {}) {
 
   function handleDeleteAccount(id) {
     if (!id) return;
-    if (!window.confirm("Delete this account? Transactions tied to it will remain in budgets but the account will be removed.")) return;
+    if (
+      !window.confirm(
+        "Delete this account? Transactions tied to it will remain in budgets but the account will be removed."
+      )
+    )
+      return;
+
     setAccounts((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const remaining = list.filter((a) => a.id !== id);
-      // update currentAccountId if needed
-      if (currentAccountId === id) {
-        setCurrentAccountId(remaining[0]?.id || "main");
-      }
+      if (currentAccountId === id) setCurrentAccountId(remaining[0]?.id || "main");
       return remaining;
     });
   }
@@ -468,24 +484,18 @@ function handleImportedTransactions(rows = [], meta = {}) {
   function handleRenameAccount(id, name) {
     const cleaned = (name || "").trim() || "Account";
     setAccounts((prev) =>
-      normalizeAccounts(
-        (Array.isArray(prev) ? prev : []).map((a) =>
-          a.id === id ? { ...a, name: cleaned } : a
-        )
-      )
+      normalizeAccounts((Array.isArray(prev) ? prev : []).map((a) => (a.id === id ? { ...a, name: cleaned } : a)))
     );
   }
 
   /* -------- UI -------- */
   return (
     <div className={`app-shell ${themeStyles.shellClass}`}>
-      {/* HEADER */}
       <header className={themeStyles.headerClass}>
         <div className="content headerRow">
           <div className="brandAndNav">
             <span className="appTitle">BUDGET CENTER</span>
 
-            {/* mobile-safe: scrollable row */}
             <div className="navRow" aria-label="Primary navigation">
               {navOrder.map((pageKey) => (
                 <NavButton
@@ -503,9 +513,7 @@ function handleImportedTransactions(rows = [], meta = {}) {
               profile={userProfile}
               email={user.email}
               loading={profileLoading}
-              onUpdateProfile={(p) =>
-                updateUserProfile(user.uid, p).then(setUserProfile)
-              }
+              onUpdateProfile={(p) => updateUserProfile(user.uid, p).then(setUserProfile)}
             />
             <ActionsMenu
               onReset={handleResetAllData}
@@ -517,7 +525,6 @@ function handleImportedTransactions(rows = [], meta = {}) {
         </div>
       </header>
 
-      {/* MAIN */}
       <main className="content">
         {currentPage === "dashboard" && (
           <Dashboard
@@ -566,19 +573,18 @@ function handleImportedTransactions(rows = [], meta = {}) {
           />
         )}
 
-      {currentPage === "transactions" && (
-        <TransactionsPage
-          accounts={accounts}
-          currentAccountId={currentAccountId}
-          transactions={activeBudget.transactions || []}
-          filter={txFilter}
-          onFilterChange={setTxFilter}
-          onUpdateBudget={(nextBudget) =>
-            setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
-          }
-        />
-      )}
-
+        {currentPage === "transactions" && (
+          <TransactionsPage
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            transactions={activeBudget.transactions || []}
+            filter={txFilter}
+            onFilterChange={setTxFilter}
+            onUpdateBudget={(nextBudget) =>
+              setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
+            }
+          />
+        )}
 
         {currentPage === "goalDetail" && (
           <GoalDetailPage
@@ -592,7 +598,7 @@ function handleImportedTransactions(rows = [], meta = {}) {
         {currentPage === "reports" && (
           <ReportsPage
             accounts={accounts}
-            monthKey={activeMonth} // optional, but recommended (keeps report month consistent)
+            monthKey={activeMonth}
             onMerchantPick={(merchant) => {
               setTxFilter(merchant);
               setCurrentPage("transactions");
