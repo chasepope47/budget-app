@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./App.css";
 
 import { useFirebaseAuth } from "./FirebaseAuthProvider.jsx";
-import { loadWorkspaceState, saveWorkspaceState } from "./workspaceStateApi.js";
+import { saveWorkspaceState } from "./workspaceStateApi.js";
 import { db } from "./firebaseClient.js";
 import { doc, onSnapshot, deleteDoc } from "firebase/firestore";
 import {
@@ -68,11 +68,18 @@ function getCurrentMonthKey() {
 }
 
 function App() {
-  const { user, authLoading, signInWithEmail, signUpWithEmail, signOut, resetPassword } =
-    useFirebaseAuth();
+  const {
+    user,
+    authLoading,
+    signInWithEmail,
+    signUpWithEmail,
+    signOut,
+    resetPassword,
+  } = useFirebaseAuth();
 
   function makeId(prefix = "id") {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    if (typeof crypto !== "undefined" && crypto.randomUUID)
+      return crypto.randomUUID();
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
@@ -104,18 +111,32 @@ function App() {
 
   /* -------- State -------- */
   const [theme, setTheme] = useState(stored?.theme || "dark");
-  const [budgetsByMonth, setBudgetsByMonth] = useState(stored?.budgetsByMonth || {});
-  const [activeMonth, setActiveMonth] = useState(stored?.activeMonth || getCurrentMonthKey());
+  const [budgetsByMonth, setBudgetsByMonth] = useState(
+    stored?.budgetsByMonth || {}
+  );
+  const [activeMonth, setActiveMonth] = useState(
+    stored?.activeMonth || getCurrentMonthKey()
+  );
   const [goals, setGoals] = useState(stored?.goals || []);
-  const [accounts, setAccounts] = useState(normalizeAccounts(stored?.accounts || []));
-  const [currentAccountId, setCurrentAccountId] = useState(stored?.currentAccountId || "main");
-  const [navOrder, setNavOrder] = useState(stored?.navOrder || NAV_ITEMS.map((n) => n.key));
+  const [accounts, setAccounts] = useState(
+    normalizeAccounts(stored?.accounts || [])
+  );
+  const [currentAccountId, setCurrentAccountId] = useState(
+    stored?.currentAccountId || "main"
+  );
+  const [navOrder, setNavOrder] = useState(
+    stored?.navOrder || NAV_ITEMS.map((n) => n.key)
+  );
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
     stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
   );
-  const [currentPage, setCurrentPage] = useState(stored?.homePage || "dashboard");
-  const [selectedGoalId, setSelectedGoalId] = useState(stored?.selectedGoalId || null);
+  const [currentPage, setCurrentPage] = useState(
+    stored?.homePage || "dashboard"
+  );
+  const [selectedGoalId, setSelectedGoalId] = useState(
+    stored?.selectedGoalId || null
+  );
   const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
   const [toast, setToast] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -131,7 +152,10 @@ function App() {
   }, [navOrder]);
 
   /* -------- Derived -------- */
-  const activeBudget = budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
+  const activeBudget = budgetsByMonth[activeMonth] || {
+    month: activeMonth,
+    income: 0,
+  };
 
   const totals = useMemo(() => {
     const fixed = sumAmounts(activeBudget.fixed || []);
@@ -159,10 +183,6 @@ function App() {
     if (!hasCurrent) setCurrentAccountId(list[0].id);
   }, [accounts, currentAccountId]);
 
-  useEffect(() => {
-  console.log("AUTH USER:", user?.uid, user?.email);
-}, [user]);
-
   /* -------- Profile -------- */
   useEffect(() => {
     if (!user?.uid) return;
@@ -172,6 +192,7 @@ function App() {
       .finally(() => setProfileLoading(false));
   }, [user?.uid]);
 
+  /* -------- Remote sync (firebase) -------- */
   useEffect(() => {
     if (!activeWorkspaceId) return;
 
@@ -188,32 +209,18 @@ function App() {
       setAccounts(normalizeAccounts(remote.accounts || []));
       setCurrentAccountId(remote.currentAccountId || "main");
       setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
-      setDashboardSectionsOrder(remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS);
+      setDashboardSectionsOrder(
+        remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
+      );
       setTheme(remote.theme || "dark");
       setTxFilter(remote.txFilter || "");
       setHomePage(remote.homePage || "dashboard");
-
-      // keep current page stable; if you want it to follow homePage, uncomment:
-      // setCurrentPage(remote.homePage || "dashboard");
+      setSelectedGoalId(remote.selectedGoalId || null);
     });
 
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
-
-  async function forceCloudSave(nextState) {
-    if (!activeWorkspaceId) return;
-    try {
-      await saveWorkspaceState(activeWorkspaceId, nextState);
-      setLastSavedAt(new Date().toLocaleTimeString());
-    } catch (err) {
-      console.error("Force save failed", err);
-      setToast({
-        message: "Sync to cloud failed. Check your connection/Firebase rules.",
-        variant: "info",
-      });
-    }
-  }
 
   /* -------- Persist (debounced) -------- */
   useEffect(() => {
@@ -228,6 +235,7 @@ function App() {
       dashboardSectionsOrder,
       theme,
       txFilter,
+      selectedGoalId,
     };
 
     saveStoredState(state);
@@ -263,6 +271,7 @@ function App() {
     dashboardSectionsOrder,
     theme,
     txFilter,
+    selectedGoalId,
   ]);
 
   /* -------- Reset -------- */
@@ -287,8 +296,10 @@ function App() {
     );
   }
 
+  /* -------- Transactions import -------- */
   function makeTxId() {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+    if (typeof crypto !== "undefined" && crypto.randomUUID)
+      return crypto.randomUUID();
     return `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
@@ -311,7 +322,10 @@ function App() {
       .filter((r) => Number.isFinite(r.amount));
 
     if (!parsedRows.length) {
-      setToast({ message: "No valid transactions were found in that file.", variant: "info" });
+      setToast({
+        message: "No valid transactions were found in that file.",
+        variant: "info",
+      });
       return;
     }
 
@@ -326,11 +340,14 @@ function App() {
     );
 
     const targetAccountId = detection.targetAccountId;
-    const targetAccountName = detection.targetAccountName || sourceName || "Imported Account";
+    const targetAccountName =
+      detection.targetAccountName || sourceName || "Imported Account";
 
-    const rowsWithAccount = parsedRows.map((tx) => ({ ...tx, accountId: targetAccountId }));
+    const rowsWithAccount = parsedRows.map((tx) => ({
+      ...tx,
+      accountId: targetAccountId,
+    }));
 
-    // Compute nextAccounts (no setState yet)
     const nextAccounts = (() => {
       const list = Array.isArray(accounts) ? accounts : [];
       const exists = list.some((a) => a.id === targetAccountId);
@@ -340,7 +357,8 @@ function App() {
           id: targetAccountId,
           name: targetAccountName,
           type:
-            detection.accounts?.find((a) => a.id === targetAccountId)?.type || "checking",
+            detection.accounts?.find((a) => a.id === targetAccountId)?.type ||
+            "checking",
           startingBalance: 0,
           transactions: rowsWithAccount,
         };
@@ -350,13 +368,18 @@ function App() {
       return normalizeAccounts(
         list.map((acc) =>
           acc.id === targetAccountId
-            ? { ...acc, transactions: mergeTransactions(acc.transactions || [], rowsWithAccount) }
+            ? {
+                ...acc,
+                transactions: mergeTransactions(
+                  acc.transactions || [],
+                  rowsWithAccount
+                ),
+              }
             : acc
         )
       );
     })();
 
-    // Compute nextBudgetsByMonth (no setState yet)
     const nextBudgetsByMonth = (() => {
       const curr =
         budgetsByMonth?.[activeMonth] || {
@@ -376,24 +399,9 @@ function App() {
       };
     })();
 
-    // Apply state
     setAccounts(nextAccounts);
     setBudgetsByMonth(nextBudgetsByMonth);
     setCurrentAccountId(targetAccountId);
-
-    // Immediate cloud write with the same computed snapshot
-    forceCloudSave({
-      budgetsByMonth: nextBudgetsByMonth,
-      activeMonth,
-      goals,
-      accounts: nextAccounts,
-      currentAccountId: targetAccountId,
-      navOrder,
-      homePage,
-      dashboardSectionsOrder,
-      theme,
-      txFilter,
-    });
 
     setToast({
       variant: "success",
@@ -403,7 +411,7 @@ function App() {
     });
   }
 
-  /* -------- Accounts UI actions (unchanged) -------- */
+  /* -------- Accounts UI actions -------- */
   function handleCreateAccount() {
     const nextName = `Account ${accounts.length + 1}`;
     const newId = makeId("acct");
@@ -415,7 +423,9 @@ function App() {
       transactions: [],
       createdAt: Date.now(),
     };
-    setAccounts((prev) => normalizeAccounts([...(Array.isArray(prev) ? prev : []), newAcc]));
+    setAccounts((prev) =>
+      normalizeAccounts([...(Array.isArray(prev) ? prev : []), newAcc])
+    );
     setCurrentAccountId(newId);
     setToast({ variant: "success", message: `Created ${nextName}` });
   }
@@ -442,7 +452,9 @@ function App() {
     setAccounts((prev) =>
       normalizeAccounts(
         (Array.isArray(prev) ? prev : []).map((a) =>
-          a.id === id ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 } : a
+          a.id === id
+            ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 }
+            : a
         )
       )
     );
@@ -451,9 +463,78 @@ function App() {
   function handleRenameAccount(id, name) {
     const cleaned = (name || "").trim() || "Account";
     setAccounts((prev) =>
-      normalizeAccounts((Array.isArray(prev) ? prev : []).map((a) => (a.id === id ? { ...a, name: cleaned } : a)))
+      normalizeAccounts(
+        (Array.isArray(prev) ? prev : []).map((a) =>
+          a.id === id ? { ...a, name: cleaned } : a
+        )
+      )
     );
   }
+
+  /* ---------------- GOALS: WIRING FIX ---------------- */
+
+  function openGoal(goalId) {
+    if (!goalId) return;
+    setSelectedGoalId(goalId);
+    setCurrentPage("goalDetail");
+  }
+
+  function handleCreateGoal() {
+    const newGoal = {
+      id: makeId("goal"),
+      name: "New Goal",
+      target: 1000,
+      saved: 0,
+      monthlyPlan: 0,
+      emoji: "🎯",
+      createdAt: Date.now(),
+    };
+
+    setGoals((prev) => [newGoal, ...(Array.isArray(prev) ? prev : [])]);
+    openGoal(newGoal.id);
+  }
+
+  function handleDeleteGoal(goalId) {
+    if (!goalId) return;
+    if (!window.confirm("Delete this goal?")) return;
+
+    setGoals((prev) =>
+      (Array.isArray(prev) ? prev : []).filter((g) => g.id !== goalId)
+    );
+    setSelectedGoalId((prevId) => (prevId === goalId ? null : prevId));
+  }
+
+  function handleDuplicateGoal(goalId) {
+    const g = (Array.isArray(goals) ? goals : []).find((x) => x.id === goalId);
+    if (!g) return;
+
+    const copy = {
+      ...g,
+      id: makeId("goal"),
+      name: `${g.name || "Goal"} (Copy)`,
+      createdAt: Date.now(),
+    };
+
+    setGoals((prev) => [copy, ...(Array.isArray(prev) ? prev : [])]);
+    openGoal(copy.id);
+  }
+
+  function handleAddContribution(goalId) {
+    if (!goalId) return;
+    const amtStr = window.prompt("Contribution amount?");
+    const amt = Number(amtStr);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+
+    setGoals((prev) =>
+      (Array.isArray(prev) ? prev : []).map((g) =>
+        g.id === goalId ? { ...g, saved: Number(g.saved || 0) + amt } : g
+      )
+    );
+  }
+
+  const selectedGoal =
+    (Array.isArray(goals) ? goals : []).find((g) => g.id === selectedGoalId) ||
+    null;
 
   /* -------- UI -------- */
   return (
@@ -480,7 +561,9 @@ function App() {
               profile={userProfile}
               email={user.email}
               loading={profileLoading}
-              onUpdateProfile={(p) => updateUserProfile(user.uid, p).then(setUserProfile)}
+              onUpdateProfile={(p) =>
+                updateUserProfile(user.uid, p).then(setUserProfile)
+              }
             />
             <ActionsMenu
               onReset={handleResetAllData}
@@ -509,6 +592,9 @@ function App() {
             totalBalance={totalBalance}
             onCsvImported={handleImportedTransactions}
             onTransactionsParsed={handleImportedTransactions}
+            // ✅ FIX: these match Dashboard.jsx
+            onOpenGoal={openGoal}
+            onCreateGoal={handleCreateGoal}
           />
         )}
 
@@ -555,10 +641,12 @@ function App() {
 
         {currentPage === "goalDetail" && (
           <GoalDetailPage
-            goals={goals}
-            selectedGoalId={selectedGoalId}
-            onSelectGoal={setSelectedGoalId}
-            onGoalsChange={setGoals}
+            goal={selectedGoal}
+            onEditGoal={(id) => console.log("edit goal (wire later)", id)}
+            onDeleteGoal={handleDeleteGoal}
+            onDuplicateGoal={handleDuplicateGoal}
+            onExportGoal={(id) => console.log("export goal (wire later)", id)}
+            onAddContributionRequest={handleAddContribution}
           />
         )}
 

@@ -1,3 +1,4 @@
+// src/pages/GoalDetailPage.jsx //
 import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
