@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
+function GoalActionsMenu({ onViewAll, onEdit, onDelete, onDuplicate, onExport }) {
   const [open, setOpen] = useState(false);
 
   function handleDelete() {
@@ -25,6 +25,20 @@ function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
             : "opacity-0 -translate-y-1 pointer-events-none"
         }`}
       >
+        {/* ✅ NEW */}
+        <button
+          type="button"
+          className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
+          onClick={() => {
+            setOpen(false);
+            onViewAll?.();
+          }}
+        >
+          View all goals
+        </button>
+
+        <div className="h-px bg-slate-800/80" />
+
         <button
           type="button"
           className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
@@ -35,6 +49,7 @@ function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
         >
           Edit goal
         </button>
+
         <button
           type="button"
           className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
@@ -45,6 +60,7 @@ function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
         >
           Duplicate goal
         </button>
+
         <button
           type="button"
           className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"
@@ -55,6 +71,7 @@ function GoalActionsMenu({ onEdit, onDelete, onDuplicate, onExport }) {
         >
           Export progress
         </button>
+
         <button
           type="button"
           className="block w-full px-3 py-2 text-left text-rose-300 hover:bg-slate-800/70"

@@ -3,6 +3,7 @@ import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
 import GoalActionsMenu from "../components/GoalActionsMenu.jsx";
+import GoalCard from "../components/GoalCard.jsx";
 
 function num(v, fallback = 0) {
   const n = Number(v);
@@ -10,6 +11,9 @@ function num(v, fallback = 0) {
 }
 
 function GoalDetailPage({
+  goals = [],
+  onSelectGoal = () => {},
+
   goal,
   mode = "edit", // "create" | "edit"
   onRequestCreateGoal = () => {},
@@ -20,29 +24,109 @@ function GoalDetailPage({
   onExportGoal = () => {},
   onAddContributionRequest = () => {},
 }) {
-  // ✅ If you navigated here in create mode, create the goal here (not on dashboard)
+  const [view, setView] = React.useState("detail"); // "detail" | "all"
+  const createOnceRef = React.useRef(false);
+
   React.useEffect(() => {
     if (mode !== "create") return;
     if (goal?.id) return;
+    if (createOnceRef.current) return;
+    createOnceRef.current = true;
     onRequestCreateGoal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, goal?.id]);
+  }, [mode, goal?.id, onRequestCreateGoal]);
 
-  // ✅ If still no goal, show empty state
+  React.useEffect(() => {
+    if (!goal?.id) setView("all");
+  }, [goal?.id]);
+
+  // ----- ALL GOALS VIEW -----
+  if (view === "all") {
+    const list = Array.isArray(goals) ? goals : [];
+
+    return (
+      <div className="space-y-5">
+        <header className="flex items-center justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-xl font-semibold text-slate-100">All Goals</h1>
+            <p className="text-xs text-slate-400">
+              Select a goal to view details, or create a new one.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {goal?.id && (
+              <button
+                type="button"
+                className="px-3 py-1.5 rounded-md border border-slate-700 text-xs text-slate-200 bg-slate-900/40 hover:border-cyan-400/70 transition"
+                onClick={() => setView("detail")}
+              >
+                Back to goal
+              </button>
+            )}
+
+            <button
+              type="button"
+              className="px-3 py-1.5 rounded-md border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+              onClick={() => {
+                onRequestCreateGoal();
+                setView("detail");
+              }}
+            >
+              + New Goal
+            </button>
+          </div>
+        </header>
+
+        {list.length === 0 ? (
+          <Card title="NO GOALS YET">
+            <p className="text-sm text-slate-300">
+              You don’t have any goals yet. Create one to get started.
+            </p>
+          </Card>
+        ) : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {list.map((g) => (
+              <GoalCard
+                key={g.id}
+                goal={g}
+                onClick={() => {
+                  onSelectGoal(g.id);
+                  setView("detail");
+                }}
+                onEdit={() => {
+                  onSelectGoal(g.id);
+                  setView("detail");
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ----- DETAIL VIEW -----
   if (!goal) {
     return (
       <div className="space-y-4">
         <Card title="GOALS">
-          <p className="text-sm text-slate-300">
-            No goal is selected yet.
-          </p>
-          <button
-            type="button"
-            onClick={onRequestCreateGoal}
-            className="mt-3 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
-          >
-            + Create a goal
-          </button>
+          <p className="text-sm text-slate-300">No goal selected.</p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setView("all")}
+              className="px-4 py-2 rounded-lg border border-slate-700 text-xs text-slate-200 bg-slate-900/40 hover:border-cyan-400/70 transition"
+            >
+              View all goals
+            </button>
+            <button
+              type="button"
+              onClick={onRequestCreateGoal}
+              className="px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+            >
+              + Create a goal
+            </button>
+          </div>
         </Card>
       </div>
     );
@@ -73,6 +157,7 @@ function GoalDetailPage({
         </div>
 
         <GoalActionsMenu
+          onViewAll={() => setView("all")}
           onEdit={() => onEditGoal(goal?.id)}
           onDelete={() => goal?.id && onDeleteGoal(goal.id)}
           onDuplicate={() => onDuplicateGoal(goal?.id)}
