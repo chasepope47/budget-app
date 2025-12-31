@@ -134,9 +134,13 @@ function App() {
   const [currentPage, setCurrentPage] = useState(
     stored?.homePage || "dashboard"
   );
+
+  // ✅ goal selection + mode
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || null
   );
+  const [goalMode, setGoalMode] = useState(null); // null | "create" | "edit"
+
   const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
   const [toast, setToast] = useState(null);
   const [lastSavedAt, setLastSavedAt] = useState(null);
@@ -216,6 +220,7 @@ function App() {
       setTxFilter(remote.txFilter || "");
       setHomePage(remote.homePage || "dashboard");
       setSelectedGoalId(remote.selectedGoalId || null);
+      // goalMode intentionally NOT synced (UI-only)
     });
 
     return () => unsub();
@@ -235,7 +240,7 @@ function App() {
       dashboardSectionsOrder,
       theme,
       txFilter,
-      selectedGoalId,
+      selectedGoalId, // ✅ persist selection
     };
 
     saveStoredState(state);
@@ -310,7 +315,8 @@ function App() {
   function handleImportedTransactions(rows = [], meta = {}) {
     const parsedRows = safeArray(rows)
       .map((r) => {
-        const amount = typeof r.amount === "number" ? r.amount : Number(r.amount);
+        const amount =
+          typeof r.amount === "number" ? r.amount : Number(r.amount);
         return {
           id: r.id || makeTxId(),
           date: r.date || "",
@@ -330,7 +336,11 @@ function App() {
     }
 
     const sourceName =
-      meta.bank || meta.detectedBank || meta.filename || meta.fileName || "Imported";
+      meta.bank ||
+      meta.detectedBank ||
+      meta.filename ||
+      meta.fileName ||
+      "Imported";
 
     const detection = importTransactionsWithDetection(
       accounts,
@@ -390,7 +400,9 @@ function App() {
           transactions: [],
         };
 
-      const existing = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const existing = Array.isArray(curr.transactions)
+        ? curr.transactions
+        : [];
       const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
 
       return {
@@ -442,7 +454,8 @@ function App() {
     setAccounts((prev) => {
       const list = Array.isArray(prev) ? prev : [];
       const remaining = list.filter((a) => a.id !== id);
-      if (currentAccountId === id) setCurrentAccountId(remaining[0]?.id || "main");
+      if (currentAccountId === id)
+        setCurrentAccountId(remaining[0]?.id || "main");
       return remaining;
     });
   }
@@ -453,7 +466,10 @@ function App() {
       normalizeAccounts(
         (Array.isArray(prev) ? prev : []).map((a) =>
           a.id === id
-            ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 }
+            ? {
+                ...a,
+                startingBalance: Number.isFinite(nextValue) ? nextValue : 0,
+              }
             : a
         )
       )
@@ -471,15 +487,24 @@ function App() {
     );
   }
 
-  /* ---------------- GOALS: WIRING FIX ---------------- */
+  /* ---------------- GOALS FLOW (NEW) ---------------- */
 
-  function openGoal(goalId) {
+  function openGoalForEdit(goalId) {
     if (!goalId) return;
     setSelectedGoalId(goalId);
+    setGoalMode("edit");
     setCurrentPage("goalDetail");
   }
 
-  function handleCreateGoal() {
+  function goToGoalsCreate() {
+    // NOTE: Do not create the goal here
+    setSelectedGoalId(null);
+    setGoalMode("create");
+    setCurrentPage("goalDetail");
+  }
+
+  function requestCreateGoal() {
+    // This is called by GoalDetailPage when mode === "create"
     const newGoal = {
       id: makeId("goal"),
       name: "New Goal",
@@ -491,7 +516,8 @@ function App() {
     };
 
     setGoals((prev) => [newGoal, ...(Array.isArray(prev) ? prev : [])]);
-    openGoal(newGoal.id);
+    setSelectedGoalId(newGoal.id);
+    setGoalMode("edit"); // after creation, you're editing it
   }
 
   function handleDeleteGoal(goalId) {
@@ -516,7 +542,8 @@ function App() {
     };
 
     setGoals((prev) => [copy, ...(Array.isArray(prev) ? prev : [])]);
-    openGoal(copy.id);
+    setSelectedGoalId(copy.id);
+    setGoalMode("edit");
   }
 
   function handleAddContribution(goalId) {
@@ -592,9 +619,12 @@ function App() {
             totalBalance={totalBalance}
             onCsvImported={handleImportedTransactions}
             onTransactionsParsed={handleImportedTransactions}
-            // ✅ FIX: these match Dashboard.jsx
-            onOpenGoal={openGoal}
-            onCreateGoal={handleCreateGoal}
+            sectionsOrder={dashboardSectionsOrder}
+            // ✅ dashboard goals behavior:
+            // + Add Goal goes to Goals page and creates THERE
+            onCreateGoal={goToGoalsCreate}
+            // pencil/edit takes you to goals page for that goal
+            onOpenGoal={openGoalForEdit}
           />
         )}
 
@@ -634,7 +664,10 @@ function App() {
             filter={txFilter}
             onFilterChange={setTxFilter}
             onUpdateBudget={(nextBudget) =>
-              setBudgetsByMonth((prev) => ({ ...prev, [activeMonth]: nextBudget }))
+              setBudgetsByMonth((prev) => ({
+                ...prev,
+                [activeMonth]: nextBudget,
+              }))
             }
           />
         )}
@@ -642,7 +675,9 @@ function App() {
         {currentPage === "goalDetail" && (
           <GoalDetailPage
             goal={selectedGoal}
-            onEditGoal={(id) => console.log("edit goal (wire later)", id)}
+            mode={goalMode || "edit"}
+            onRequestCreateGoal={requestCreateGoal}
+            onEditGoal={(id) => console.log("edit goal (wire modal later)", id)}
             onDeleteGoal={handleDeleteGoal}
             onDuplicateGoal={handleDuplicateGoal}
             onExportGoal={(id) => console.log("export goal (wire later)", id)}

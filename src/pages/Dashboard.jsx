@@ -5,7 +5,6 @@ import NeonProgressBar from "../components/NeonProgressBar.jsx";
 import GoalCard from "../components/GoalCard.jsx";
 import BankImportCard from "../components/BankImportCard.jsx";
 import Stat from "../components/Stat.jsx";
-import { formatMoney, formatPercent } from "../utils/format.js";
 
 const DEFAULT_DASHBOARD_SECTIONS = [
   "monthOverview",
@@ -13,6 +12,7 @@ const DEFAULT_DASHBOARD_SECTIONS = [
   "goals",
   "csvImport",
 ];
+
 function Dashboard({
   month = "",
   income = 0,
@@ -24,8 +24,8 @@ function Dashboard({
   accounts = [],
   currentAccountId,
   onChangeCurrentAccount = () => {},
-  onOpenGoal = () => {},
-  onCreateGoal = () => {},
+  onOpenGoal = () => {},     // used by pencil (edit)
+  onCreateGoal = () => {},   // "+ Add Goal" (navigate to goals create)
   onCsvImported = () => {},
   onTransactionsParsed, // alias support for older props
   currentAccountBalance = 0,
@@ -33,7 +33,6 @@ function Dashboard({
   sectionsOrder,
 }) {
   const handleImport = onCsvImported || onTransactionsParsed || (() => {});
-  // make sure these are always numbers
   const safeIncome = Number(income) || 0;
   const safeFixed = Number(fixed) || 0;
   const safeVariable = Number(variable) || 0;
@@ -53,6 +52,7 @@ function Dashboard({
 
   const hasAccountTransactions =
     Array.isArray(transactions) && transactions.length > 0;
+
   const [showAccountTransactions, setShowAccountTransactions] =
     React.useState(false);
 
@@ -70,12 +70,8 @@ function Dashboard({
         </span>
       </div>
 
-      {/* Render sections based on custom order */}
       {order.map((sectionKey) => {
         switch (sectionKey) {
-          // ----------------------------------------
-          // MONTH OVERVIEW
-          // ----------------------------------------
           case "monthOverview":
             return (
               <Card key="monthOverview" title="MONTH OVERVIEW">
@@ -93,9 +89,6 @@ function Dashboard({
               </Card>
             );
 
-          // ----------------------------------------
-          // ACCOUNT SNAPSHOT
-          // ----------------------------------------
           case "accountSnapshot":
             return (
               <Card key="accountSnapshot" title="ACCOUNT SNAPSHOT">
@@ -105,7 +98,6 @@ function Dashboard({
                       Current account
                     </span>
 
-                    {/* Account Picker */}
                     <select
                       className="mt-1 bg-[#05060F] border border-slate-700 rounded-md px-2 py-1 text-[0.75rem] text-slate-100"
                       value={currentAccountId}
@@ -124,10 +116,10 @@ function Dashboard({
                       Balance
                     </div>
                     <div className="text-2xl font-semibold text-cyan-300">
-                      ${currentAccountBalance.toFixed(2)}
+                      ${safeCurrentAccountBalance.toFixed(2)}
                     </div>
                     <div className="text-[0.7rem] text-slate-500">
-                      of ${totalBalance.toFixed(2)} total
+                      of ${safeTotalBalance.toFixed(2)} total
                     </div>
                   </div>
                 </div>
@@ -139,7 +131,7 @@ function Dashboard({
                     All accounts
                   </div>
                   <div className="mt-1 text-xl font-semibold text-emerald-300">
-                    ${totalBalance.toFixed(2)}
+                    ${safeTotalBalance.toFixed(2)}
                   </div>
                   <p className="mt-1 text-[0.7rem] text-slate-500">
                     Total estimated cash across all linked accounts.
@@ -148,21 +140,22 @@ function Dashboard({
               </Card>
             );
 
-          // ----------------------------------------
-          // GOALS
-          // ----------------------------------------
           case "goals":
             return (
               <div key="goals" className="space-y-3">
                 <h2 className="text-xs tracking-[0.25em] text-slate-400 uppercase">
                   Goals
                 </h2>
+
                 <div className="grid md:grid-cols-2 gap-3">
-                  {goals.map((goal) => (
+                  {(Array.isArray(goals) ? goals : []).map((goal) => (
                     <GoalCard
                       key={goal.id}
                       goal={goal}
-                      onClick={() => onOpenGoal(goal.id)}
+                      // ✅ card click does nothing (pencil-only nav)
+                      onClick={null}
+                      // ✅ pencil goes to Goals page for editing
+                      onEdit={() => onOpenGoal(goal.id)}
                     />
                   ))}
                 </div>
@@ -177,9 +170,6 @@ function Dashboard({
               </div>
             );
 
-          // ----------------------------------------
-          // CSV IMPORT
-          // ----------------------------------------
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
@@ -199,9 +189,7 @@ function Dashboard({
                       <button
                         type="button"
                         className="text-[0.7rem] px-2 py-1 rounded-md border border-slate-600 text-slate-200 hover:border-cyan-400 transition"
-                        onClick={() =>
-                          setShowAccountTransactions((prev) => !prev)
-                        }
+                        onClick={() => setShowAccountTransactions((prev) => !prev)}
                       >
                         {showAccountTransactions ? "Hide" : "Show"}
                       </button>
@@ -233,14 +221,12 @@ function Dashboard({
                                 </td>
                                 <td
                                   className={`px-2 py-1 text-right ${
-                                    typeof tx.amount === "number" &&
-                                    tx.amount < 0
+                                    typeof tx.amount === "number" && tx.amount < 0
                                       ? "text-rose-300"
                                       : "text-emerald-300"
                                   }`}
                                 >
-                                  {typeof tx.amount !== "number" ||
-                                  Number.isNaN(tx.amount)
+                                  {typeof tx.amount !== "number" || Number.isNaN(tx.amount)
                                     ? "-"
                                     : `$${tx.amount.toFixed(2)}`}
                                 </td>
@@ -255,9 +241,6 @@ function Dashboard({
               </Card>
             );
 
-          // ----------------------------------------
-          // MONEY FLOW
-          // ----------------------------------------
           default:
             return null;
         }

@@ -15,7 +15,7 @@ function getThemeStyles(themeKey) {
   }
 }
 
-function GoalCard({ goal, onClick }) {
+function GoalCard({ goal, onClick, onEdit }) {
   const saved = Number(goal?.saved ?? goal?.current ?? 0);
   const target = Number(goal?.target ?? 0);
   const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
@@ -24,28 +24,61 @@ function GoalCard({ goal, onClick }) {
   const progress = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
   const themeClass = getThemeStyles(goal?.theme);
 
+  const canClick = typeof onClick === "function";
+  const canEdit = typeof onEdit === "function";
+
   return (
-    <button
-      onClick={onClick}
-      className={`text-left rounded-xl p-3 hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition ${themeClass}`}
+    <div
+      className={`relative rounded-xl border p-3 ${themeClass} ${
+        canClick
+          ? "hover:border-cyan-400/70 hover:shadow-[0_0_18px_rgba(34,211,238,0.35)] transition"
+          : ""
+      }`}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-lg">{displayEmoji}</span>
-          <span className="text-sm font-medium text-slate-100">
-            {displayName}
+      <button
+        type="button"
+        onClick={canClick ? onClick : undefined}
+        className={`w-full text-left ${
+          canClick ? "cursor-pointer" : "cursor-default"
+        }`}
+        aria-label={canClick ? `Open goal ${displayName}` : `Goal ${displayName}`}
+      >
+        <div className="flex items-center justify-between mb-1.5 pr-10">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">{displayEmoji}</span>
+            <span className="text-sm font-medium text-slate-100">
+              {displayName}
+            </span>
+          </div>
+          <span className="text-[0.7rem] text-slate-400">
+            Plan: ${Number.isFinite(monthlyPlan) ? monthlyPlan.toFixed(0) : "0"}/mo
           </span>
         </div>
-        <span className="text-[0.7rem] text-slate-400">
-          Plan: ${monthlyPlan.toFixed(0)}/mo
-        </span>
-      </div>
 
-      <div className="text-xs text-slate-400 mb-1">
-        ${saved.toFixed(0)} / ${target.toFixed(0)}
-      </div>
-      <NeonProgressBar value={progress} />
-    </button>
+        <div className="text-xs text-slate-400 mb-1">
+          ${Number.isFinite(saved) ? saved.toFixed(0) : "0"} / $
+          {Number.isFinite(target) ? target.toFixed(0) : "0"}
+        </div>
+
+        <NeonProgressBar value={progress} />
+      </button>
+
+      {canEdit && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onEdit(goal?.id);
+          }}
+          className="absolute top-2 right-2 px-2 py-1 rounded-md border border-slate-700/80 bg-slate-900/40 text-slate-100 text-xs hover:border-cyan-400/70 hover:bg-slate-900/60 transition"
+          aria-label="Edit goal"
+          title="Edit"
+        >
+          ✏️
+        </button>
+      )}
+    </div>
   );
 }
 

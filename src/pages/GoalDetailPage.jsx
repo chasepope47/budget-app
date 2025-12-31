@@ -1,20 +1,56 @@
-// src/pages/GoalDetailPage.jsx //
+// src/pages/GoalDetailPage.jsx
 import React from "react";
 import Card from "../components/Card.jsx";
 import NeonProgressBar from "../components/NeonProgressBar.jsx";
 import GoalActionsMenu from "../components/GoalActionsMenu.jsx";
 
+function num(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function GoalDetailPage({
   goal,
+  mode = "edit", // "create" | "edit"
+  onRequestCreateGoal = () => {},
+
   onEditGoal = () => {},
   onDeleteGoal = () => {},
   onDuplicateGoal = () => {},
   onExportGoal = () => {},
   onAddContributionRequest = () => {},
 }) {
-  const saved = Number(goal?.saved ?? goal?.current ?? 0);
-  const target = Number(goal?.target ?? 0);
-  const monthlyPlan = Number(goal?.monthlyPlan ?? 0);
+  // ✅ If you navigated here in create mode, create the goal here (not on dashboard)
+  React.useEffect(() => {
+    if (mode !== "create") return;
+    if (goal?.id) return;
+    onRequestCreateGoal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, goal?.id]);
+
+  // ✅ If still no goal, show empty state
+  if (!goal) {
+    return (
+      <div className="space-y-4">
+        <Card title="GOALS">
+          <p className="text-sm text-slate-300">
+            No goal is selected yet.
+          </p>
+          <button
+            type="button"
+            onClick={onRequestCreateGoal}
+            className="mt-3 px-4 py-2 rounded-lg border border-cyan-400/70 text-xs text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+          >
+            + Create a goal
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
+  const saved = num(goal?.saved ?? goal?.current ?? 0, 0);
+  const target = num(goal?.target ?? 0, 0);
+  const monthlyPlan = num(goal?.monthlyPlan ?? 0, 0);
   const displayEmoji = goal?.icon || goal?.emoji || "🎯";
   const displayName = goal?.name || "Untitled Goal";
   const progress = target > 0 ? Math.min(100, (saved / target) * 100) : 0;
@@ -35,12 +71,10 @@ function GoalDetailPage({
             </div>
           </div>
         </div>
+
         <GoalActionsMenu
           onEdit={() => onEditGoal(goal?.id)}
-          onDelete={() => {
-            if (!goal?.id) return;
-            onDeleteGoal(goal.id);
-          }}
+          onDelete={() => goal?.id && onDeleteGoal(goal.id)}
           onDuplicate={() => onDuplicateGoal(goal?.id)}
           onExport={() => onExportGoal(goal?.id)}
         />
@@ -66,12 +100,12 @@ function GoalDetailPage({
           </span>
         </p>
         <p className="mt-1 text-xs text-slate-400">
-          Later we'll calculate this based on your income, expenses and due
-          date.
+          Later we'll calculate this based on your income, expenses and due date.
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           <button
+            type="button"
             className="px-3 py-1.5 text-xs rounded-md border border-pink-400/70 text-pink-200 bg-pink-500/10 hover:bg-pink-500/20 transition"
             onClick={() => onAddContributionRequest(goal?.id)}
           >
