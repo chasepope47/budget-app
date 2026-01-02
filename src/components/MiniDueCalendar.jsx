@@ -38,15 +38,44 @@ function isSameDayISO(aISO, bISO) {
 }
 
 export default function MiniDueCalendar({
-  bills = [],
+  items, // ✅ preferred prop
+  bills, // (optional legacy prop)
   selectedDateISO,
   onSelectDate = () => {},
   initialMonthISO, // optional: "2026-01-01"
 }) {
+  // ✅ unify data source
+  const data = Array.isArray(items)
+    ? items
+    : Array.isArray(bills)
+    ? bills
+    : [];
+
   const [monthAnchor, setMonthAnchor] = React.useState(() => {
-    const base = initialMonthISO ? new Date(initialMonthISO) : new Date();
+    // Prefer selected date, then initialMonthISO, then today
+    const base =
+      (selectedDateISO && new Date(selectedDateISO)) ||
+      (initialMonthISO ? new Date(initialMonthISO) : new Date());
+
     return startOfMonth(base);
   });
+
+  // ✅ keep displayed month in sync with selectedDateISO
+  React.useEffect(() => {
+    if (!selectedDateISO) return;
+
+    const sel = new Date(selectedDateISO);
+    if (Number.isNaN(sel.getTime())) return;
+
+    // Jump only when selection changes to a different month
+    if (
+      sel.getFullYear() !== monthAnchor.getFullYear() ||
+      sel.getMonth() !== monthAnchor.getMonth()
+    ) {
+      setMonthAnchor(startOfMonth(sel));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDateISO]);
 
   const todayISO = isoDay(new Date());
   const monthStart = startOfMonth(monthAnchor);
@@ -56,28 +85,13 @@ export default function MiniDueCalendar({
   // map dateISO -> count due
   const dueCountByDay = React.useMemo(() => {
     const map = new Map();
-    for (const b of bills) {
+    for (const b of data) {
       if (!b?.dueDate) continue;
       const key = b.dueDate;
       map.set(key, (map.get(key) || 0) + 1);
     }
     return map;
-  }, [bills]);
-
-    React.useEffect(() => {
-    if (!selectedDateISO) return;
-
-    const sel = new Date(selectedDateISO);
-    if (Number.isNaN(sel.getTime())) return;
-
-    // if selected date's month differs from the currently shown month, jump to it
-    if (
-      sel.getFullYear() !== monthAnchor.getFullYear() ||
-      sel.getMonth() !== monthAnchor.getMonth()
-    ) {
-      setMonthAnchor(startOfMonth(sel));
-    }
-  }, [selectedDateISO]); // intentionally not depending on monthAnchor to avoid loops
+  }, [data]);
 
   // build calendar cells: leading blanks + 1..totalDays
   const cells = [];
@@ -125,13 +139,13 @@ export default function MiniDueCalendar({
 
       <div className="mt-2 grid grid-cols-7 gap-2">
         {cells.map((dayNum, idx) => {
-          if (!dayNum)
-            return <div key={idx} className="h-9 rounded-lg" />;
+          if (!dayNum) return <div key={idx} className="h-9 rounded-lg" />;
 
           const dayISO = dayToISO(dayNum);
           const count = dueCountByDay.get(dayISO) || 0;
 
-          const isSelected = selectedDateISO && isSameDayISO(dayISO, selectedDateISO);
+          const isSelected =
+            selectedDateISO && isSameDayISO(dayISO, selectedDateISO);
           const isToday = isSameDayISO(dayISO, todayISO);
 
           return (
