@@ -487,7 +487,7 @@ function App() {
     );
   }
 
-  /* ---------------- GOALS FLOW (NEW) ---------------- */
+  /* ---------------- GOALS FLOW ---------------- */
 
   function openGoalForEdit(goalId) {
     if (!goalId) return;
@@ -497,14 +497,12 @@ function App() {
   }
 
   function goToGoalsCreate() {
-    // NOTE: Do not create the goal here
     setSelectedGoalId(null);
     setGoalMode("create");
     setCurrentPage("goalDetail");
   }
 
   function requestCreateGoal() {
-    // This is called by GoalDetailPage when mode === "create"
     const newGoal = {
       id: makeId("goal"),
       name: "New Goal",
@@ -517,7 +515,7 @@ function App() {
 
     setGoals((prev) => [newGoal, ...(Array.isArray(prev) ? prev : [])]);
     setSelectedGoalId(newGoal.id);
-    setGoalMode("edit"); // after creation, you're editing it
+    setGoalMode("edit");
   }
 
   function handleDeleteGoal(goalId) {
@@ -555,6 +553,29 @@ function App() {
     setGoals((prev) =>
       (Array.isArray(prev) ? prev : []).map((g) =>
         g.id === goalId ? { ...g, saved: Number(g.saved || 0) + amt } : g
+      )
+    );
+  }
+
+  // ✅ Edit goal is now real (simple prompt-based editor)
+  function handleEditGoal(goalId) {
+    const g = (Array.isArray(goals) ? goals : []).find((x) => x.id === goalId);
+    if (!g) return;
+
+    const name = window.prompt("Goal name:", g.name || "New Goal");
+    if (name === null) return;
+
+    const targetStr = window.prompt("Target amount:", String(g.target ?? 0));
+    if (targetStr === null) return;
+
+    const nextTarget = Number(targetStr);
+    if (!Number.isFinite(nextTarget) || nextTarget < 0) return;
+
+    setGoals((prev) =>
+      (Array.isArray(prev) ? prev : []).map((x) =>
+        x.id === goalId
+          ? { ...x, name: name.trim() || "New Goal", target: nextTarget }
+          : x
       )
     );
   }
@@ -620,10 +641,9 @@ function App() {
             onCsvImported={handleImportedTransactions}
             onTransactionsParsed={handleImportedTransactions}
             sectionsOrder={dashboardSectionsOrder}
+
             // ✅ dashboard goals behavior:
-            // + Add Goal goes to Goals page and creates THERE
             onCreateGoal={goToGoalsCreate}
-            // pencil/edit takes you to goals page for that goal
             onOpenGoal={openGoalForEdit}
           />
         )}
@@ -674,10 +694,15 @@ function App() {
 
         {currentPage === "goalDetail" && (
           <GoalDetailPage
+            goals={goals}
             goal={selectedGoal}
             mode={goalMode || "edit"}
+            onSelectGoal={(id) => {
+              setSelectedGoalId(id);
+              setGoalMode("edit");
+            }}
             onRequestCreateGoal={requestCreateGoal}
-            onEditGoal={(id) => console.log("edit goal (wire modal later)", id)}
+            onEditGoal={handleEditGoal}
             onDeleteGoal={handleDeleteGoal}
             onDuplicateGoal={handleDuplicateGoal}
             onExportGoal={(id) => console.log("export goal (wire later)", id)}
