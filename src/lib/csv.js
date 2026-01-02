@@ -261,6 +261,16 @@ export const HEADER_ALIASES = {
   credit: ["credit", "deposit", "inflow", "money in", "payment", "credit amount", "cr"],
   amount: ["amount", "amt", "transaction amount", "value", "amount (usd)", "amount (cad)"],
   type: ["type", "dr/cr", "transaction type", "debit/credit"],
+
+  // ✅ NEW: balance aliases (only used if the bank includes it)
+  balance: [
+    "balance",
+    "running balance",
+    "current balance",
+    "ending balance",
+    "available balance",
+    "ledger balance",
+  ],
 };
 
 export function normalizeHeaderRow(line, delimiter = ",") {
@@ -281,7 +291,7 @@ export function findHeaderIndex(header, aliases) {
 
 /**
  * Optional: Infer best mapping indices (for UI auto-select).
- * Returns { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex }
+ * Returns { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex, balanceIndex }
  */
 export function inferMappingFromColumns(columns = []) {
   const delimiter = ","; // columns are already split/labels; delimiter irrelevant here
@@ -297,6 +307,9 @@ export function inferMappingFromColumns(columns = []) {
   const creditIndex = findHeaderIndex(headerRow, HEADER_ALIASES.credit);
   const typeIndex = findHeaderIndex(headerRow, HEADER_ALIASES.type);
 
+  // ✅ NEW
+  const balanceIndex = findHeaderIndex(headerRow, HEADER_ALIASES.balance);
+
   return {
     dateIndex: dateIndex >= 0 ? dateIndex : null,
     descIndex: descIndex >= 0 ? descIndex : null,
@@ -304,6 +317,7 @@ export function inferMappingFromColumns(columns = []) {
     debitIndex: debitIndex >= 0 ? debitIndex : null,
     creditIndex: creditIndex >= 0 ? creditIndex : null,
     typeIndex: typeIndex >= 0 ? typeIndex : null,
+    balanceIndex: balanceIndex >= 0 ? balanceIndex : null,
   };
 }
 
@@ -411,7 +425,7 @@ export function getCsvColumnsForMapping(text) {
 }
 
 /**
- * Main CSV → [{ date, description, amount, category }]
+ * Main CSV → [{ date, description, amount, category, balance? }]
  * Handles header-based and header-less CSVs, plus various date/amount formats.
  */
 export function parseCsvTransactions(text) {
@@ -433,10 +447,14 @@ export function parseCsvTransactions(text) {
     const debitIndex = findHeaderIndex(headerRow, HEADER_ALIASES.debit);
     const creditIndex = findHeaderIndex(headerRow, HEADER_ALIASES.credit);
     const typeIndex = findHeaderIndex(headerRow, HEADER_ALIASES.type);
-    return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex };
+
+    // ✅ NEW
+    const balanceIndex = findHeaderIndex(headerRow, HEADER_ALIASES.balance);
+
+    return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex, balanceIndex };
   }
 
-  let { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex } =
+  let { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex, balanceIndex } =
     getIndexes(header);
 
   const noUsefulHeader =
@@ -444,7 +462,8 @@ export function parseCsvTransactions(text) {
     descIndex < 0 &&
     amountIndex < 0 &&
     debitIndex < 0 &&
-    creditIndex < 0;
+    creditIndex < 0 &&
+    balanceIndex < 0;
 
   // If we didn't recognize ANY header columns, assume it's header-less.
   if (noUsefulHeader) {
@@ -460,7 +479,7 @@ export function parseCsvTransactions(text) {
     header = syntheticHeader;
     startIndex = 0;
 
-    ({ dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex } =
+    ({ dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex, balanceIndex } =
       getIndexes(header));
   }
 
@@ -539,12 +558,21 @@ export function parseCsvTransactions(text) {
       amount = credit - debit;
     }
 
-    if (!date && !description && Number.isNaN(amount)) continue;
+    // ✅ NEW: optional balance
+    let balance = NaN;
+    if (balanceIndex >= 0) {
+      balance = parseAmountCell(cols[balanceIndex]);
+    }
+
+    if (!date && !description && Number.isNaN(amount) && Number.isNaN(balance)) continue;
     if (typeof amount !== "number" || Number.isNaN(amount)) continue;
 
     const category = categorizeTransaction(description, amount);
 
-    rows.push({ date, description, amount, category });
+    const tx = { date, description, amount, category };
+    if (typeof balance === "number" && !Number.isNaN(balance)) tx.balance = balance;
+
+    rows.push(tx);
   }
 
   return rows;
@@ -554,7 +582,7 @@ export function parseCsvTransactions(text) {
  * Manual override parser used when the user specifies which columns
  * are date/description/amount OR debit/credit.
  *
- * ✅ Fix: previously referenced debitIndex/creditIndex without defining them.
+ * ✅ Now supports balanceIndex too.
  */
 export function parseCsvWithMapping(
   text,
@@ -564,7 +592,8 @@ export function parseCsvWithMapping(
     amountIndex = null,
     debitIndex = null,
     creditIndex = null,
-    typeIndex = null, // optional: DR/CR column to force sign
+    typeIndex = null,
+    balanceIndex = null, // ✅ NEW
   } = {}
 ) {
   if (!text) return [];
@@ -612,12 +641,10 @@ export function parseCsvWithMapping(
 
     let amount = NaN;
 
-    // Preferred: single amount column
     if (amountIndex != null && amountIndex >= 0) {
       amount = parseAmountCell(cols[amountIndex]);
       amount = applyTypeSign(amount, cols);
     } else if (debitIndex != null || creditIndex != null) {
-      // Debit/Credit split
       const debitRaw =
         debitIndex != null && debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
       const creditRaw =
@@ -628,11 +655,21 @@ export function parseCsvWithMapping(
       amount = credit - debit;
     }
 
-    if (!date && !description && Number.isNaN(amount)) continue;
+    // ✅ NEW: optional balance
+    let balance = NaN;
+    if (balanceIndex != null && balanceIndex >= 0) {
+      balance = parseAmountCell(cols[balanceIndex]);
+    }
+
+    if (!date && !description && Number.isNaN(amount) && Number.isNaN(balance)) continue;
     if (typeof amount !== "number" || Number.isNaN(amount)) continue;
 
     const category = categorizeTransaction(description, amount);
-    rows.push({ date, description, amount, category });
+
+    const tx = { date, description, amount, category };
+    if (typeof balance === "number" && !Number.isNaN(balance)) tx.balance = balance;
+
+    rows.push(tx);
   }
 
   return rows;

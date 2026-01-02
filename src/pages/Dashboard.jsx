@@ -6,6 +6,15 @@ import GoalCard from "../components/GoalCard.jsx";
 import BankImportCard from "../components/BankImportCard.jsx";
 import Stat from "../components/Stat.jsx";
 
+// ✅ NEW
+import BalancePromptModal from "../components/BalancePromptModal.jsx";
+import {
+  getStatementDateRange,
+  sumAmounts,
+  isoDate,
+  statementKeyFromRange,
+} from "../lib/statementMath.js";
+
 const DEFAULT_DASHBOARD_SECTIONS = [
   "monthOverview",
   "accountSnapshot",
@@ -24,10 +33,10 @@ function Dashboard({
   accounts = [],
   currentAccountId,
   onChangeCurrentAccount = () => {},
-  onOpenGoal = () => {},     // used by pencil (edit)
-  onCreateGoal = () => {},   // "+ Add Goal" (navigate to goals create)
+  onOpenGoal = () => {},
+  onCreateGoal = () => {},
   onCsvImported = () => {},
-  onTransactionsParsed, // alias support for older props
+  onTransactionsParsed,
   currentAccountBalance = 0,
   totalBalance = 0,
   sectionsOrder,
@@ -41,9 +50,7 @@ function Dashboard({
   const safeTotalBalance = Number(totalBalance) || 0;
 
   const allocatedPercent =
-    safeIncome > 0
-      ? ((safeIncome - safeLeftover) / safeIncome) * 100
-      : 0;
+    safeIncome > 0 ? ((safeIncome - safeLeftover) / safeIncome) * 100 : 0;
 
   const order =
     sectionsOrder && sectionsOrder.length
@@ -59,6 +66,11 @@ function Dashboard({
   React.useEffect(() => {
     setShowAccountTransactions(false);
   }, [transactions]);
+
+  // ✅ NEW: balance modal state
+  const [balanceModalOpen, setBalanceModalOpen] = React.useState(false);
+  const [balanceModalBusy, setBalanceModalBusy] = React.useState(false);
+  const [pendingImport, setPendingImport] = React.useState(null);
 
   return (
     <div className="space-y-6">
@@ -78,8 +90,16 @@ function Dashboard({
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                   <Stat label="Income" value={safeIncome} accent="text-emerald-300" />
                   <Stat label="Fixed" value={safeFixed} accent="text-rose-300" />
-                  <Stat label="Variable" value={safeVariable} accent="text-amber-300" />
-                  <Stat label="Leftover" value={safeLeftover} accent="text-cyan-300" />
+                  <Stat
+                    label="Variable"
+                    value={safeVariable}
+                    accent="text-amber-300"
+                  />
+                  <Stat
+                    label="Leftover"
+                    value={safeLeftover}
+                    accent="text-cyan-300"
+                  />
                 </div>
 
                 <div className="mt-4">
@@ -152,9 +172,7 @@ function Dashboard({
                     <GoalCard
                       key={goal.id}
                       goal={goal}
-                      // ✅ card click does nothing (pencil-only nav)
                       onClick={null}
-                      // ✅ pencil goes to Goals page for editing
                       onEdit={() => onOpenGoal(goal.id)}
                     />
                   ))}
@@ -174,9 +192,69 @@ function Dashboard({
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
                 <BankImportCard
-                  onTransactionsParsed={(rows, raw) => {
+                  onTransactionsParsed={async (rows, raw) => {
                     setShowAccountTransactions(false);
-                    handleImport(rows, raw);
+
+                    const transactionSum = sumAmounts(rows, "amount");
+                    const range = getStatementDateRange(rows, "date");
+                    const statementKey = statementKeyFromRange(range);
+
+                    const currentAcc =
+                      (accounts || []).find((a) => a.id === currentAccountId) ||
+                      null;
+
+                    // ✅ If CSV has a running/ending balance column, skip modal entirely
+                    const lastBalanceRow = [...(rows || [])]
+                      .reverse()
+                      .find(
+                        (tx) =>
+                          typeof tx?.balance === "number" &&
+                          Number.isFinite(tx.balance)
+                      );
+
+                    if (lastBalanceRow) {
+                      const endingBalance = Number(lastBalanceRow.balance);
+                      const startingBalance = endingBalance - Number(transactionSum || 0);
+
+                      const startISO = range?.start ? isoDate(range.start) : "";
+                      const endISO = range?.end ? isoDate(range.end) : "";
+
+                      await handleImport(rows, {
+                        ...raw,
+                        accountId: currentAccountId,
+                        statement: {
+                          startISO,
+                          endISO,
+                          statementKey,
+                          transactionSum,
+                          endingBalance,
+                          startingBalance,
+                          balanceSource: "csv",
+                        },
+                      });
+
+                      return;
+                    }
+
+                    // ✅ Otherwise, use modal and suggest last confirmed ending balance
+                    const suggestedEndingBalance =
+                      currentAcc &&
+                      Number.isFinite(Number(currentAcc.lastConfirmedEndingBalance))
+                        ? Number(currentAcc.lastConfirmedEndingBalance)
+                        : null;
+
+                    setPendingImport({
+                      rows,
+                      raw,
+                      transactionSum,
+                      range,
+                      statementKey,
+                      accountId: currentAccountId,
+                      accountName: currentAcc?.name || "",
+                      suggestedEndingBalance,
+                    });
+
+                    setBalanceModalOpen(true);
                   }}
                 />
 
@@ -245,6 +323,57 @@ function Dashboard({
             return null;
         }
       })}
+
+      {/* ✅ Balance modal */}
+      <BalancePromptModal
+        open={balanceModalOpen}
+        busy={balanceModalBusy}
+        accountName={pendingImport?.accountName || ""}
+        statementLabel={
+          pendingImport?.range?.start && pendingImport?.range?.end
+            ? `${pendingImport.range.start.toLocaleDateString()} – ${pendingImport.range.end.toLocaleDateString()}`
+            : ""
+        }
+        transactionSum={pendingImport?.transactionSum ?? 0}
+        suggestedEndingBalance={pendingImport?.suggestedEndingBalance ?? null}
+        onClose={() => {
+          if (balanceModalBusy) return;
+          setBalanceModalOpen(false);
+          setPendingImport(null);
+        }}
+        onConfirm={async ({ endingBalance, startingBalance }) => {
+          if (!pendingImport) return;
+
+          setBalanceModalBusy(true);
+          try {
+            const startISO = pendingImport.range?.start
+              ? isoDate(pendingImport.range.start)
+              : "";
+            const endISO = pendingImport.range?.end
+              ? isoDate(pendingImport.range.end)
+              : "";
+
+            await handleImport(pendingImport.rows, {
+              ...pendingImport.raw,
+              accountId: pendingImport.accountId,
+              statement: {
+                startISO,
+                endISO,
+                statementKey: pendingImport.statementKey,
+                transactionSum: pendingImport.transactionSum,
+                endingBalance,
+                startingBalance,
+                balanceSource: "user",
+              },
+            });
+
+            setBalanceModalOpen(false);
+            setPendingImport(null);
+          } finally {
+            setBalanceModalBusy(false);
+          }
+        }}
+      />
     </div>
   );
 }
