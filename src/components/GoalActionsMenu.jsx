@@ -1,3 +1,4 @@
+// src/components/GoalActionsMenu.jsx
 import React, { useState } from "react";
 
 function GoalActionsMenu({ onViewAll, onEdit, onDelete, onDuplicate, onExport }) {
@@ -25,7 +26,6 @@ function GoalActionsMenu({ onViewAll, onEdit, onDelete, onDuplicate, onExport })
             : "opacity-0 -translate-y-1 pointer-events-none"
         }`}
       >
-        {/* ✅ NEW */}
         <button
           type="button"
           className="block w-full px-3 py-2 text-left text-slate-200 hover:bg-slate-800/70"

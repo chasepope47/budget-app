@@ -209,7 +209,13 @@ function App() {
 
       setBudgetsByMonth(remote.budgetsByMonth || {});
       setActiveMonth(remote.activeMonth || getCurrentMonthKey());
-      setGoals(remote.goals || []);
+
+      // ✅ CRITICAL FIX: do not wipe local goals if remote.goals is missing
+      setGoals((prev) => {
+        if (!Array.isArray(remote.goals)) return prev;
+        return remote.goals;
+      });
+
       setAccounts(normalizeAccounts(remote.accounts || []));
       setCurrentAccountId(remote.currentAccountId || "main");
       setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
@@ -219,6 +225,8 @@ function App() {
       setTheme(remote.theme || "dark");
       setTxFilter(remote.txFilter || "");
       setHomePage(remote.homePage || "dashboard");
+
+      // selection can sync, but only if present
       setSelectedGoalId(remote.selectedGoalId || null);
       // goalMode intentionally NOT synced (UI-only)
     });
@@ -240,7 +248,7 @@ function App() {
       dashboardSectionsOrder,
       theme,
       txFilter,
-      selectedGoalId, // ✅ persist selection
+      selectedGoalId,
     };
 
     saveStoredState(state);
@@ -557,27 +565,28 @@ function App() {
     );
   }
 
-  // ✅ Edit goal is now real (simple prompt-based editor)
+  // ✅ FIX: edit using prev state (no stale closure)
   function handleEditGoal(goalId) {
-    const g = (Array.isArray(goals) ? goals : []).find((x) => x.id === goalId);
-    if (!g) return;
+    setGoals((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const g = list.find((x) => x.id === goalId);
+      if (!g) return list;
 
-    const name = window.prompt("Goal name:", g.name || "New Goal");
-    if (name === null) return;
+      const name = window.prompt("Goal name:", g.name || "New Goal");
+      if (name === null) return list;
 
-    const targetStr = window.prompt("Target amount:", String(g.target ?? 0));
-    if (targetStr === null) return;
+      const targetStr = window.prompt("Target amount:", String(g.target ?? 0));
+      if (targetStr === null) return list;
 
-    const nextTarget = Number(targetStr);
-    if (!Number.isFinite(nextTarget) || nextTarget < 0) return;
+      const nextTarget = Number(targetStr);
+      if (!Number.isFinite(nextTarget) || nextTarget < 0) return list;
 
-    setGoals((prev) =>
-      (Array.isArray(prev) ? prev : []).map((x) =>
+      return list.map((x) =>
         x.id === goalId
           ? { ...x, name: name.trim() || "New Goal", target: nextTarget }
           : x
-      )
-    );
+      );
+    });
   }
 
   const selectedGoal =
@@ -641,8 +650,6 @@ function App() {
             onCsvImported={handleImportedTransactions}
             onTransactionsParsed={handleImportedTransactions}
             sectionsOrder={dashboardSectionsOrder}
-
-            // ✅ dashboard goals behavior:
             onCreateGoal={goToGoalsCreate}
             onOpenGoal={openGoalForEdit}
           />
