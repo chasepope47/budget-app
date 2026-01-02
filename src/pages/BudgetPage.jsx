@@ -276,7 +276,7 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
             items={bills}
             selectedDateISO={selectedDueDateISO}
             onSelectDate={setSelectedDueDateISO}
-            initialMonthISO={`${month}-01`}
+            initialMonthISO={setSelectedDueDateISO}
           />
 
           {/* ✅ Upcoming / Today / Overdue panel */}

@@ -64,6 +64,21 @@ export default function MiniDueCalendar({
     return map;
   }, [bills]);
 
+    React.useEffect(() => {
+    if (!selectedDateISO) return;
+
+    const sel = new Date(selectedDateISO);
+    if (Number.isNaN(sel.getTime())) return;
+
+    // if selected date's month differs from the currently shown month, jump to it
+    if (
+      sel.getFullYear() !== monthAnchor.getFullYear() ||
+      sel.getMonth() !== monthAnchor.getMonth()
+    ) {
+      setMonthAnchor(startOfMonth(sel));
+    }
+  }, [selectedDateISO]); // intentionally not depending on monthAnchor to avoid loops
+
   // build calendar cells: leading blanks + 1..totalDays
   const cells = [];
   for (let i = 0; i < firstWeekday; i++) cells.push(null);
