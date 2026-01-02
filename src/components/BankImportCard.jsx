@@ -61,8 +61,8 @@ function inferMappingFromColumns(columns = []) {
   const dateHints = ["date", "posting date", "posted date", "transaction date", "trans date"];
   const descHints = ["description", "desc", "merchant", "name", "memo", "details", "payee"];
   const amtHints = ["amount", "amt", "value", "total"];
-  const debitHints = ["debit", "withdrawal", "outflow", "charge"];
-  const creditHints = ["credit", "deposit", "inflow", "payment"];
+  const debitHints = ["debit", "withdrawal", "outflow", "charge", "money out"];
+  const creditHints = ["credit", "deposit", "inflow", "payment", "money in"];
 
   const score = (label, hints) => {
     const l = norm(label);
@@ -90,16 +90,12 @@ function inferMappingFromColumns(columns = []) {
   // Prefer "Amount" if present.
   let amtIdx = bestIndex(amtHints);
 
-  // If no amount, but debit/credit exist, pick the stronger one as "amount"
-  // (not perfect, but better than forcing user to map every time).
+  // If no amount, but debit/credit exist, choose one (user can override).
   if (amtIdx == null) {
     const debitIdx = bestIndex(debitHints);
     const creditIdx = bestIndex(creditHints);
-    // If exactly one exists, use it.
     if (debitIdx != null && creditIdx == null) amtIdx = debitIdx;
     if (creditIdx != null && debitIdx == null) amtIdx = creditIdx;
-    // If both exist, prefer a column literally called "amount" (already handled),
-    // otherwise choose credit (many exports store positive credits), user can override.
     if (debitIdx != null && creditIdx != null) amtIdx = creditIdx;
   }
 
@@ -111,13 +107,12 @@ function inferMappingFromColumns(columns = []) {
 }
 
 /**
- * Run CSV parsing in the most "hands-off" way:
- * 1) try auto parseCsvTransactions
- * 2) if empty, infer mapping from headers and try parseCsvWithMapping
- * Returns { rows, status, error, mappingApplied? }
+ * Hands-off CSV parsing:
+ * 1) try parseCsvTransactions (your smart header-based parser)
+ * 2) if empty, infer mapping from header labels and try parseCsvWithMapping
+ * 3) if user manually selected mapping, use that and try parseCsvWithMapping
  */
 function parseCsvSmart(text, columns, currentMapping) {
-  // If user has explicitly chosen mapping indices, prefer that
   const hasExplicit =
     currentMapping &&
     (currentMapping.date !== "" || currentMapping.description !== "" || currentMapping.amount !== "");
@@ -128,19 +123,19 @@ function parseCsvSmart(text, columns, currentMapping) {
     amountIndex: m?.amount === "" ? null : Number.parseInt(m.amount, 10),
   });
 
-  // 1) try your existing autodetect parser
+  // 1) existing robust parser first
   const autoRows = parseCsvTransactions(text);
   if (Array.isArray(autoRows) && autoRows.length) {
     return {
       rows: autoRows,
       status: "ready",
       error: "",
-      mappingApplied: false,
       nextMapping: currentMapping,
+      reason: "auto",
     };
   }
 
-  // 2) if user picked mapping, reparse with it
+  // 2) user mapping
   if (hasExplicit) {
     const rows = parseCsvWithMapping(text, toConfig(currentMapping));
     if (Array.isArray(rows) && rows.length) {
@@ -148,21 +143,20 @@ function parseCsvSmart(text, columns, currentMapping) {
         rows,
         status: "ready",
         error: "",
-        mappingApplied: true,
         nextMapping: currentMapping,
+        reason: "manual",
       };
     }
     return {
       rows: [],
       status: "needsMapping",
-      error:
-        "No rows were parsed with that mapping. Try different columns or reset to auto-detect.",
-      mappingApplied: true,
+      error: "No rows were parsed with that mapping. Try different columns.",
       nextMapping: currentMapping,
+      reason: "manual-failed",
     };
   }
 
-  // 3) infer from column labels, then reparse
+  // 3) inferred mapping from header labels
   const inferred = inferMappingFromColumns(columns);
   const inferredMapping = {
     date: inferred.date == null ? "" : String(inferred.date),
@@ -170,22 +164,18 @@ function parseCsvSmart(text, columns, currentMapping) {
     amount: inferred.amount == null ? "" : String(inferred.amount),
   };
 
-  // only attempt if we have enough to try
-  const inferredConfig = toConfig(inferredMapping);
-  const enough =
-    inferredConfig.dateIndex != null &&
-    inferredConfig.descIndex != null &&
-    inferredConfig.amountIndex != null;
+  const cfg = toConfig(inferredMapping);
+  const enough = cfg.dateIndex != null && cfg.descIndex != null && cfg.amountIndex != null;
 
   if (enough) {
-    const rows = parseCsvWithMapping(text, inferredConfig);
+    const rows = parseCsvWithMapping(text, cfg);
     if (Array.isArray(rows) && rows.length) {
       return {
         rows,
         status: "ready",
         error: "",
-        mappingApplied: true,
         nextMapping: inferredMapping,
+        reason: "inferred",
       };
     }
   }
@@ -194,9 +184,9 @@ function parseCsvSmart(text, columns, currentMapping) {
     rows: [],
     status: "needsMapping",
     error:
-      "We couldn't automatically detect the right columns. Pick Date/Description/Amount below and it will auto-reparse.",
-    mappingApplied: true,
-    nextMapping: inferredMapping, // still helpful if partially inferred
+      "We couldn't automatically detect the right columns. Pick Date/Description/Amount below — it will re-parse automatically.",
+    nextMapping: inferredMapping,
+    reason: "inferred-failed",
   };
 }
 
@@ -243,12 +233,10 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
   }
 
   async function parseItem(itemId) {
-    // mark parsing
     setItems((prev) =>
       prev.map((x) => (x.id === itemId ? { ...x, status: "parsing", error: "" } : x))
     );
 
-    // read the *latest* item from ref (avoids stale closure bugs)
     const item = itemsRef.current.find((x) => x.id === itemId);
     if (!item) return;
 
@@ -272,8 +260,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
                 previewRows: [],
                 columns: [],
                 status: "error",
-                error:
-                  "We couldn't detect any transactions in that PDF. Try a different export or use CSV.",
+                error: "We couldn't detect any transactions in that PDF. Try CSV instead.",
               };
             }
 
@@ -296,13 +283,11 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
       const bank = detectBankFromText(text, item.name || "");
       const cols = getCsvColumnsForMapping(text);
 
-      // Smarter: auto-try mapping inference if auto parse fails
       const result = parseCsvSmart(text, cols, item.mapping);
 
       setItems((prev) =>
         prev.map((x) => {
           if (x.id !== itemId) return x;
-
           return {
             ...x,
             rawText: text,
@@ -325,7 +310,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
                 status: "error",
                 error:
                   x.kind === "pdf"
-                    ? "We couldn't read this PDF. Try downloading it as a CSV or a different PDF format."
+                    ? "We couldn't read this PDF. Try downloading it as CSV."
                     : "We couldn't understand this CSV. Try a different export format.",
               }
             : x
@@ -334,7 +319,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
     }
   }
 
-  // Auto-parse newly added items (keeps UX smooth)
+  // Auto-parse newly added items (one-by-one)
   React.useEffect(() => {
     const pending = items.find((x) => x.status === "pending");
     if (!pending) return;
@@ -344,17 +329,18 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items]);
 
+  // Debounce auto-reparse when user changes mapping quickly
+  const reparseTimerRef = React.useRef(null);
+
   function updateActiveMapping(fieldKey, value) {
     if (!active) return;
 
-    // Update mapping + auto-reparse immediately (removes the “Re-parse with mapping” friction)
     setItems((prev) =>
       prev.map((x) =>
         x.id === active.id
           ? {
               ...x,
               mapping: { ...x.mapping, [fieldKey]: value },
-              // optimistic: show that we're re-evaluating
               status: x.kind === "csv" ? "parsing" : x.status,
               error: "",
             }
@@ -362,18 +348,16 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
       )
     );
 
-    // Auto-apply mapping (CSV only) without requiring an extra button click
-    queueMicrotask(() => {
+    if (reparseTimerRef.current) clearTimeout(reparseTimerRef.current);
+
+    reparseTimerRef.current = setTimeout(() => {
       const latest = itemsRef.current.find((x) => x.id === active.id);
       if (!latest) return;
       if (latest.kind !== "csv") return;
       if (!latest.rawText) return;
 
       const cols = latest.columns || [];
-      const result = parseCsvSmart(latest.rawText, cols, {
-        ...latest.mapping,
-        [fieldKey]: value,
-      });
+      const result = parseCsvSmart(latest.rawText, cols, latest.mapping);
 
       setItems((prev) =>
         prev.map((x) => {
@@ -387,10 +371,10 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
           };
         })
       );
-    });
+    }, 120);
   }
 
-  // Make import awaitable so “Import all ready” can truly run sequentially
+  // awaitable import for "Import all ready"
   function handleImportOne(itemId) {
     return new Promise((resolve) => {
       setItems((prev) => {
@@ -461,16 +445,19 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
   }
 
   function clearAll() {
+    if (reparseTimerRef.current) clearTimeout(reparseTimerRef.current);
     setItems([]);
     setActiveId(null);
     setIsDragging(false);
   }
 
   const previewCount = Math.min(10, active?.previewRows?.length || 0);
-  const previewTotal = (active?.previewRows || []).reduce(
-    (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
-    0
-  );
+
+  // ✅ Fix: previewTotal should only sum preview rows (not whole file),
+  // otherwise huge files show misleading totals.
+  const previewTotal = (active?.previewRows || [])
+    .slice(0, previewCount)
+    .reduce((sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0), 0);
 
   const showMapping =
     active &&
@@ -629,7 +616,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
             {active.error ? <div className="mt-1 text-rose-400">{active.error}</div> : null}
           </div>
 
-          {/* Mapping override (CSV only) – now auto-reparses on change (no extra button) */}
+          {/* Mapping override (CSV only) */}
           {showMapping && (
             <div className="border border-slate-700 rounded-md p-2 space-y-2">
               <p className="text-[0.7rem] text-slate-400">
@@ -672,10 +659,9 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
                   Previewing {previewCount} of {active.previewRows.length} rows
                 </span>
                 <span>
-                  Net amount:{" "}
+                  Net amount (preview):{" "}
                   <span className={previewTotal < 0 ? "text-rose-300" : "text-emerald-300"}>
-                    {previewTotal < 0 ? "-" : ""}
-                    ${Math.abs(previewTotal).toFixed(2)}
+                    {previewTotal < 0 ? "-" : ""}${Math.abs(previewTotal).toFixed(2)}
                   </span>
                 </span>
               </div>

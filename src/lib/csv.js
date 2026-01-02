@@ -138,7 +138,6 @@ export function parseAmountCell(cell) {
   if (cleaned.endsWith("+")) {
     cleaned = cleaned.slice(0, -1);
   }
-  // allow trailing/leading plus sign
   cleaned = cleaned.replace(/^\+/, "");
 
   if (cleaned === "") return NaN;
@@ -167,11 +166,7 @@ export function categorizeTransaction(description, amount) {
   }
 
   // Money going out
-  if (
-    text.includes("uber") ||
-    text.includes("lyft") ||
-    text.includes("taxi")
-  ) {
+  if (text.includes("uber") || text.includes("lyft") || text.includes("taxi")) {
     return "Transport – Rideshare";
   }
 
@@ -217,11 +212,7 @@ export function categorizeTransaction(description, amount) {
     return "Subscriptions";
   }
 
-  if (
-    text.includes("rent") ||
-    text.includes("landlord") ||
-    text.includes("mortgage")
-  ) {
+  if (text.includes("rent") || text.includes("landlord") || text.includes("mortgage")) {
     return "Housing – Rent/Mortgage";
   }
 
@@ -239,11 +230,7 @@ export function categorizeTransaction(description, amount) {
     return "Health & Fitness";
   }
 
-  if (
-    text.includes("insurance") ||
-    text.includes("geico") ||
-    text.includes("allstate")
-  ) {
+  if (text.includes("insurance") || text.includes("geico") || text.includes("allstate")) {
     return "Insurance";
   }
 
@@ -293,6 +280,34 @@ export function findHeaderIndex(header, aliases) {
 }
 
 /**
+ * Optional: Infer best mapping indices (for UI auto-select).
+ * Returns { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex }
+ */
+export function inferMappingFromColumns(columns = []) {
+  const delimiter = ","; // columns are already split/labels; delimiter irrelevant here
+  const header = columns
+    .map((c) => String(c || "").trim())
+    .join(delimiter);
+  const headerRow = normalizeHeaderRow(header, delimiter);
+
+  const dateIndex = findHeaderIndex(headerRow, HEADER_ALIASES.date);
+  const descIndex = findHeaderIndex(headerRow, HEADER_ALIASES.description);
+  const amountIndex = findHeaderIndex(headerRow, HEADER_ALIASES.amount);
+  const debitIndex = findHeaderIndex(headerRow, HEADER_ALIASES.debit);
+  const creditIndex = findHeaderIndex(headerRow, HEADER_ALIASES.credit);
+  const typeIndex = findHeaderIndex(headerRow, HEADER_ALIASES.type);
+
+  return {
+    dateIndex: dateIndex >= 0 ? dateIndex : null,
+    descIndex: descIndex >= 0 ? descIndex : null,
+    amountIndex: amountIndex >= 0 ? amountIndex : null,
+    debitIndex: debitIndex >= 0 ? debitIndex : null,
+    creditIndex: creditIndex >= 0 ? creditIndex : null,
+    typeIndex: typeIndex >= 0 ? typeIndex : null,
+  };
+}
+
+/**
  * Normalize a date string into YYYY-MM-DD where possible.
  * Handles lots of common formats & falls back to the raw string.
  */
@@ -325,19 +340,14 @@ export function parseDateCell(cell) {
 
     let month, day;
     if (nA > 12 && nB <= 12) {
-      // 31/01/2024 style → DD/MM
       day = nA;
       month = nB;
     } else {
-      // default to MM/DD
       month = nA;
       day = nB;
     }
 
-    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
-      2,
-      "0"
-    )}`;
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
   // 5 Jan 2024
@@ -345,20 +355,7 @@ export function parseDateCell(cell) {
   if (m) {
     const [, d, mon, y] = m;
     const year = y.length === 2 ? `20${y}` : y;
-    const monthNames = [
-      "jan",
-      "feb",
-      "mar",
-      "apr",
-      "may",
-      "jun",
-      "jul",
-      "aug",
-      "sep",
-      "oct",
-      "nov",
-      "dec",
-    ];
+    const monthNames = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
     const idx = monthNames.indexOf(mon.toLowerCase().slice(0, 3));
     if (idx >= 0) {
       const month = String(idx + 1).padStart(2, "0");
@@ -372,20 +369,7 @@ export function parseDateCell(cell) {
   if (m) {
     const [, mon, d, y] = m;
     const year = y.length === 2 ? `20${y}` : y;
-    const monthNames = [
-      "jan",
-      "feb",
-      "mar",
-      "apr",
-      "may",
-      "jun",
-      "jul",
-      "aug",
-      "sep",
-      "oct",
-      "nov",
-      "dec",
-    ];
+    const monthNames = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
     const idx = monthNames.indexOf(mon.toLowerCase().slice(0, 3));
     if (idx >= 0) {
       const month = String(idx + 1).padStart(2, "0");
@@ -400,7 +384,6 @@ export function parseDateCell(cell) {
     return parsed.toISOString().slice(0, 10);
   }
 
-  // If we really can't figure it out, keep the raw string
   return s;
 }
 
@@ -421,11 +404,9 @@ export function getCsvColumnsForMapping(text) {
   const hasLetter = rawCols.some((c) => /[a-zA-Z]/.test(c));
 
   if (!hasLetter) {
-    // Probably header-less → generic labels
     return rawCols.map((_, idx) => `Column ${idx + 1}`);
   }
 
-  // Use whatever header is there, falling back to generic labels when blank
   return rawCols.map((c, idx) => c || `Column ${idx + 1}`);
 }
 
@@ -436,7 +417,7 @@ export function getCsvColumnsForMapping(text) {
 export function parseCsvTransactions(text) {
   if (!text) return [];
   const cleanText = text.replace(/^\uFEFF/, "");
-  const delimiter = detectDelimiter(text);
+  const delimiter = detectDelimiter(cleanText);
   const lines = cleanText
     .split(/\r\n|\n|\r/)
     .filter((l) => l.trim() !== "");
@@ -455,14 +436,8 @@ export function parseCsvTransactions(text) {
     return { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex };
   }
 
-  let {
-    dateIndex,
-    descIndex,
-    amountIndex,
-    debitIndex,
-    creditIndex,
-    typeIndex,
-  } = getIndexes(header);
+  let { dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex } =
+    getIndexes(header);
 
   const noUsefulHeader =
     dateIndex < 0 &&
@@ -485,14 +460,8 @@ export function parseCsvTransactions(text) {
     header = syntheticHeader;
     startIndex = 0;
 
-    ({
-      dateIndex,
-      descIndex,
-      amountIndex,
-      debitIndex,
-      creditIndex,
-      typeIndex,
-    } = getIndexes(header));
+    ({ dateIndex, descIndex, amountIndex, debitIndex, creditIndex, typeIndex } =
+      getIndexes(header));
   }
 
   // Fallback: if no explicit amount/debit/credit columns, guess the most numeric column.
@@ -521,9 +490,7 @@ export function parseCsvTransactions(text) {
 
   if (amountIndex < 0 && debitIndex < 0 && creditIndex < 0) {
     const guessed = guessAmountIndex();
-    if (guessed >= 0) {
-      amountIndex = guessed;
-    }
+    if (guessed >= 0) amountIndex = guessed;
   }
 
   function applyTypeSign(amount, row) {
@@ -562,33 +529,22 @@ export function parseCsvTransactions(text) {
     let amount = NaN;
 
     if (amountIndex >= 0) {
-      // Single Amount column
       amount = parseAmountCell(cols[amountIndex]);
       amount = applyTypeSign(amount, cols);
     } else if (debitIndex >= 0 || creditIndex >= 0) {
-      // Separate Debit/Credit columns
       const debitRaw = debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
       const creditRaw = creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
       const debit = Number.isFinite(debitRaw) ? debitRaw : 0;
       const credit = Number.isFinite(creditRaw) ? creditRaw : 0;
-      // Convention: money in = +, money out = -
       amount = credit - debit;
     }
 
-    // Skip totally empty rows
     if (!date && !description && Number.isNaN(amount)) continue;
-
-    // Skip non-numeric amounts
     if (typeof amount !== "number" || Number.isNaN(amount)) continue;
 
     const category = categorizeTransaction(description, amount);
 
-    rows.push({
-      date,
-      description,
-      amount,
-      category,
-    });
+    rows.push({ date, description, amount, category });
   }
 
   return rows;
@@ -596,19 +552,49 @@ export function parseCsvTransactions(text) {
 
 /**
  * Manual override parser used when the user specifies which columns
- * are date/description/amount.
+ * are date/description/amount OR debit/credit.
+ *
+ * ✅ Fix: previously referenced debitIndex/creditIndex without defining them.
  */
 export function parseCsvWithMapping(
   text,
-  { dateIndex = null, descIndex = null, amountIndex = null } = {}
+  {
+    dateIndex = null,
+    descIndex = null,
+    amountIndex = null,
+    debitIndex = null,
+    creditIndex = null,
+    typeIndex = null, // optional: DR/CR column to force sign
+  } = {}
 ) {
   if (!text) return [];
   const cleanText = text.replace(/^\uFEFF/, "");
-  const delimiter = detectDelimiter(text);
+  const delimiter = detectDelimiter(cleanText);
   const lines = cleanText
     .split(/\r\n|\n|\r/)
     .filter((l) => l.trim() !== "");
   if (lines.length === 0) return [];
+
+  const applyTypeSign = (amount, cols) => {
+    if (!cols || typeIndex == null || typeIndex < 0) return amount;
+    const cell = cols[typeIndex]?.toString().toLowerCase() || "";
+    if (!cell) return amount;
+    const debitLike =
+      cell.includes("debit") ||
+      cell.includes("withdrawal") ||
+      cell.includes("payment") ||
+      cell.includes("dr") ||
+      cell === "d";
+    const creditLike =
+      cell.includes("credit") ||
+      cell.includes("deposit") ||
+      cell.includes("refund") ||
+      cell.includes("cr") ||
+      cell === "c";
+    if (debitLike) return -Math.abs(amount);
+    if (creditLike) return Math.abs(amount);
+    return amount;
+  };
 
   const rows = [];
 
@@ -618,25 +604,25 @@ export function parseCsvWithMapping(
     const cols = splitCsvLine(raw, delimiter).map((c) => c.trim());
     if (cols.length === 0 || cols.every((c) => c === "")) continue;
 
-    const rawDate =
-      dateIndex != null && dateIndex >= 0 ? cols[dateIndex] : "";
+    const rawDate = dateIndex != null && dateIndex >= 0 ? cols[dateIndex] : "";
     const date = parseDateCell(rawDate);
+
     const description =
       descIndex != null && descIndex >= 0 ? cols[descIndex] : "";
 
     let amount = NaN;
+
+    // Preferred: single amount column
     if (amountIndex != null && amountIndex >= 0) {
       amount = parseAmountCell(cols[amountIndex]);
-      // applyTypeSign not used in mapping mode
+      amount = applyTypeSign(amount, cols);
     } else if (debitIndex != null || creditIndex != null) {
+      // Debit/Credit split
       const debitRaw =
-        debitIndex != null && debitIndex >= 0
-          ? parseAmountCell(cols[debitIndex])
-          : 0;
+        debitIndex != null && debitIndex >= 0 ? parseAmountCell(cols[debitIndex]) : 0;
       const creditRaw =
-        creditIndex != null && creditIndex >= 0
-          ? parseAmountCell(cols[creditIndex])
-          : 0;
+        creditIndex != null && creditIndex >= 0 ? parseAmountCell(cols[creditIndex]) : 0;
+
       const debit = Number.isFinite(debitRaw) ? debitRaw : 0;
       const credit = Number.isFinite(creditRaw) ? creditRaw : 0;
       amount = credit - debit;
