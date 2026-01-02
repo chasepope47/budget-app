@@ -41,7 +41,6 @@ function makeItem(file) {
     detectedBank: "",
     rawText: "",
     columns: [],
-    // mapping stores indices as strings ("" means auto)
     mapping: { date: "", description: "", amount: "" },
     previewRows: [],
     status: "pending", // pending | parsing | needsMapping | ready | importing | imported | error
@@ -87,10 +86,8 @@ function inferMappingFromColumns(columns = []) {
   const dateIdx = bestIndex(dateHints);
   const descIdx = bestIndex(descHints);
 
-  // Prefer "Amount" if present.
   let amtIdx = bestIndex(amtHints);
 
-  // If no amount, but debit/credit exist, choose one (user can override).
   if (amtIdx == null) {
     const debitIdx = bestIndex(debitHints);
     const creditIdx = bestIndex(creditHints);
@@ -108,9 +105,9 @@ function inferMappingFromColumns(columns = []) {
 
 /**
  * Hands-off CSV parsing:
- * 1) try parseCsvTransactions (your smart header-based parser)
- * 2) if empty, infer mapping from header labels and try parseCsvWithMapping
- * 3) if user manually selected mapping, use that and try parseCsvWithMapping
+ * 1) try parseCsvTransactions
+ * 2) if empty, use user mapping (if set)
+ * 3) if still empty, infer mapping from headers and try parseCsvWithMapping
  */
 function parseCsvSmart(text, columns, currentMapping) {
   const hasExplicit =
@@ -123,40 +120,24 @@ function parseCsvSmart(text, columns, currentMapping) {
     amountIndex: m?.amount === "" ? null : Number.parseInt(m.amount, 10),
   });
 
-  // 1) existing robust parser first
   const autoRows = parseCsvTransactions(text);
   if (Array.isArray(autoRows) && autoRows.length) {
-    return {
-      rows: autoRows,
-      status: "ready",
-      error: "",
-      nextMapping: currentMapping,
-      reason: "auto",
-    };
+    return { rows: autoRows, status: "ready", error: "", nextMapping: currentMapping };
   }
 
-  // 2) user mapping
   if (hasExplicit) {
     const rows = parseCsvWithMapping(text, toConfig(currentMapping));
     if (Array.isArray(rows) && rows.length) {
-      return {
-        rows,
-        status: "ready",
-        error: "",
-        nextMapping: currentMapping,
-        reason: "manual",
-      };
+      return { rows, status: "ready", error: "", nextMapping: currentMapping };
     }
     return {
       rows: [],
       status: "needsMapping",
       error: "No rows were parsed with that mapping. Try different columns.",
       nextMapping: currentMapping,
-      reason: "manual-failed",
     };
   }
 
-  // 3) inferred mapping from header labels
   const inferred = inferMappingFromColumns(columns);
   const inferredMapping = {
     date: inferred.date == null ? "" : String(inferred.date),
@@ -170,13 +151,7 @@ function parseCsvSmart(text, columns, currentMapping) {
   if (enough) {
     const rows = parseCsvWithMapping(text, cfg);
     if (Array.isArray(rows) && rows.length) {
-      return {
-        rows,
-        status: "ready",
-        error: "",
-        nextMapping: inferredMapping,
-        reason: "inferred",
-      };
+      return { rows, status: "ready", error: "", nextMapping: inferredMapping };
     }
   }
 
@@ -186,7 +161,6 @@ function parseCsvSmart(text, columns, currentMapping) {
     error:
       "We couldn't automatically detect the right columns. Pick Date/Description/Amount below — it will re-parse automatically.",
     nextMapping: inferredMapping,
-    reason: "inferred-failed",
   };
 }
 
@@ -194,6 +168,9 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
   const [items, setItems] = React.useState([]);
   const [activeId, setActiveId] = React.useState(null);
   const [isDragging, setIsDragging] = React.useState(false);
+
+  // ✅ New: Auto-import toggle (default ON)
+  const [autoImport, setAutoImport] = React.useState(true);
 
   // Keep a ref to latest items so async parseItem can read current state safely
   const itemsRef = React.useRef(items);
@@ -208,6 +185,8 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
 
   const importedCount = items.filter((x) => x.status === "imported").length;
   const readyCount = items.filter((x) => x.status === "ready").length;
+  const parsingCount = items.filter((x) => x.status === "pending" || x.status === "parsing").length;
+  const needsMappingCount = items.filter((x) => x.status === "needsMapping").length;
   const errorCount = items.filter((x) => x.status === "error").length;
 
   function addFiles(files = []) {
@@ -374,7 +353,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
     }, 120);
   }
 
-  // awaitable import for "Import all ready"
+  // awaitable import (so we can auto-import sequentially)
   function handleImportOne(itemId) {
     return new Promise((resolve) => {
       setItems((prev) => {
@@ -436,6 +415,34 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
     }
   }
 
+  // ✅ New: Auto-import queue (one-by-one) whenever something becomes ready
+  const autoImportRunningRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!autoImport) return;
+    if (autoImportRunningRef.current) return;
+
+    const hasReady = items.some((x) => x.status === "ready");
+    if (!hasReady) return;
+
+    autoImportRunningRef.current = true;
+
+    (async () => {
+      try {
+        // sequentially import everything that is ready
+        // (items will update as we go)
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const nextReady = itemsRef.current.find((x) => x.status === "ready");
+          if (!nextReady) break;
+          // eslint-disable-next-line no-await-in-loop
+          await handleImportOne(nextReady.id);
+        }
+      } finally {
+        autoImportRunningRef.current = false;
+      }
+    })();
+  }, [items, autoImport]);
+
   function removeItem(itemId) {
     setItems((prev) => prev.filter((x) => x.id !== itemId));
     if (activeId === itemId) {
@@ -452,9 +459,6 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
   }
 
   const previewCount = Math.min(10, active?.previewRows?.length || 0);
-
-  // ✅ Fix: previewTotal should only sum preview rows (not whole file),
-  // otherwise huge files show misleading totals.
   const previewTotal = (active?.previewRows || [])
     .slice(0, previewCount)
     .reduce((sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0), 0);
@@ -492,7 +496,7 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
       <p className="text-slate-400">
         Upload <span className="text-cyan-300 font-semibold">.csv</span> or{" "}
         <span className="text-cyan-300 font-semibold">.pdf</span> bank statements.
-        Drop multiple files. Most files will auto-parse and be ready with zero extra clicks.
+        Drop multiple files. Most files will auto-parse and (optionally) auto-import.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -508,6 +512,16 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
               e.target.value = "";
             }}
           />
+        </label>
+
+        {/* ✅ Auto-import toggle */}
+        <label className="inline-flex items-center gap-2 px-2 py-1.5 rounded-md border border-slate-700 text-slate-200 bg-black/20">
+          <input
+            type="checkbox"
+            checked={autoImport}
+            onChange={(e) => setAutoImport(e.target.checked)}
+          />
+          <span className="text-[0.7rem] text-slate-300">Auto-import when ready</span>
         </label>
 
         {items.length > 0 && (
@@ -532,6 +546,12 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
             <div className="text-[0.7rem] text-slate-500">
               Imported <span className="text-slate-200 font-mono">{importedCount}</span>/
               <span className="text-slate-200 font-mono">{items.length}</span>
+              {parsingCount ? (
+                <span className="ml-2 text-slate-400">({parsingCount} parsing)</span>
+              ) : null}
+              {needsMappingCount ? (
+                <span className="ml-2 text-amber-300">({needsMappingCount} need mapping)</span>
+              ) : null}
               {errorCount ? (
                 <span className="ml-2 text-rose-400">
                   ({errorCount} error{errorCount === 1 ? "" : "s"})
@@ -713,12 +733,6 @@ export default function BankImportCard({ onTransactionsParsed = () => {} }) {
               </div>
             </div>
           )}
-
-          {active.previewRows?.length === 0 && active.status === "ready" ? (
-            <p className="text-[0.7rem] text-slate-500">
-              No rows to preview. If this seems wrong, try re-parsing.
-            </p>
-          ) : null}
         </div>
       )}
 

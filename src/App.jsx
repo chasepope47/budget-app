@@ -135,11 +135,10 @@ function App() {
     stored?.homePage || "dashboard"
   );
 
-  // ✅ goal selection + mode
   const [selectedGoalId, setSelectedGoalId] = useState(
     stored?.selectedGoalId || null
   );
-  const [goalMode, setGoalMode] = useState(null); // null | "create" | "edit"
+  const [goalMode, setGoalMode] = useState(null);
 
   const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
   const [toast, setToast] = useState(null);
@@ -147,6 +146,93 @@ function App() {
 
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+
+  // ✅ Live refs to prevent stale-state during rapid auto-import
+  const accountsRef = useRef(accounts);
+  const budgetsByMonthRef = useRef(budgetsByMonth);
+  const activeMonthRef = useRef(activeMonth);
+  const currentAccountIdRef = useRef(currentAccountId);
+
+  useEffect(() => {
+    accountsRef.current = accounts;
+  }, [accounts]);
+
+  useEffect(() => {
+    budgetsByMonthRef.current = budgetsByMonth;
+  }, [budgetsByMonth]);
+
+  useEffect(() => {
+    activeMonthRef.current = activeMonth;
+  }, [activeMonth]);
+
+  useEffect(() => {
+    currentAccountIdRef.current = currentAccountId;
+  }, [currentAccountId]);
+
+  // ✅ Toast aggregation for burst imports
+  const importToastAggRef = useRef({
+    files: 0,
+    tx: 0,
+    newAccounts: 0,
+    touchedAccounts: new Set(),
+    sources: new Set(), // ✅ add bank/source names
+  });
+  const importToastTimerRef = useRef(null);
+
+  function flushImportToastSoon() {
+    if (importToastTimerRef.current) clearTimeout(importToastTimerRef.current);
+
+    importToastTimerRef.current = setTimeout(() => {
+      const agg = importToastAggRef.current;
+      if (!agg || agg.files <= 0) return;
+
+      const accountCount = agg.touchedAccounts?.size || 0;
+      const sources = Array.from(agg.sources || []);
+      sources.sort((a, b) => a.localeCompare(b));
+
+      // keep toast readable: show up to 4 sources, then "+N more"
+      const shown = sources.slice(0, 4);
+      const more = Math.max(0, sources.length - shown.length);
+      const sourcesText =
+        shown.length > 0
+          ? ` (${shown.join(", ")}${more ? `, +${more} more` : ""})`
+          : "";
+
+      let msg = "";
+      if (agg.files === 1) {
+        msg = `Imported ${agg.tx} transaction${agg.tx === 1 ? "" : "s"} into ${
+          accountCount === 1
+            ? `"${Array.from(agg.touchedAccounts)[0]}"`
+            : "your accounts"
+        }${sourcesText}.`;
+      } else {
+        msg = `Imported ${agg.tx} transaction${
+          agg.tx === 1 ? "" : "s"
+        } from ${agg.files} files into ${
+          accountCount === 1
+            ? `"${Array.from(agg.touchedAccounts)[0]}"`
+            : `${accountCount} accounts`
+        }${sourcesText}.`;
+      }
+
+      if (agg.newAccounts > 0) {
+        msg += ` Created ${agg.newAccounts} new account${
+          agg.newAccounts === 1 ? "" : "s"
+        }.`;
+      }
+
+      setToast({ variant: "success", message: msg });
+
+      // reset
+      importToastAggRef.current = {
+        files: 0,
+        tx: 0,
+        newAccounts: 0,
+        touchedAccounts: new Set(),
+        sources: new Set(),
+      };
+    }, 750);
+  }
 
   // Ensure navOrder always has default tabs
   useEffect(() => {
@@ -179,7 +265,6 @@ function App() {
     return { currentAccountBalance: currentBalance, totalBalance: total };
   }, [accounts, currentAccountId]);
 
-  // Keep current account id valid after syncs or deletions
   useEffect(() => {
     const list = Array.isArray(accounts) ? accounts : [];
     if (list.length === 0) return;
@@ -210,7 +295,6 @@ function App() {
       setBudgetsByMonth(remote.budgetsByMonth || {});
       setActiveMonth(remote.activeMonth || getCurrentMonthKey());
 
-      // ✅ CRITICAL FIX: do not wipe local goals if remote.goals is missing
       setGoals((prev) => {
         if (!Array.isArray(remote.goals)) return prev;
         return remote.goals;
@@ -226,9 +310,7 @@ function App() {
       setTxFilter(remote.txFilter || "");
       setHomePage(remote.homePage || "dashboard");
 
-      // selection can sync, but only if present
       setSelectedGoalId(remote.selectedGoalId || null);
-      // goalMode intentionally NOT synced (UI-only)
     });
 
     return () => unsub();
@@ -343,23 +425,32 @@ function App() {
       return;
     }
 
-    const sourceName =
+    // ✅ This is what we will display in the toast sources list
+    const sourceLabel =
       meta.bank ||
       meta.detectedBank ||
       meta.filename ||
       meta.fileName ||
       "Imported";
 
+    // live refs
+    const prevAccounts = Array.isArray(accountsRef.current)
+      ? accountsRef.current
+      : [];
+    const prevBudgetsByMonth = budgetsByMonthRef.current || {};
+    const monthKey = activeMonthRef.current || getCurrentMonthKey();
+    const fallbackAccountId = currentAccountIdRef.current || "main";
+
     const detection = importTransactionsWithDetection(
-      accounts,
-      currentAccountId,
+      prevAccounts,
+      fallbackAccountId,
       parsedRows,
-      sourceName
+      sourceLabel
     );
 
     const targetAccountId = detection.targetAccountId;
     const targetAccountName =
-      detection.targetAccountName || sourceName || "Imported Account";
+      detection.targetAccountName || sourceLabel || "Imported Account";
 
     const rowsWithAccount = parsedRows.map((tx) => ({
       ...tx,
@@ -367,7 +458,7 @@ function App() {
     }));
 
     const nextAccounts = (() => {
-      const list = Array.isArray(accounts) ? accounts : [];
+      const list = Array.isArray(prevAccounts) ? prevAccounts : [];
       const exists = list.some((a) => a.id === targetAccountId);
 
       if (detection.createdNew || !exists) {
@@ -379,6 +470,7 @@ function App() {
             "checking",
           startingBalance: 0,
           transactions: rowsWithAccount,
+          createdAt: Date.now(),
         };
         return normalizeAccounts([...list, newAccount]);
       }
@@ -400,8 +492,8 @@ function App() {
 
     const nextBudgetsByMonth = (() => {
       const curr =
-        budgetsByMonth?.[activeMonth] || {
-          month: activeMonth,
+        prevBudgetsByMonth?.[monthKey] || {
+          month: monthKey,
           income: 0,
           fixed: [],
           variable: [],
@@ -414,21 +506,32 @@ function App() {
       const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
 
       return {
-        ...budgetsByMonth,
-        [activeMonth]: { ...curr, transactions: nextTransactions },
+        ...prevBudgetsByMonth,
+        [monthKey]: { ...curr, transactions: nextTransactions },
       };
     })();
 
+    // update refs immediately
+    accountsRef.current = nextAccounts;
+    budgetsByMonthRef.current = nextBudgetsByMonth;
+    currentAccountIdRef.current = targetAccountId;
+
+    // commit state
     setAccounts(nextAccounts);
     setBudgetsByMonth(nextBudgetsByMonth);
     setCurrentAccountId(targetAccountId);
 
-    setToast({
-      variant: "success",
-      message: detection.createdNew
-        ? `Created "${targetAccountName}" and imported ${rowsWithAccount.length} transactions.`
-        : `Imported ${rowsWithAccount.length} transactions into "${targetAccountName}".`,
-    });
+    // ✅ Aggregate one toast (include sources list)
+    const agg = importToastAggRef.current;
+    agg.files += 1;
+    agg.tx += rowsWithAccount.length;
+    if (detection.createdNew) agg.newAccounts += 1;
+
+    // show account names + source labels
+    agg.touchedAccounts.add(targetAccountName);
+    agg.sources.add(sourceLabel);
+
+    flushImportToastSoon();
   }
 
   /* -------- Accounts UI actions -------- */
@@ -565,7 +668,6 @@ function App() {
     );
   }
 
-  // ✅ FIX: edit using prev state (no stale closure)
   function handleEditGoal(goalId) {
     setGoals((prev) => {
       const list = Array.isArray(prev) ? prev : [];
