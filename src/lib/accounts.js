@@ -1,48 +1,75 @@
 // src/lib/accounts.js
 import { normalizeKey, KNOWN_BANKS } from "./csv.js";
 
-// ----- Basic helpers -----
-export function sumAmounts(items) {
-  return items.reduce((sum, item) => sum + item.amount, 0);
+/* ---------------- Basic helpers ---------------- */
+
+export function sumAmounts(items = [], key = "amount") {
+  const list = Array.isArray(items) ? items : [];
+  return list.reduce((sum, item) => {
+    const v = item?.[key];
+    const n = typeof v === "number" ? v : Number(v);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
 }
 
 export function computeNetTransactions(account) {
-  const txs = Array.isArray(account?.transactions)
-    ? account.transactions
-    : [];
-  return txs.reduce(
-    (sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0),
-    0
-  );
+  const txs = Array.isArray(account?.transactions) ? account.transactions : [];
+  return txs.reduce((sum, tx) => sum + (typeof tx.amount === "number" ? tx.amount : 0), 0);
 }
 
+/**
+ * ✅ Normalize accounts (and add new balance/statement fields safely)
+ */
 export function normalizeAccounts(accs) {
-  return (accs || []).map((acc) => ({
+  return (Array.isArray(accs) ? accs : []).map((acc) => ({
     ...acc,
-    startingBalance:
-      typeof acc.startingBalance === "number" ? acc.startingBalance : 0,
+    startingBalance: typeof acc.startingBalance === "number" ? acc.startingBalance : 0,
     transactions: Array.isArray(acc.transactions) ? acc.transactions : [],
+
+    // ✅ NEW FIELDS (safe defaults)
+    currentBalance: Number.isFinite(Number(acc.currentBalance)) ? Number(acc.currentBalance) : null,
+    currentBalanceAsOf: typeof acc.currentBalanceAsOf === "string" ? acc.currentBalanceAsOf : "",
+    lastStatementKey: typeof acc.lastStatementKey === "string" ? acc.lastStatementKey : "",
+    lastConfirmedEndingBalance: Number.isFinite(Number(acc.lastConfirmedEndingBalance))
+      ? Number(acc.lastConfirmedEndingBalance)
+      : null,
+    statementBalances:
+      acc && typeof acc.statementBalances === "object" && acc.statementBalances !== null
+        ? acc.statementBalances
+        : {},
   }));
 }
 
+/**
+ * ✅ This is what the dashboard + balances page should use.
+ * Prefer a confirmed balance if we have one.
+ */
 export function computeAccountBalance(acc) {
   if (!acc) return 0;
+
+  const confirmed = Number(acc.currentBalance);
+  if (Number.isFinite(confirmed)) return confirmed;
+
   const starting = typeof acc.startingBalance === "number" ? acc.startingBalance : 0;
   const net = computeNetTransactions(acc);
   return starting + net;
 }
 
+/* ---------------- Transactions merge ---------------- */
+
 export function mergeTransactions(existing, incoming) {
-  // key like "2025-01-01|starbucks|-5.75"
   const makeKey = (tx) =>
-    `${(tx.date || "").trim()}|${(tx.description || "")
-      .trim()
-      .toLowerCase()}|${isNaN(tx.amount) ? "NaN" : tx.amount}`;
+    `${(tx.date || "").trim()}|${(tx.description || "").trim().toLowerCase()}|${
+      Number.isFinite(Number(tx.amount)) ? Number(tx.amount) : "NaN"
+    }`;
 
-  const seen = new Set(existing.map((tx) => makeKey(tx)));
-  const merged = [...existing];
+  const a = Array.isArray(existing) ? existing : [];
+  const b = Array.isArray(incoming) ? incoming : [];
 
-  for (const tx of incoming) {
+  const seen = new Set(a.map((tx) => makeKey(tx)));
+  const merged = [...a];
+
+  for (const tx of b) {
     const key = makeKey(tx);
     if (!seen.has(key)) {
       merged.push(tx);
@@ -53,7 +80,72 @@ export function mergeTransactions(existing, incoming) {
   return merged;
 }
 
-// ----- Account detection helpers -----
+/* ---------------- Statement balance application ---------------- */
+
+/**
+ * ✅ Apply a confirmed statement balance to the right account safely.
+ *
+ * statement = {
+ *   statementKey, startISO, endISO,
+ *   endingBalance, startingBalance,
+ *   transactionSum
+ * }
+ *
+ * balanceSource is optional: "user" | "csv" | "suggested" etc.
+ */
+export function applyStatementToAccounts(
+  accounts = [],
+  accountId,
+  statement,
+  balanceSource = "user"
+) {
+  if (!accountId) return normalizeAccounts(accounts);
+
+  const list = normalizeAccounts(accounts);
+  const st = statement && typeof statement === "object" ? statement : null;
+  if (!st) return list;
+
+  const key = String(st.statementKey || "").trim();
+  if (!key) return list;
+
+  const endBal = Number(st.endingBalance);
+  const startBal = Number(st.startingBalance);
+
+  const nextStatementEntry = {
+    statementKey: key,
+    startISO: st.startISO || "",
+    endISO: st.endISO || "",
+    endingBalance: Number.isFinite(endBal) ? endBal : null,
+    startingBalance: Number.isFinite(startBal) ? startBal : null,
+    transactionSum: Number.isFinite(Number(st.transactionSum)) ? Number(st.transactionSum) : null,
+    balanceSource,
+    confirmedAt: new Date().toISOString(),
+  };
+
+  return normalizeAccounts(
+    list.map((acc) => {
+      if (acc.id !== accountId) return acc;
+
+      const nextMap = { ...(acc.statementBalances || {}) };
+      nextMap[key] = nextStatementEntry;
+
+      // If we have an ending balance, promote it to currentBalance
+      const hasEnding = Number.isFinite(Number(nextStatementEntry.endingBalance));
+
+      return {
+        ...acc,
+        statementBalances: nextMap,
+        lastStatementKey: key,
+        lastConfirmedEndingBalance: hasEnding ? Number(nextStatementEntry.endingBalance) : acc.lastConfirmedEndingBalance,
+        currentBalance: hasEnding ? Number(nextStatementEntry.endingBalance) : acc.currentBalance,
+        currentBalanceAsOf: nextStatementEntry.endISO || acc.currentBalanceAsOf,
+      };
+    })
+  );
+}
+
+/* ---------------- Account detection helpers ---------------- */
+
 function buildDescriptionSet(transactions = []) {
   const set = new Set();
   (transactions || []).forEach((tx) => {
@@ -64,7 +156,6 @@ function buildDescriptionSet(transactions = []) {
   return set;
 }
 
-// Guess checking vs credit from transaction signs
 function guessAccountTypeFromRows(rows = []) {
   if (!rows.length) return "checking";
   let negatives = 0;
@@ -79,13 +170,10 @@ function guessAccountTypeFromRows(rows = []) {
   return ratio >= 0.7 ? "credit" : "checking";
 }
 
-// Guess a friendly name for a new account
 function guessAccountNameFromRows(rows = [], sourceName = "") {
-  // --- 1. Try to detect bank from the file name using KNOWN_BANKS ---
   const sourceKey = normalizeKey(sourceName);
   if (sourceKey) {
     for (const bank of KNOWN_BANKS) {
-      // KNOWN_BANKS entries can be { key, label } or { match, label }
       const matchKey = (bank.key || bank.match || "").toLowerCase();
       if (matchKey && sourceKey.includes(matchKey)) {
         return `${bank.label} Account`;
@@ -93,7 +181,6 @@ function guessAccountNameFromRows(rows = [], sourceName = "") {
     }
   }
 
-  // --- 2. Try to detect bank from the first 20 descriptions ---
   if (rows.length) {
     const joinedDescriptions = rows
       .slice(0, 20)
@@ -112,7 +199,6 @@ function guessAccountNameFromRows(rows = [], sourceName = "") {
     }
   }
 
-  // --- 3. Fallback to your original "first word" heuristic ---
   if (!rows.length) return "Imported Account";
 
   const sample = (rows[0].description || "").trim();
@@ -128,7 +214,8 @@ function guessAccountNameFromRows(rows = [], sourceName = "") {
   return cleaned.charAt(0).toUpperCase() + cleaned.slice(1) + " Account";
 }
 
-// ----- Main import helpers -----
+/* ---------------- Main import helpers ---------------- */
+
 export function detectTargetAccountForImport(
   accounts = [],
   currentAccountId,
@@ -138,15 +225,10 @@ export function detectTargetAccountForImport(
     (acc) => Array.isArray(acc.transactions) && acc.transactions.length > 0
   );
 
-  // If no account has existing transactions yet, treat this as a new account
-  if (!withTransactions.length) {
-    return null;
-  }
+  if (!withTransactions.length) return null;
 
   const importedDescriptions = buildDescriptionSet(importedRows);
-  if (!importedDescriptions.size) {
-    return currentAccountId;
-  }
+  if (!importedDescriptions.size) return currentAccountId;
 
   let bestAccountId = null;
   let bestOverlap = 0;
@@ -169,11 +251,8 @@ export function detectTargetAccountForImport(
   const overlapRatio =
     importedDescriptions.size > 0 ? bestOverlap / importedDescriptions.size : 0;
 
-  if (bestAccountId && (bestOverlap >= 3 || overlapRatio >= 0.2)) {
-    return bestAccountId;
-  }
+  if (bestAccountId && (bestOverlap >= 3 || overlapRatio >= 0.2)) return bestAccountId;
 
-  // Otherwise looks like a new account
   return null;
 }
 
@@ -183,20 +262,12 @@ export function importTransactionsWithDetection(
   importedRows = [],
   sourceName = ""
 ) {
-  const targetId = detectTargetAccountForImport(
-    accounts,
-    currentAccountId,
-    importedRows
-  );
+  const targetId = detectTargetAccountForImport(accounts, currentAccountId, importedRows);
 
-  // Case 1: We matched an existing account
   if (targetId) {
     const nextAccounts = (accounts || []).map((acc) =>
       acc.id === targetId
-        ? {
-            ...acc,
-            transactions: mergeTransactions(acc.transactions || [], importedRows),
-          }
+        ? { ...acc, transactions: mergeTransactions(acc.transactions || [], importedRows) }
         : acc
     );
 
@@ -210,7 +281,6 @@ export function importTransactionsWithDetection(
     };
   }
 
-  // Case 2: No good match → create a new account
   const type = guessAccountTypeFromRows(importedRows);
   const name = guessAccountNameFromRows(importedRows, sourceName);
   const newId =
@@ -224,6 +294,13 @@ export function importTransactionsWithDetection(
     type,
     startingBalance: 0,
     transactions: importedRows,
+
+    // ✅ initialize new fields so downstream UI is consistent
+    currentBalance: null,
+    currentBalanceAsOf: "",
+    lastStatementKey: "",
+    lastConfirmedEndingBalance: null,
+    statementBalances: {},
   };
 
   return {

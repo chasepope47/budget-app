@@ -1,6 +1,20 @@
+// src/pages/BalancesDashboard.jsx
 import React, { useState } from "react";
 import Card from "../components/Card.jsx";
 import { computeNetTransactions } from "../lib/accounts.js";
+
+function fmtMoney(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return "-";
+  return `$${x.toFixed(2)}`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "";
+  return new Date(t).toLocaleDateString();
+}
 
 function BalancesDashboard({
   accounts = [],
@@ -48,11 +62,34 @@ function BalancesDashboard({
               const txCount = Array.isArray(acc.transactions)
                 ? acc.transactions.length
                 : 0;
+
               const net = computeNetTransactions(acc);
-              const currentBalance =
-                (typeof acc.startingBalance === "number"
-                  ? acc.startingBalance
-                  : 0) + net;
+
+              const computedBalance =
+                (typeof acc.startingBalance === "number" ? acc.startingBalance : 0) +
+                net;
+
+              // ✅ Prefer confirmed/currentBalance if present (from statement)
+              const hasConfirmed = Number.isFinite(Number(acc.currentBalance));
+              const displayBalance = hasConfirmed
+                ? Number(acc.currentBalance)
+                : computedBalance;
+
+              const asOfLabel = hasConfirmed ? fmtDate(acc.currentBalanceAsOf) : "";
+              const statementKey = acc.lastStatementKey || "";
+              const lastEnding = Number.isFinite(Number(acc.lastConfirmedEndingBalance))
+                ? Number(acc.lastConfirmedEndingBalance)
+                : null;
+
+              // last statement entry (if present)
+              const statementEntry =
+                statementKey &&
+                acc.statementBalances &&
+                typeof acc.statementBalances === "object"
+                  ? acc.statementBalances[statementKey] || null
+                  : null;
+
+              const balanceSource = statementEntry?.balanceSource || "";
 
               const sortedTransactions = Array.isArray(acc.transactions)
                 ? acc.transactions
@@ -69,6 +106,7 @@ function BalancesDashboard({
                       return bTime - aTime;
                     })
                 : [];
+
               const hasTransactions = sortedTransactions.length > 0;
               const isExpanded = expandedAccounts.includes(acc.id);
 
@@ -86,43 +124,92 @@ function BalancesDashboard({
                       <input
                         className="bg-transparent text-slate-100 font-medium text-xs w-full focus:outline-none"
                         value={acc.name}
-                        onChange={(e) =>
-                          onRenameAccount(acc.id, e.target.value)
-                        }
+                        onChange={(e) => onRenameAccount(acc.id, e.target.value)}
                       />
                       <p className="text-[11px] text-slate-400">
                         Type: {acc.type || "checking"}
                       </p>
+
+                      {/* ✅ Balance row */}
                       <p className="text-[11px] text-slate-400">
                         Transactions:{" "}
                         <span className="text-slate-200">{txCount}</span> · Net:{" "}
+                        <span className={net >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                          {fmtMoney(net)}
+                        </span>
+                        {" · "}
+                        Current:{" "}
                         <span
                           className={
-                            currentBalance >= 0
-                              ? "text-emerald-300"
-                              : "text-rose-300"
+                            displayBalance >= 0 ? "text-emerald-300" : "text-rose-300"
                           }
                         >
-                          ${currentBalance.toFixed(2)}
+                          {fmtMoney(displayBalance)}
                         </span>
+                        {hasConfirmed ? (
+                          <span className="text-slate-500">
+                            {" "}
+                            (confirmed{asOfLabel ? ` as of ${asOfLabel}` : ""})
+                          </span>
+                        ) : (
+                          <span className="text-slate-500"> (computed)</span>
+                        )}
                       </p>
+
+                      {/* ✅ Statement metadata line */}
+                      {hasConfirmed && (
+                        <p className="text-[11px] text-slate-500">
+                          Last statement:{" "}
+                          <span className="text-slate-300">
+                            {statementKey || "—"}
+                          </span>
+                          {balanceSource ? (
+                            <span className="text-slate-500">
+                              {" "}
+                              · source:{" "}
+                              <span className="text-slate-300">{balanceSource}</span>
+                            </span>
+                          ) : null}
+                          {lastEnding != null ? (
+                            <span className="text-slate-500">
+                              {" "}
+                              · ending:{" "}
+                              <span className="text-slate-300">{fmtMoney(lastEnding)}</span>
+                            </span>
+                          ) : null}
+                        </p>
+                      )}
                     </div>
 
-                    <div className="flex flex-col items-end">
-                      <label className="text-[11px] text-slate-400">
-                        Starting balance
-                      </label>
-                      <input
-                        type="number"
-                        className="w-24 bg-slate-900/80 border border-slate-700 rounded px-1 py-0.5 text-right text-xs font-mono text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                        value={acc.startingBalance ?? 0}
-                        onChange={(e) =>
-                          onSetAccountBalance(
-                            acc.id,
-                            parseFloat(e.target.value || "0")
-                          )
-                        }
-                      />
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex flex-col items-end">
+                        <label className="text-[11px] text-slate-400">
+                          Starting balance
+                        </label>
+                        <input
+                          type="number"
+                          className="w-24 bg-slate-900/80 border border-slate-700 rounded px-1 py-0.5 text-right text-xs font-mono text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                          value={acc.startingBalance ?? 0}
+                          onChange={(e) =>
+                            onSetAccountBalance(
+                              acc.id,
+                              parseFloat(e.target.value || "0")
+                            )
+                          }
+                        />
+                      </div>
+
+                      {/* ✅ Helper: set starting balance to confirmed current balance */}
+                      {hasConfirmed && (
+                        <button
+                          type="button"
+                          className="px-2 py-0.5 rounded text-[11px] border border-slate-500 hover:border-cyan-400 text-slate-200"
+                          onClick={() => onSetAccountBalance(acc.id, displayBalance)}
+                          title="Sets starting balance to the confirmed current balance"
+                        >
+                          Use current as starting
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex flex-col items-end gap-1">
@@ -152,6 +239,7 @@ function BalancesDashboard({
                         No transactions imported yet.
                       </p>
                     )}
+
                     {isExpanded && hasTransactions && (
                       <div className="mt-2 max-h-72 overflow-auto rounded-md border border-slate-800/50">
                         <table className="w-full text-[0.7rem] text-left">
@@ -160,19 +248,16 @@ function BalancesDashboard({
                               <th className="px-2 py-1">Date</th>
                               <th className="px-2 py-1">Description</th>
                               <th className="px-2 py-1">Category</th>
-                              <th className="px-2 py-1 text-right">
-                                Amount
-                              </th>
+                              <th className="px-2 py-1 text-right">Amount</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800/70">
                             {sortedTransactions.map((tx, index) => {
                               const amountValue = Number(tx.amount);
-                              const amountDisplay = Number.isFinite(
-                                amountValue
-                              )
+                              const amountDisplay = Number.isFinite(amountValue)
                                 ? `$${amountValue.toFixed(2)}`
                                 : "-";
+
                               return (
                                 <tr key={tx.id || `${acc.id}-full-${index}`}>
                                   <td className="px-2 py-1 text-slate-300">
@@ -186,9 +271,7 @@ function BalancesDashboard({
                                   </td>
                                   <td
                                     className={`px-2 py-1 text-right ${
-                                      amountValue < 0
-                                        ? "text-rose-300"
-                                        : "text-emerald-300"
+                                      amountValue < 0 ? "text-rose-300" : "text-emerald-300"
                                     }`}
                                   >
                                     {amountDisplay}
