@@ -103,6 +103,7 @@ function App() {
   const applyingRemoteRef = useRef(false);
   const saveTimeoutRef = useRef(null);
   const initialStoredRef = useRef(null);
+  const pushingLocalRef = useRef(false);
 
   if (initialStoredRef.current === null) {
     initialStoredRef.current = migrateStoredState(loadStoredState());
@@ -126,6 +127,7 @@ function App() {
     Array.isArray(stored?.scheduledTemplates) ? stored.scheduledTemplates : []
   );
   const [scheduleChecks, setScheduleChecks] = useState(stored?.scheduleChecks || {});
+  const [clientUpdatedAt, setClientUpdatedAt] = useState(stored?.clientUpdatedAt || 0);
 
   const [selectedGoalId, setSelectedGoalId] = useState(stored?.selectedGoalId || null);
   const [goalMode, setGoalMode] = useState(null);
@@ -142,6 +144,7 @@ function App() {
   const budgetsByMonthRef = useRef(budgetsByMonth);
   const activeMonthRef = useRef(activeMonth);
   const currentAccountIdRef = useRef(currentAccountId);
+  const clientUpdatedAtRef = useRef(clientUpdatedAt);
 
   useEffect(() => {
     accountsRef.current = accounts;
@@ -158,6 +161,34 @@ function App() {
   useEffect(() => {
     currentAccountIdRef.current = currentAccountId;
   }, [currentAccountId]);
+
+  useEffect(() => {
+    clientUpdatedAtRef.current = clientUpdatedAt;
+  }, [clientUpdatedAt]);
+
+  function buildStateSnapshot(tsOverride) {
+    const stamp =
+      tsOverride !== undefined && tsOverride !== null
+        ? tsOverride
+        : clientUpdatedAtRef.current || clientUpdatedAt || 0;
+
+    return {
+      budgetsByMonth,
+      activeMonth,
+      goals,
+      accounts,
+      currentAccountId,
+      navOrder,
+      homePage,
+      dashboardSectionsOrder,
+      theme,
+      txFilter,
+      selectedGoalId,
+      scheduledTemplates,
+      scheduleChecks,
+      clientUpdatedAt: stamp,
+    };
+  }
 
   // ✅ Toast aggregation
   const importToastAggRef = useRef({
@@ -275,27 +306,43 @@ function App() {
       const remote = snap.data()?.state;
       if (!remote) return;
 
-      applyingRemoteRef.current = true;
+      const remoteTs = Number(remote.clientUpdatedAt) || 0;
+      const localTs = clientUpdatedAtRef.current || 0;
 
-      setBudgetsByMonth(remote.budgetsByMonth || {});
-      setActiveMonth(remote.activeMonth || getCurrentMonthKey());
+      if (remoteTs > localTs) {
+        applyingRemoteRef.current = true;
+        clientUpdatedAtRef.current = remoteTs;
 
-      setGoals((prev) => {
-        if (!Array.isArray(remote.goals)) return prev;
-        return remote.goals;
-      });
+        setBudgetsByMonth((prev) => remote.budgetsByMonth ?? prev ?? {});
+        setActiveMonth(remote.activeMonth || getCurrentMonthKey());
 
-      setAccounts(normalizeAccounts(remote.accounts || []));
-      setCurrentAccountId(remote.currentAccountId || "main");
-      setNavOrder(remote.navOrder || NAV_ITEMS.map((n) => n.key));
-      setDashboardSectionsOrder(remote.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS);
-      setTheme(remote.theme || "dark");
-      setTxFilter(remote.txFilter || "");
-      setHomePage(remote.homePage || "dashboard");
-      setScheduledTemplates(Array.isArray(remote.scheduledTemplates) ? remote.scheduledTemplates : []);
-      setScheduleChecks(remote.scheduleChecks || {});
+        setGoals((prev) => (Array.isArray(remote.goals) ? remote.goals : prev));
 
-      setSelectedGoalId(remote.selectedGoalId || null);
+        setAccounts((prev) => normalizeAccounts(remote.accounts ?? prev ?? []));
+        setCurrentAccountId(remote.currentAccountId ?? currentAccountIdRef.current ?? "main");
+        setNavOrder((prev) => remote.navOrder ?? prev ?? NAV_ITEMS.map((n) => n.key));
+        setDashboardSectionsOrder(
+          (prev) => remote.dashboardSectionsOrder ?? prev ?? DEFAULT_DASHBOARD_SECTIONS
+        );
+        setTheme((prev) => remote.theme ?? prev ?? "dark");
+        setTxFilter((prev) => remote.txFilter ?? prev ?? "");
+        setHomePage((prev) => remote.homePage ?? prev ?? "dashboard");
+        setScheduledTemplates((prev) =>
+          Array.isArray(remote.scheduledTemplates) ? remote.scheduledTemplates : prev || []
+        );
+        setScheduleChecks((prev) => remote.scheduleChecks ?? prev ?? {});
+        setSelectedGoalId((prev) => remote.selectedGoalId ?? prev ?? null);
+        setClientUpdatedAt(remoteTs || 0);
+        return;
+      }
+
+      if (localTs > remoteTs && localTs > 0 && !pushingLocalRef.current) {
+        const state = buildStateSnapshot(localTs);
+        pushingLocalRef.current = true;
+        saveWorkspaceState(activeWorkspaceId, state).finally(() => {
+          pushingLocalRef.current = false;
+        });
+      }
     });
 
     return () => unsub();
@@ -304,30 +351,21 @@ function App() {
 
   /* -------- Persist (debounced) -------- */
   useEffect(() => {
-    const state = {
-      budgetsByMonth,
-      activeMonth,
-      goals,
-      accounts,
-      currentAccountId,
-      navOrder,
-      homePage,
-      dashboardSectionsOrder,
-      theme,
-      txFilter,
-      selectedGoalId,
-      scheduledTemplates,
-      scheduleChecks,
-    };
+    if (applyingRemoteRef.current) {
+      applyingRemoteRef.current = false;
+      const state = buildStateSnapshot();
+      saveStoredState(state);
+      return;
+    }
 
+    const nextClientUpdatedAt = Date.now();
+    clientUpdatedAtRef.current = nextClientUpdatedAt;
+    setClientUpdatedAt(nextClientUpdatedAt);
+
+    const state = buildStateSnapshot(nextClientUpdatedAt);
     saveStoredState(state);
 
     if (!activeWorkspaceId) return;
-
-    if (applyingRemoteRef.current) {
-      applyingRemoteRef.current = false;
-      return;
-    }
 
     clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
