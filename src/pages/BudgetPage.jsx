@@ -61,9 +61,14 @@ function BudgetPage({
 
   const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
 
+  const monthKey = React.useMemo(() => {
+    if (typeof month === "string") return month.slice(0, 7);
+    return month;
+  }, [month]);
+
   const occurrences = React.useMemo(
-    () => expandTemplatesForMonth(scheduledTemplates, month),
-    [scheduledTemplates, month]
+    () => expandTemplatesForMonth(scheduledTemplates, monthKey),
+    [scheduledTemplates, monthKey]
   );
 
   const templateById = React.useMemo(() => {
@@ -236,7 +241,7 @@ function BudgetPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">{month} Budget</h1>
-        <span className="text-xs text-slate-400">Income ƒ+' Expenses ƒ+' Goals</span>
+        <span className="text-xs text-slate-400">Income + Expenses + Goals</span>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -369,7 +374,7 @@ function BudgetPage({
                         )}
                       </div>
                       <div className="text-[0.7rem] text-slate-500">
-                        {cadence} ƒ?› {paid ? "paid" : "unpaid"}
+                        {cadence} · {paid ? "paid" : "unpaid"}
                       </div>
                     </div>
 
@@ -385,8 +390,9 @@ function BudgetPage({
                         className="text-[0.75rem] text-slate-500 hover:text-rose-400"
                         onClick={() => handleDeleteTemplate(item.templateId)}
                         type="button"
+                        aria-label="Delete due item"
                       >
-                        ƒo
+                        ✕
                       </button>
                     </div>
                   </div>
@@ -421,8 +427,9 @@ function ListWithTotal({ items = [], total = 0, onDelete }) {
                 className="text-[0.65rem] text-slate-500 hover:text-rose-400"
                 onClick={() => onDelete(index)}
                 type="button"
+                aria-label="Delete item"
               >
-                ƒo
+                ✕
               </button>
             )}
           </div>
@@ -480,10 +487,10 @@ function BillsPanel({
                 >
                   <div className="text-xs text-slate-200 leading-4">
                     {item.label}
-                    <span className="text-slate-400"> ƒ?› ${amt.toFixed(2)}</span>
+                    <span className="text-slate-400"> · ${amt.toFixed(2)}</span>
                   </div>
                   <div className="text-[0.7rem] text-slate-500">
-                    {item.dueDate} ƒ?› {cadence}
+                    {item.dueDate} · {cadence}
                   </div>
                 </button>
 
@@ -501,7 +508,7 @@ function BillsPanel({
                     onClick={() => onDelete(item)}
                     aria-label="Delete due item"
                   >
-                    ƒo
+                    ✕
                   </button>
                 </div>
               </div>
@@ -510,7 +517,7 @@ function BillsPanel({
         )}
 
         {items.length > 5 && (
-          <div className="text-[0.7rem] text-slate-500">+{items.length - 5} moreƒ?Ý</div>
+          <div className="text-[0.7rem] text-slate-500">+{items.length - 5} more</div>
         )}
       </div>
     </div>

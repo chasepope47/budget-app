@@ -13,6 +13,7 @@ body {
   width: 100%;
   margin: 0;
   padding: 0;
+  font-variant-ligatures: none;
 
   /* IMPORTANT: prevents white edge/gaps on iOS/PWA */
   background: #000;

@@ -133,7 +133,9 @@ export default function MiniDueCalendar({
 
       <div className="mt-3 grid grid-cols-7 gap-2 text-center text-[11px] text-slate-400">
         {["S", "M", "T", "W", "T", "F", "S"].map((d) => (
-          <div key={d}>{d}</div>
+          <div key={d} className="h-9 flex items-center justify-center">
+            {d}
+          </div>
         ))}
       </div>
 
@@ -153,18 +155,19 @@ export default function MiniDueCalendar({
               key={idx}
               type="button"
               onClick={() => onSelectDate(dayISO)}
-              className={[
-                "relative h-9 rounded-xl border text-xs transition",
-                "border-slate-700/70 bg-black/20 text-slate-100 hover:border-cyan-400/60",
-                isSelected ? "border-cyan-400/70 bg-cyan-500/10" : "",
-                isToday ? "ring-1 ring-slate-400/40" : "",
-              ].join(" ")}
-              title={count ? `${count} due` : ""}
-            >
-              <span className="absolute left-2 top-2">{dayNum}</span>
+            className={[
+              "relative h-9 rounded-xl border text-xs transition",
+              "border-slate-700/70 bg-black/20 text-slate-100 hover:border-cyan-400/60",
+              "flex items-center justify-center",
+              isSelected ? "border-cyan-400/70 bg-cyan-500/10" : "",
+              isToday ? "ring-1 ring-slate-400/40" : "",
+            ].join(" ")}
+            title={count ? `${count} due` : ""}
+          >
+            <span className="text-xs font-semibold">{dayNum}</span>
 
-              {count > 0 && (
-                <span className="absolute right-2 bottom-2 rounded-full border border-slate-600/70 px-1.5 py-0.5 text-[10px] text-slate-200">
+            {count > 0 && (
+              <span className="absolute right-2 bottom-2 rounded-full border border-slate-600/70 px-1.5 py-0.5 text-[10px] text-slate-200">
                   {count}
                 </span>
               )}

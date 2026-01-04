@@ -44,7 +44,23 @@ export function checkKey(templateId, dueDateISO) {
  */
 export function expandTemplatesForMonth(templates = [], monthKey) {
   const list = Array.isArray(templates) ? templates : [];
-  const m = typeof monthKey === "string" ? monthKey.match(/^(\d{4})-(\d{2})$/) : null;
+
+  const normalizedMonthKey = (() => {
+    if (monthKey instanceof Date) {
+      const y = monthKey.getFullYear();
+      const m = String(monthKey.getMonth() + 1).padStart(2, "0");
+      return `${y}-${m}`;
+    }
+    if (typeof monthKey === "string") {
+      // accept YYYY-MM or YYYY-MM-DD
+      const slice = monthKey.slice(0, 10);
+      const m = slice.match(/^(\d{4})-(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}`;
+    }
+    return null;
+  })();
+
+  const m = normalizedMonthKey ? normalizedMonthKey.match(/^(\d{4})-(\d{2})$/) : null;
   if (!m) return [];
 
   const year = Number(m[1]);
@@ -74,7 +90,7 @@ export function expandTemplatesForMonth(templates = [], monthKey) {
     const start = parseISODate(tmpl.startDate);
     if (!start) continue;
 
-    const cadence = (tmpl.cadence || "once").toLowerCase();
+    const cadence = String(tmpl.cadence || "once").toLowerCase();
     const baseDay = Number.isFinite(Number(tmpl.dayOfMonth))
       ? Number(tmpl.dayOfMonth)
       : start.getDate();
