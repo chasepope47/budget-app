@@ -2,6 +2,7 @@
 import React from "react";
 import Card from "../components/Card.jsx";
 import MiniDueCalendar from "../components/MiniDueCalendar.jsx";
+import { expandTemplatesForMonth, checkKey } from "../lib/schedule.js";
 
 function todayISO() {
   const d = new Date();
@@ -12,7 +13,6 @@ function todayISO() {
 }
 
 function parseISODateLocal(iso) {
-  // iso: YYYY-MM-DD
   if (!iso || typeof iso !== "string") return null;
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
@@ -22,6 +22,14 @@ function parseISODateLocal(iso) {
   const dt = new Date(y, mo, d);
   dt.setHours(0, 0, 0, 0);
   return dt;
+}
+
+function formatISODate(date) {
+  const d = new Date(date);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function addDays(date, n) {
@@ -35,67 +43,87 @@ function clampMoney(n) {
   return Number.isFinite(x) ? x : 0;
 }
 
-function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
+function BudgetPage({
+  month,
+  budget,
+  totals = {},
+  onBudgetChange,
+  scheduledTemplates = [],
+  scheduleChecks = {},
+  onScheduledTemplatesChange = () => {},
+  onScheduleChecksChange = () => {},
+}) {
   const fixedTotal = Number(totals?.fixed ?? totals?.fixedTotal ?? 0);
   const variableTotal = Number(totals?.variable ?? totals?.variableTotal ?? 0);
   const incomeValue = Number(budget?.income ?? 0);
   const fixedItems = Array.isArray(budget?.fixed) ? budget.fixed : [];
   const variableItems = Array.isArray(budget?.variable) ? budget.variable : [];
 
-  // ✅ bills/due-dates list
-  const bills = Array.isArray(budget?.bills) ? budget.bills : [];
-  const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() =>
-    todayISO()
+  const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
+
+  const occurrences = React.useMemo(
+    () => expandTemplatesForMonth(scheduledTemplates, month),
+    [scheduledTemplates, month]
   );
 
-  const billsDueSelectedDay = React.useMemo(() => {
-    return bills.filter((b) => b?.dueDate === selectedDueDateISO);
-  }, [bills, selectedDueDateISO]);
+  const templateById = React.useMemo(() => {
+    const map = {};
+    for (const t of Array.isArray(scheduledTemplates) ? scheduledTemplates : []) {
+      if (t?.id) map[t.id] = t;
+    }
+    return map;
+  }, [scheduledTemplates]);
+
+  const occurrencesByDate = React.useMemo(() => {
+    const map = new Map();
+    for (const item of occurrences) {
+      const key = item?.dueDate;
+      if (!key) continue;
+      const list = map.get(key) || [];
+      list.push(item);
+      map.set(key, list);
+    }
+    return map;
+  }, [occurrences]);
+
+  const selectedDayItems = occurrencesByDate.get(selectedDueDateISO) || [];
 
   const today = React.useMemo(() => parseISODateLocal(todayISO()), []);
-  const todayStr = React.useMemo(() => {
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }, [today]);
+  const todayStr = React.useMemo(() => (today ? formatISODate(today) : ""), [today]);
+  const upcomingWindowEnd = React.useMemo(() => (today ? addDays(today, 7) : null), [today]);
 
-  const upcomingWindowEnd = React.useMemo(() => {
-    return today ? addDays(today, 7) : null;
-  }, [today]);
-
-  const billGroups = React.useMemo(() => {
-    const normalized = bills
-      .map((b) => {
-        const due = parseISODateLocal(b?.dueDate);
-        return { ...b, _due: due };
+  const occurrenceGroups = React.useMemo(() => {
+    const normalized = occurrences
+      .map((o) => {
+        const due = parseISODateLocal(o?.dueDate);
+        return {
+          ...o,
+          _due: due,
+          paid: !!scheduleChecks[checkKey(o.templateId, o.dueDate)]?.paid,
+          cadence: templateById[o.templateId]?.cadence || "once",
+        };
       })
-      .filter((b) => b._due); // only valid dates
+      .filter((o) => o._due);
 
-    const unpaid = normalized.filter((b) => !b.paid);
+    const unpaid = normalized.filter((o) => !o.paid);
 
     const overdue = unpaid
-      .filter((b) => b._due < today)
-      .sort((a, c) => a._due - c._due);
+      .filter((o) => today && o._due < today)
+      .sort((a, b) => a._due - b._due);
 
     const dueToday = unpaid
-      .filter((b) => b.dueDate === todayStr)
-      .sort((a, c) => clampMoney(c.amount) - clampMoney(a.amount));
+      .filter((o) => o.dueDate === todayStr)
+      .sort((a, b) => clampMoney(b.amount) - clampMoney(a.amount));
 
     const upcoming = unpaid
-      .filter(
-        (b) => upcomingWindowEnd && b._due > today && b._due <= upcomingWindowEnd
-      )
-      .sort((a, c) => a._due - c._due);
+      .filter((o) => upcomingWindowEnd && today && o._due > today && o._due <= upcomingWindowEnd)
+      .sort((a, b) => a._due - b._due);
 
     return { overdue, dueToday, upcoming };
-  }, [bills, today, todayStr, upcomingWindowEnd]);
+  }, [occurrences, scheduleChecks, templateById, today, todayStr, upcomingWindowEnd]);
 
   function handleEditIncome() {
-    const input = window.prompt(
-      "Monthly income amount:",
-      incomeValue.toString()
-    );
+    const input = window.prompt("Monthly income amount:", incomeValue.toString());
     if (input === null) return;
     const next = Number(input);
     if (!Number.isFinite(next)) {
@@ -103,6 +131,48 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
       return;
     }
     onBudgetChange({ ...budget, income: next });
+  }
+
+  function promptRecurringTemplate({ label, amount, source }) {
+    const wantsRecurring = window.confirm("Add to calendar as repeating due item?");
+    if (!wantsRecurring) return;
+
+    const defaultDate = selectedDueDateISO || todayISO();
+    const startDateInput = window.prompt("Start date (YYYY-MM-DD):", defaultDate);
+    if (!startDateInput) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDateInput)) {
+      window.alert("Please use YYYY-MM-DD format (example: 2026-01-15).");
+      return;
+    }
+    const startDate = parseISODateLocal(startDateInput);
+    if (!startDate) {
+      window.alert("Could not parse that date. Try again with YYYY-MM-DD.");
+      return;
+    }
+
+    const cadenceInput = window.prompt(
+      "Cadence? (once, weekly, biweekly, monthly, yearly)",
+      "monthly"
+    );
+    if (cadenceInput === null) return;
+    const allowed = ["once", "weekly", "biweekly", "monthly", "yearly"];
+    const cadence = (cadenceInput || "monthly").trim().toLowerCase();
+    const normalizedCadence = allowed.includes(cadence) ? cadence : "monthly";
+
+    const nextTemplate = {
+      id: `sched-${Date.now()}`,
+      label: (label || "").trim() || "Due item",
+      amount: Number(amount) || 0,
+      kind: "expense",
+      source,
+      startDate: formatISODate(startDate),
+      cadence: normalizedCadence,
+      dayOfMonth: startDate.getDate(),
+    };
+
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    onScheduledTemplatesChange([...list, nextTemplate]);
+    setSelectedDueDateISO(formatISODate(startDate));
   }
 
   function handleAddExpense(sectionKey) {
@@ -126,6 +196,9 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
     const updatedSection = [...currentList, nextItem];
     const updatedBudget = { ...budget, [sectionKey]: updatedSection };
     onBudgetChange(updatedBudget);
+
+    const source = sectionKey === "fixed" ? "budget-fixed" : "budget-variable";
+    promptRecurringTemplate({ label: name, amount, source });
   }
 
   function handleDeleteExpense(sectionKey, index) {
@@ -136,82 +209,34 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
     onBudgetChange(updatedBudget);
   }
 
-  /* ---------------- Bills (Due Dates) ---------------- */
-
-  function handleAddBill() {
-    const name = window.prompt("Bill name (e.g., Rent, Phone, Car Payment):");
-    if (!name) return;
-
-    const amountInput = window.prompt(
-      `Amount for "${name}" (numbers only):`,
-      "0"
-    );
-    if (amountInput === null) return;
-    const amount = Number(amountInput);
-    if (!Number.isFinite(amount)) {
-      window.alert("That didn't look like a valid number.");
-      return;
-    }
-
-    const dueDate = window.prompt(
-      "Due date (YYYY-MM-DD):",
-      selectedDueDateISO || todayISO()
-    );
-    if (!dueDate) return;
-
-    // very light validation
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-      window.alert("Please use YYYY-MM-DD format (example: 2026-01-15).");
-      return;
-    }
-
-    const frequency = window.prompt(
-      "Frequency? (once, weekly, biweekly, monthly, yearly)",
-      "monthly"
-    );
-    if (frequency === null) return;
-
-    const nextBill = {
-      id: `bill-${Date.now()}`,
-      name: name.trim(),
-      amount,
-      dueDate,
-      frequency: (frequency || "monthly").trim().toLowerCase(),
-      paid: false,
-    };
-
-    onBudgetChange({ ...budget, bills: [...bills, nextBill] });
-    setSelectedDueDateISO(dueDate);
+  function handleTogglePaidOccurrence(occurrence) {
+    if (!occurrence?.templateId || !occurrence?.dueDate) return;
+    const key = checkKey(occurrence.templateId, occurrence.dueDate);
+    const currentPaid = !!scheduleChecks[key]?.paid;
+    onScheduleChecksChange({
+      ...(scheduleChecks || {}),
+      [key]: { paid: !currentPaid },
+    });
   }
 
-  function handleToggleBillPaid(billId) {
-    const nextBills = bills.map((b) =>
-      b.id === billId ? { ...b, paid: !b.paid } : b
-    );
-    onBudgetChange({ ...budget, bills: nextBills });
-  }
+  function handleDeleteTemplate(templateId) {
+    if (!templateId) return;
+    if (!window.confirm("Delete this repeating due item?")) return;
 
-  function handleDeleteBill(billId) {
-    if (!window.confirm("Delete this bill/due date?")) return;
-    const nextBills = bills.filter((b) => b.id !== billId);
-    onBudgetChange({ ...budget, bills: nextBills });
-  }
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    const nextTemplates = list.filter((t) => t.id !== templateId);
+    onScheduledTemplatesChange(nextTemplates);
 
-  function isOverdueUnpaid(b) {
-    if (!b) return false;
-    if (b.paid) return false;
-    const due = parseISODateLocal(b.dueDate);
-    if (!due) return false;
-    return due < today;
+    const entries = Object.entries(scheduleChecks || {});
+    const filteredChecks = entries.filter(([k]) => !k.startsWith(`${templateId}|`));
+    onScheduleChecksChange(Object.fromEntries(filteredChecks));
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-slate-100">{month} Budget</h1>
-        <span className="text-xs text-slate-400">
-          Income → Expenses → Goals
-        </span>
+        <span className="text-xs text-slate-400">Income ƒ+' Expenses ƒ+' Goals</span>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
@@ -219,9 +244,7 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
           <div className="text-3xl font-semibold text-emerald-300">
             ${incomeValue.toFixed(2)}
           </div>
-          <p className="mt-1 text-xs text-slate-400">
-            Total take-home income for the active month.
-          </p>
+          <p className="mt-1 text-xs text-slate-400">Total take-home income for the active month.</p>
           <button
             className="mt-3 px-3 py-1.5 text-xs rounded-md border border-emerald-400/70 text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 transition"
             onClick={handleEditIncome}
@@ -261,89 +284,84 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
           </button>
         </Card>
 
-        <Card title="REMAINING FOR GOALS">
-          <div className="text-2xl font-semibold text-cyan-300">
-            ${Number(totals?.leftover ?? 0).toFixed(2)}
-          </div>
-          <p className="mt-1 text-xs text-slate-400">
-            This is what's left after income minus all listed expenses.
-          </p>
-        </Card>
-
-        {/* ✅ Bills + Mini Calendar */}
-        <Card title="BILLS & DUE DATES">
-          <MiniDueCalendar
-            items={bills}
-            selectedDateISO={selectedDueDateISO}
-            onSelectDate={setSelectedDueDateISO}
-            initialMonthISO={setSelectedDueDateISO}
-          />
-
-          {/* ✅ Upcoming / Today / Overdue panel */}
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <BillsPanel
-              title="OVERDUE"
-              subtitle="Unpaid past due"
-              emptyText="No overdue bills 🎉"
-              items={billGroups.overdue}
-              tone="rose"
-              onJump={(iso) => setSelectedDueDateISO(iso)}
-              onTogglePaid={handleToggleBillPaid}
-              onDelete={handleDeleteBill}
+        <Card title="MONTHLY DUE DATES">
+          <div className="grid gap-3 md:grid-cols-2">
+            <MiniDueCalendar
+              items={occurrences}
+              selectedDateISO={selectedDueDateISO}
+              onSelectDate={setSelectedDueDateISO}
+              initialMonthISO={selectedDueDateISO}
             />
 
-            <BillsPanel
-              title="DUE TODAY"
-              subtitle={todayStr}
-              emptyText="Nothing due today."
-              items={billGroups.dueToday}
-              tone="amber"
-              onJump={(iso) => setSelectedDueDateISO(iso)}
-              onTogglePaid={handleToggleBillPaid}
-              onDelete={handleDeleteBill}
-            />
+            <div className="space-y-3">
+              <BillsPanel
+                title="OVERDUE"
+                subtitle="Due before today"
+                emptyText="No overdue items 🎉"
+                items={occurrenceGroups.overdue}
+                tone="rose"
+                templateLookup={templateById}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={(occ) => handleTogglePaidOccurrence(occ)}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
 
-            <BillsPanel
-              title="UPCOMING"
-              subtitle="Next 7 days"
-              emptyText="No upcoming bills."
-              items={billGroups.upcoming}
-              tone="cyan"
-              onJump={(iso) => setSelectedDueDateISO(iso)}
-              onTogglePaid={handleToggleBillPaid}
-              onDelete={handleDeleteBill}
-            />
+              <BillsPanel
+                title="DUE TODAY"
+                subtitle={todayStr}
+                emptyText="Nothing due today."
+                items={occurrenceGroups.dueToday}
+                tone="amber"
+                templateLookup={templateById}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={(occ) => handleTogglePaidOccurrence(occ)}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
+
+              <BillsPanel
+                title="UPCOMING"
+                subtitle="Next 7 days"
+                emptyText="No upcoming items."
+                items={occurrenceGroups.upcoming}
+                tone="cyan"
+                templateLookup={templateById}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={(occ) => handleTogglePaidOccurrence(occ)}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
+            </div>
           </div>
 
           {/* Selected day list */}
           <div className="mt-4 text-xs text-slate-400">
-            Due on{" "}
-            <span className="text-slate-200">{selectedDueDateISO}</span>
+            Due on <span className="text-slate-200">{selectedDueDateISO}</span>
           </div>
 
           <div className="mt-2 space-y-2 text-sm">
-            {billsDueSelectedDay.length === 0 ? (
-              <p className="text-xs text-slate-500">No bills due that day.</p>
+            {selectedDayItems.length === 0 ? (
+              <p className="text-xs text-slate-500">No items due that day.</p>
             ) : (
-              billsDueSelectedDay.map((b) => {
-                const amt = clampMoney(b?.amount);
-                const overdue = isOverdueUnpaid(b);
+              selectedDayItems.map((item) => {
+                const amt = clampMoney(item?.amount);
+                const paid = !!scheduleChecks[checkKey(item.templateId, item.dueDate)]?.paid;
+                const overdue =
+                  !paid &&
+                  !!today &&
+                  parseISODateLocal(item.dueDate) &&
+                  parseISODateLocal(item.dueDate) < today;
+                const cadence = templateById[item.templateId]?.cadence || "once";
                 return (
                   <div
-                    key={b.id}
+                    key={`${item.templateId}-${item.dueDate}`}
                     className={[
                       "flex items-center justify-between gap-2 rounded-md border bg-black/20 px-3 py-2",
-                      overdue
-                        ? "border-rose-400/60"
-                        : "border-slate-700/70",
+                      overdue ? "border-rose-400/60" : "border-slate-700/70",
                     ].join(" ")}
                   >
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="text-slate-200">{b.name}</span>
-                        <span className="text-slate-400">
-                          ${amt.toFixed(2)}
-                        </span>
+                        <span className="text-slate-200">{item.label}</span>
+                        <span className="text-slate-400">${amt.toFixed(2)}</span>
                         {overdue && (
                           <span className="text-[0.65rem] rounded-full border border-rose-400/60 px-2 py-0.5 text-rose-200 bg-rose-500/10">
                             overdue
@@ -351,25 +369,24 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
                         )}
                       </div>
                       <div className="text-[0.7rem] text-slate-500">
-                        {b.frequency || "monthly"} •{" "}
-                        {b.paid ? "paid" : "unpaid"}
+                        {cadence} ƒ?› {paid ? "paid" : "unpaid"}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2">
                       <button
                         className="px-2 py-1 text-[0.7rem] rounded-md border border-slate-600/70 text-slate-200 hover:border-cyan-400/60"
-                        onClick={() => handleToggleBillPaid(b.id)}
+                        onClick={() => handleTogglePaidOccurrence(item)}
                         type="button"
                       >
-                        {b.paid ? "Unpay" : "Paid"}
+                        {paid ? "Unpay" : "Paid"}
                       </button>
                       <button
                         className="text-[0.75rem] text-slate-500 hover:text-rose-400"
-                        onClick={() => handleDeleteBill(b.id)}
+                        onClick={() => handleDeleteTemplate(item.templateId)}
                         type="button"
                       >
-                        ✕
+                        ƒo
                       </button>
                     </div>
                   </div>
@@ -377,14 +394,6 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
               })
             )}
           </div>
-
-          <button
-            className="mt-3 px-3 py-1.5 text-xs rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
-            onClick={handleAddBill}
-            type="button"
-          >
-            + Add Bill / Due Date
-          </button>
         </Card>
       </div>
     </div>
@@ -394,9 +403,7 @@ function BudgetPage({ month, budget, totals = {}, onBudgetChange }) {
 function ListWithTotal({ items = [], total = 0, onDelete }) {
   return (
     <div className="space-y-2 text-sm">
-      {items.length === 0 && (
-        <p className="text-xs text-slate-500">No items yet.</p>
-      )}
+      {items.length === 0 && <p className="text-xs text-slate-500">No items yet.</p>}
       {items.map((item, index) => {
         const amount = Number(item?.amount ?? 0);
         const label = item?.label || item?.name || `Item ${index + 1}`;
@@ -415,16 +422,14 @@ function ListWithTotal({ items = [], total = 0, onDelete }) {
                 onClick={() => onDelete(index)}
                 type="button"
               >
-                ✕
+                ƒo
               </button>
             )}
           </div>
         );
       })}
       <div className="mt-2 pt-2 border-t border-slate-700 flex items-center justify-between text-xs">
-        <span className="uppercase tracking-[0.18em] text-slate-500">
-          Total
-        </span>
+        <span className="uppercase tracking-[0.18em] text-slate-500">Total</span>
         <span className="text-slate-100">${Number(total).toFixed(2)}</span>
       </div>
     </div>
@@ -436,7 +441,8 @@ function BillsPanel({
   subtitle,
   items = [],
   emptyText,
-  tone = "cyan", // "rose" | "amber" | "cyan"
+  tone = "cyan",
+  templateLookup = {},
   onJump = () => {},
   onTogglePaid = () => {},
   onDelete = () => {},
@@ -448,15 +454,9 @@ function BillsPanel({
   };
 
   return (
-    <div
-      className={`rounded-md border ${
-        toneStyles[tone] || toneStyles.cyan
-      } p-3`}
-    >
+    <div className={`rounded-md border ${toneStyles[tone] || toneStyles.cyan} p-3`}>
       <div className="flex items-baseline justify-between">
-        <div className="text-[0.7rem] tracking-[0.18em] uppercase">
-          {title}
-        </div>
+        <div className="text-[0.7rem] tracking-[0.18em] uppercase">{title}</div>
         <div className="text-[0.7rem] text-slate-400">{subtitle}</div>
       </div>
 
@@ -464,28 +464,26 @@ function BillsPanel({
         {items.length === 0 ? (
           <div className="text-xs text-slate-500">{emptyText}</div>
         ) : (
-          items.slice(0, 5).map((b) => {
-            const amt = clampMoney(b?.amount);
+          items.slice(0, 5).map((item) => {
+            const amt = clampMoney(item?.amount);
+            const cadence = templateLookup[item.templateId]?.cadence || "once";
             return (
               <div
-                key={b.id}
+                key={`${item.templateId}-${item.dueDate}`}
                 className="flex items-center justify-between gap-2 rounded-md border border-slate-700/60 bg-black/20 px-2 py-2"
               >
                 <button
                   type="button"
                   className="flex-1 text-left"
-                  onClick={() => onJump(b.dueDate)}
+                  onClick={() => onJump(item.dueDate)}
                   title="Jump to this day"
                 >
                   <div className="text-xs text-slate-200 leading-4">
-                    {b.name}
-                    <span className="text-slate-400">
-                      {" "}
-                      • ${amt.toFixed(2)}
-                    </span>
+                    {item.label}
+                    <span className="text-slate-400"> ƒ?› ${amt.toFixed(2)}</span>
                   </div>
                   <div className="text-[0.7rem] text-slate-500">
-                    {b.dueDate} • {b.frequency || "monthly"}
+                    {item.dueDate} ƒ?› {cadence}
                   </div>
                 </button>
 
@@ -493,17 +491,17 @@ function BillsPanel({
                   <button
                     type="button"
                     className="px-2 py-1 text-[0.7rem] rounded-md border border-slate-600/70 text-slate-200 hover:border-cyan-400/60"
-                    onClick={() => onTogglePaid(b.id)}
+                    onClick={() => onTogglePaid(item)}
                   >
-                    {b.paid ? "Unpay" : "Paid"}
+                    Paid
                   </button>
                   <button
                     type="button"
                     className="text-[0.75rem] text-slate-500 hover:text-rose-400"
-                    onClick={() => onDelete(b.id)}
-                    aria-label="Delete bill"
+                    onClick={() => onDelete(item)}
+                    aria-label="Delete due item"
                   >
-                    ✕
+                    ƒo
                   </button>
                 </div>
               </div>
@@ -512,9 +510,7 @@ function BillsPanel({
         )}
 
         {items.length > 5 && (
-          <div className="text-[0.7rem] text-slate-500">
-            +{items.length - 5} more…
-          </div>
+          <div className="text-[0.7rem] text-slate-500">+{items.length - 5} moreƒ?Ý</div>
         )}
       </div>
     </div>

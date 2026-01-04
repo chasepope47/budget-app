@@ -122,6 +122,10 @@ function App() {
     stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
   );
   const [currentPage, setCurrentPage] = useState(stored?.homePage || "dashboard");
+  const [scheduledTemplates, setScheduledTemplates] = useState(
+    Array.isArray(stored?.scheduledTemplates) ? stored.scheduledTemplates : []
+  );
+  const [scheduleChecks, setScheduleChecks] = useState(stored?.scheduleChecks || {});
 
   const [selectedGoalId, setSelectedGoalId] = useState(stored?.selectedGoalId || null);
   const [goalMode, setGoalMode] = useState(null);
@@ -288,6 +292,8 @@ function App() {
       setTheme(remote.theme || "dark");
       setTxFilter(remote.txFilter || "");
       setHomePage(remote.homePage || "dashboard");
+      setScheduledTemplates(Array.isArray(remote.scheduledTemplates) ? remote.scheduledTemplates : []);
+      setScheduleChecks(remote.scheduleChecks || {});
 
       setSelectedGoalId(remote.selectedGoalId || null);
     });
@@ -310,6 +316,8 @@ function App() {
       theme,
       txFilter,
       selectedGoalId,
+      scheduledTemplates,
+      scheduleChecks,
     };
 
     saveStoredState(state);
@@ -346,6 +354,8 @@ function App() {
     theme,
     txFilter,
     selectedGoalId,
+    scheduledTemplates,
+    scheduleChecks,
   ]);
 
   /* -------- Reset -------- */
@@ -636,6 +646,55 @@ function App() {
     );
   }
 
+  function updateActiveBudget(updater) {
+    setBudgetsByMonth((prev) => {
+      const curr =
+        prev?.[activeMonth] || {
+          month: activeMonth,
+          income: 0,
+          fixed: [],
+          variable: [],
+          transactions: [],
+        };
+      const next = updater ? updater(curr) : curr;
+      return { ...prev, [activeMonth]: next };
+    });
+  }
+
+  function handleAddTransactionRow(tx) {
+    updateActiveBudget((curr) => {
+      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const amountNum = Number(tx?.amount);
+      const cleanAmount = Number.isFinite(amountNum) ? amountNum : 0;
+      const nextTx = {
+        id: tx?.id || makeTxId(),
+        date: tx?.date || "",
+        description: tx?.description || "",
+        category: tx?.category || "",
+        accountId: tx?.accountId || currentAccountId || "main",
+        flowType: tx?.flowType,
+        amount: cleanAmount,
+      };
+      return { ...curr, transactions: [nextTx, ...list] };
+    });
+  }
+
+  function handleUpdateTransactionRow(index, patch = {}) {
+    updateActiveBudget((curr) => {
+      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const nextList = list.map((tx, i) => (i === index ? { ...tx, ...patch } : tx));
+      return { ...curr, transactions: nextList };
+    });
+  }
+
+  function handleDeleteTransactionRow(index) {
+    updateActiveBudget((curr) => {
+      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const nextList = list.filter((_, i) => i !== index);
+      return { ...curr, transactions: nextList };
+    });
+  }
+
   /* ---------------- GOALS FLOW ---------------- */
   // (unchanged goal code...)
 
@@ -736,6 +795,10 @@ function App() {
                 [activeMonth]: nextBudget,
               }))
             }
+            scheduledTemplates={scheduledTemplates}
+            scheduleChecks={scheduleChecks}
+            onScheduledTemplatesChange={setScheduledTemplates}
+            onScheduleChecksChange={setScheduleChecks}
           />
         )}
 
@@ -746,6 +809,13 @@ function App() {
             transactions={activeBudget.transactions || []}
             filter={txFilter}
             onFilterChange={setTxFilter}
+            scheduledTemplates={scheduledTemplates}
+            scheduleChecks={scheduleChecks}
+            onScheduledTemplatesChange={setScheduledTemplates}
+            onScheduleChecksChange={setScheduleChecks}
+            onAddTransaction={handleAddTransactionRow}
+            onUpdateTransaction={handleUpdateTransactionRow}
+            onDeleteTransaction={handleDeleteTransactionRow}
             onUpdateBudget={(nextBudget) =>
               setBudgetsByMonth((prev) => ({
                 ...prev,

@@ -18,17 +18,34 @@ const FLOW_TYPE_LABELS = {
   unknown: "Unknown",
 };
 
+function todayISO() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function isValidISODate(v) {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+}
+
 function TransactionsPage(props) {
   // ---- Support BOTH prop styles (so your App.jsx won’t break) ----
   const {
     // old/standalone props
     transactions = [],
-    accountName = "",
+    accountName: accountNameProp = "",
+    accounts = [],
+    currentAccountId = "main",
 
+    onAddTransaction = () => {},
     onUpdateTransaction = () => {},
     onDeleteTransaction = () => {},
 
     typeHints = [],
+    scheduledTemplates = [],
+    onScheduledTemplatesChange = () => {},
 
     // new App.jsx style props (you showed earlier)
     filter: filterFromApp,
@@ -38,6 +55,12 @@ function TransactionsPage(props) {
     filterText: filterTextProp,
     onChangeFilterText: onChangeFilterTextProp,
   } = props;
+
+  const accountFromList =
+    Array.isArray(accounts) && accounts.length > 0
+      ? accounts.find((a) => a.id === currentAccountId)
+      : null;
+  const accountName = accountNameProp || accountFromList?.name || "";
 
   // normalize the filter props
   const filterText = (filterTextProp ?? filterFromApp ?? "").toString();
@@ -82,6 +105,69 @@ function TransactionsPage(props) {
       maxAmount: "",
     });
     onChangeFilterText("");
+  };
+
+  const handleAddTransactionFlow = () => {
+    const description = window.prompt("Description:");
+    if (!description) return;
+
+    const amountInput = window.prompt("Amount (use negative for expense):", "0");
+    if (amountInput === null) return;
+    const amount = Number(amountInput);
+    if (!Number.isFinite(amount)) {
+      window.alert("Please enter a valid number for amount.");
+      return;
+    }
+
+    const dateInput = window.prompt("Date (YYYY-MM-DD):", todayISO());
+    if (!dateInput) return;
+    if (!isValidISODate(dateInput)) {
+      window.alert("Use YYYY-MM-DD format for dates.");
+      return;
+    }
+
+    const categoryInput = window.prompt("Category (optional):", "");
+
+    const tx = {
+      description: description.trim(),
+      amount,
+      date: dateInput,
+      category: (categoryInput || "").trim(),
+      accountId: currentAccountId || "main",
+    };
+
+    onAddTransaction(tx);
+
+    const repeat = window.confirm("Repeat? (add to calendar as repeating due item?)");
+    if (!repeat) return;
+
+    const cadenceInput = window.prompt(
+      "Cadence? (once, weekly, biweekly, monthly, yearly)",
+      "monthly"
+    );
+    if (cadenceInput === null) return;
+    const cadenceRaw = (cadenceInput || "monthly").trim().toLowerCase();
+    const allowedCadence = ["once", "weekly", "biweekly", "monthly", "yearly"];
+    const cadence = allowedCadence.includes(cadenceRaw) ? cadenceRaw : "monthly";
+
+    const dayMatch = dateInput.match(/^\d{4}-\d{2}-(\d{2})$/);
+    const dayOfMonth = dayMatch ? Number(dayMatch[1]) : undefined;
+
+    const nextTemplate = {
+      id: `sched-${Date.now()}`,
+      label: tx.description || "Transaction",
+      amount,
+      kind: amount >= 0 ? "income" : "expense",
+      source: "transaction",
+      startDate: dateInput,
+      cadence,
+      dayOfMonth,
+      accountId: tx.accountId,
+      category: tx.category || undefined,
+    };
+
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    onScheduledTemplatesChange([...list, nextTemplate]);
   };
 
   const hasActiveFilter = filters.query || filters.minAmount || filters.maxAmount;
@@ -186,6 +272,16 @@ function TransactionsPage(props) {
       </header>
 
       <Card title="ALL TRANSACTIONS">
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={handleAddTransactionFlow}
+            className="h-8 px-3 rounded-md border border-cyan-500/60 text-[0.7rem] font-medium text-cyan-200 hover:bg-cyan-500/10"
+          >
+            + Add Transaction
+          </button>
+        </div>
+
         {!hasData && (
           <p className="text-xs text-slate-400">
             No transactions yet. Import a CSV on the Dashboard to see them here.
