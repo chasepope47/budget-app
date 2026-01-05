@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 import { useFirebaseAuth } from "./FirebaseAuthProvider.jsx";
-import { saveWorkspaceState, loadWorkspaceState } from "./workspaceStateApi.js";
+import { saveWorkspaceState } from "./workspaceStateApi.js";
 import { db } from "./firebaseClient.js";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
@@ -48,51 +48,40 @@ function clampNumber(n, fallback = 0) {
 
 const DEFAULT_STATE = {
   monthKey: safeMonthKey(),
-
-  // Budgets keyed by "YYYY-MM"
   budgetsByMonth: {},
 
-  // Accounts
   accounts: [{ id: "main", name: "Main Account", type: "checking" }],
   currentAccountId: "main",
 
-  // Schedule
   scheduledTemplates: [],
   scheduleChecks: {},
 
-  // Goals
   goals: [],
   currentGoalId: null,
 
-  // Nav
   currentPage: "dashboard",
 };
 
 export default function App() {
   const { user, workspaceId, signOut } = useFirebaseAuth();
-
   const [toast, setToast] = useState(null);
 
-  // ---- Load initial state from localStorage (fast boot) ----
   const [appState, setAppState] = useState(() => {
     const stored = migrateStoredState(loadStoredState());
     return stored ? { ...DEFAULT_STATE, ...stored } : DEFAULT_STATE;
   });
 
-  // Prevent saving loops
   const savingRef = useRef(false);
 
-  // ---- Keep localStorage updated ----
   useEffect(() => {
     saveStoredState(appState);
   }, [appState]);
 
-  // ---- Firestore workspace sync (when signed in) ----
+  // Firestore workspace sync
   useEffect(() => {
     if (!user || !workspaceId) return;
 
     const ref = doc(db, "workspaces", workspaceId);
-
     const unsub = onSnapshot(
       ref,
       (snap) => {
@@ -114,7 +103,7 @@ export default function App() {
     return () => unsub();
   }, [user, workspaceId]);
 
-  // ---- Persist to Firestore (debounced) ----
+  // Persist to Firestore (debounced)
   useEffect(() => {
     if (!user || !workspaceId) return;
     if (savingRef.current) return;
@@ -133,7 +122,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [appState, user, workspaceId]);
 
-  // ---- Ensure user profile exists ----
+  // Ensure user profile exists
   useEffect(() => {
     if (!user) return;
     loadOrCreateUserProfile(user.uid).catch((e) => {
@@ -141,7 +130,6 @@ export default function App() {
     });
   }, [user]);
 
-  // ---- Derived ----
   const monthKey = appState.monthKey || safeMonthKey();
   const monthLabel = useMemo(() => monthLabelFromKey(monthKey), [monthKey]);
 
@@ -175,7 +163,6 @@ export default function App() {
     return { fixedTotal: fixed, variableTotal: variable, fixed, variable };
   }, [budget.fixed, budget.variable]);
 
-  // ---- Mutators ----
   function setMonthKey(nextKey) {
     setAppState((prev) => ({ ...prev, monthKey: nextKey }));
   }
@@ -229,53 +216,57 @@ export default function App() {
     }));
   }
 
-  // ---- Auth gate ----
   if (!user) return <AuthScreen />;
 
-  // ---- Render ----
   const page = appState.currentPage || "dashboard";
 
   return (
     <div className="app-shell">
+      {/* ✅ Header uses the CSS classes you already wrote */}
       <header className="app-header">
-        <div className="left">
-          <div className="brand">
-            <div className="title">FlowMetrics Budget</div>
-            <div className="subtitle">{monthLabel}</div>
-          </div>
-        </div>
+        <div className="content headerRow">
+          <div className="brandAndNav">
+            <div className="appTitle">
+              FlowMetrics Budget <span style={{ opacity: 0.6 }}>·</span>{" "}
+              <span style={{ opacity: 0.85 }}>{monthLabel}</span>
+            </div>
 
-        <div className="right">
-          <ActionsMenu monthKey={monthKey} onSetMonthKey={setMonthKey} onToast={setToast} />
-          <ProfileMenu
-            user={user}
-            onSignOut={signOut}
-            onUpdateProfile={(patch) => updateUserProfile(user.uid, patch)}
-          />
+            {/* ✅ Nav row: scrolls on mobile instead of smashing into the profile/menu */}
+            <nav className="navRow" aria-label="Primary navigation">
+              <NavButton active={page === "dashboard"} onClick={() => setCurrentPage("dashboard")}>
+                Dashboard
+              </NavButton>
+              <NavButton active={page === "balances"} onClick={() => setCurrentPage("balances")}>
+                Balances
+              </NavButton>
+              <NavButton active={page === "budget"} onClick={() => setCurrentPage("budget")}>
+                Budget
+              </NavButton>
+              <NavButton
+                active={page === "transactions"}
+                onClick={() => setCurrentPage("transactions")}
+              >
+                Transactions
+              </NavButton>
+              <NavButton active={page === "reports"} onClick={() => setCurrentPage("reports")}>
+                Reports
+              </NavButton>
+            </nav>
+          </div>
+
+          <div className="headerRight">
+            <ActionsMenu monthKey={monthKey} onSetMonthKey={setMonthKey} onToast={setToast} />
+            <ProfileMenu
+              user={user}
+              onSignOut={signOut}
+              onUpdateProfile={(patch) => updateUserProfile(user.uid, patch)}
+            />
+          </div>
         </div>
       </header>
 
-      <nav className="app-nav">
-        <NavButton active={page === "dashboard"} onClick={() => setCurrentPage("dashboard")}>
-          Dashboard
-        </NavButton>
-        <NavButton active={page === "balances"} onClick={() => setCurrentPage("balances")}>
-          Balances
-        </NavButton>
-        <NavButton active={page === "budget"} onClick={() => setCurrentPage("budget")}>
-          Budget
-        </NavButton>
-        <NavButton active={page === "transactions"} onClick={() => setCurrentPage("transactions")}>
-          Transactions
-        </NavButton>
-        <NavButton active={page === "reports"} onClick={() => setCurrentPage("reports")}>
-          Reports
-        </NavButton>
-      </nav>
-
       <main className="app-main">
-        {/* ✅ Layout fix: force the routed pages to use full width and center nicely */}
-        <div className="w-full max-w-6xl mx-auto px-4 py-4">
+        <div className="content">
           {page === "dashboard" && (
             <Dashboard
               month={monthLabel}
