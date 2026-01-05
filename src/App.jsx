@@ -5,7 +5,7 @@ import "./App.css";
 import { useFirebaseAuth } from "./FirebaseAuthProvider.jsx";
 import { saveWorkspaceState, loadWorkspaceState } from "./workspaceStateApi.js";
 import { db } from "./firebaseClient.js";
-import { doc, onSnapshot, deleteDoc } from "firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
 import {
   loadOrCreateUserProfile,
   updateUserProfile,
@@ -26,14 +26,13 @@ import TransactionsPage from "./pages/TransactionsPage.jsx";
 import GoalDetailPage from "./pages/GoalDetailPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 
-// Libs
+// Libs (matches your updated src/lib/storage.js)
 import {
-  STORAGE_KEY,
   loadStoredState,
   saveStoredState,
-  monthKeyFromISO,
+  migrateStoredState,
   monthLabelFromKey,
-} from "./lib/storage.js"; // <— adjust path if your helpers live elsewhere
+} from "./lib/storage.js";
 
 function safeMonthKey() {
   const d = new Date();
@@ -50,24 +49,22 @@ function clampNumber(n, fallback = 0) {
 const DEFAULT_STATE = {
   monthKey: safeMonthKey(),
 
-  // budgets keyed by "YYYY-MM"
-  budgetsByMonth: {
-    // "2026-01": { estimatedIncome: 0, fixed: [], variable: [], goals: [], transactions: [], ... }
-  },
+  // Budgets keyed by "YYYY-MM"
+  budgetsByMonth: {},
 
-  // global (optional)
-  accounts: [{ id: "main", name: "Main", balance: 0 }],
+  // Accounts
+  accounts: [{ id: "main", name: "Main Account", type: "checking" }],
   currentAccountId: "main",
 
-  // recurring schedule
+  // Schedule
   scheduledTemplates: [],
   scheduleChecks: {},
 
-  // goals etc
+  // Goals
   goals: [],
   currentGoalId: null,
 
-  // nav
+  // Nav
   currentPage: "dashboard", // dashboard | balances | budget | transactions | goal | reports
 };
 
@@ -76,32 +73,37 @@ export default function App() {
 
   const [toast, setToast] = useState(null);
 
-  // ---------
-  // Local state (persists to Firestore + localStorage)
-  // ---------
+  // ---- Load initial state from localStorage (fast boot) ----
   const [appState, setAppState] = useState(() => {
-    // Prefer localStorage immediately for fast boot
-    const stored = loadStoredState(STORAGE_KEY);
+    const stored = migrateStoredState(loadStoredState());
     return stored ? { ...DEFAULT_STATE, ...stored } : DEFAULT_STATE;
   });
 
+  // Prevent saving loops
   const savingRef = useRef(false);
 
-  // ---------
-  // Sync workspace state from Firestore (source of truth when signed in)
-  // ---------
+  // ---- Keep localStorage updated ----
+  useEffect(() => {
+    saveStoredState(appState);
+  }, [appState]);
+
+  // ---- Firestore workspace sync (when signed in) ----
   useEffect(() => {
     if (!user || !workspaceId) return;
 
     const ref = doc(db, "workspaces", workspaceId);
+
     const unsub = onSnapshot(
       ref,
       (snap) => {
         const remote = snap.exists() ? snap.data()?.state : null;
         if (!remote) return;
 
-        // Merge remote into current defaults to avoid missing keys
-        setAppState((prev) => ({ ...DEFAULT_STATE, ...prev, ...remote }));
+        setAppState((prev) => ({
+          ...DEFAULT_STATE,
+          ...prev,
+          ...migrateStoredState(remote),
+        }));
       },
       (err) => {
         console.error("onSnapshot(workspace) failed", err);
@@ -112,16 +114,7 @@ export default function App() {
     return () => unsub();
   }, [user, workspaceId]);
 
-  // ---------
-  // Persist state to localStorage always
-  // ---------
-  useEffect(() => {
-    saveStoredState(STORAGE_KEY, appState);
-  }, [appState]);
-
-  // ---------
-  // Persist state to Firestore (debounced-ish)
-  // ---------
+  // ---- Persist to Firestore (debounced) ----
   useEffect(() => {
     if (!user || !workspaceId) return;
     if (savingRef.current) return;
@@ -140,9 +133,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [appState, user, workspaceId]);
 
-  // ---------
-  // User profile (optional)
-  // ---------
+  // ---- Ensure user profile exists ----
   useEffect(() => {
     if (!user) return;
     loadOrCreateUserProfile(user.uid).catch((e) => {
@@ -150,37 +141,28 @@ export default function App() {
     });
   }, [user]);
 
-  // ---------
-  // Derived state helpers
-  // ---------
+  // ---- Derived ----
   const monthKey = appState.monthKey || safeMonthKey();
-  const monthLabel = useMemo(() => {
-    try {
-      return monthLabelFromKey ? monthLabelFromKey(monthKey) : monthKey;
-    } catch {
-      return monthKey;
-    }
-  }, [monthKey]);
+  const monthLabel = useMemo(() => monthLabelFromKey(monthKey), [monthKey]);
 
   const budget = useMemo(() => {
     const b = appState.budgetsByMonth?.[monthKey];
-    return b
-      ? b
-      : {
-          estimatedIncome: 0,
-          useActualIncome: false,
-          fixed: [],
-          variable: [],
-          goals: [],
-          transactions: [],
-        };
+    return (
+      b || {
+        estimatedIncome: 0,
+        useActualIncome: false,
+        fixed: [],
+        variable: [],
+        goals: [],
+        transactions: [],
+      }
+    );
   }, [appState.budgetsByMonth, monthKey]);
 
   const transactions = Array.isArray(budget?.transactions) ? budget.transactions : [];
   const accounts = Array.isArray(appState.accounts) ? appState.accounts : [];
   const currentAccountId = appState.currentAccountId || "main";
 
-  // Totals for BudgetPage
   const totals = useMemo(() => {
     const fixed = (Array.isArray(budget.fixed) ? budget.fixed : []).reduce(
       (sum, i) => sum + clampNumber(i?.amount),
@@ -193,9 +175,7 @@ export default function App() {
     return { fixedTotal: fixed, variableTotal: variable, fixed, variable };
   }, [budget.fixed, budget.variable]);
 
-  // ---------
-  // Mutators
-  // ---------
+  // ---- Mutators ----
   function setMonthKey(nextKey) {
     setAppState((prev) => ({ ...prev, monthKey: nextKey }));
   }
@@ -221,11 +201,11 @@ export default function App() {
       flowType: tx?.flowType || undefined,
     };
 
-    const nextBudget = {
+    updateBudget({
       ...budget,
       transactions: [...transactions, nextTx],
-    };
-    updateBudget(nextBudget);
+    });
+
     setToast({ kind: "success", message: "Transaction added." });
   }
 
@@ -242,24 +222,21 @@ export default function App() {
   }
 
   function openGoal(goalId) {
-    setAppState((prev) => ({ ...prev, currentGoalId: goalId, currentPage: "goal" }));
+    setAppState((prev) => ({
+      ...prev,
+      currentGoalId: goalId,
+      currentPage: "goal",
+    }));
   }
 
-  // ---------
-  // Auth gate
-  // ---------
-  if (!user) {
-    return <AuthScreen />;
-  }
+  // ---- Auth gate ----
+  if (!user) return <AuthScreen />;
 
-  // ---------
-  // Page switch
-  // ---------
+  // ---- Render ----
   const page = appState.currentPage || "dashboard";
 
   return (
     <div className="app-shell">
-      {/* Top bar */}
       <header className="app-header">
         <div className="left">
           <div className="brand">
@@ -269,11 +246,7 @@ export default function App() {
         </div>
 
         <div className="right">
-          <ActionsMenu
-            monthKey={monthKey}
-            onSetMonthKey={setMonthKey}
-            onToast={setToast}
-          />
+          <ActionsMenu monthKey={monthKey} onSetMonthKey={setMonthKey} onToast={setToast} />
           <ProfileMenu
             user={user}
             onSignOut={signOut}
@@ -282,7 +255,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Nav */}
       <nav className="app-nav">
         <NavButton active={page === "dashboard"} onClick={() => setCurrentPage("dashboard")}>
           Dashboard
@@ -301,7 +273,6 @@ export default function App() {
         </NavButton>
       </nav>
 
-      {/* Main */}
       <main className="app-main">
         {page === "dashboard" && (
           <Dashboard
@@ -309,7 +280,11 @@ export default function App() {
             income={clampNumber(budget?.estimatedIncome ?? budget?.income)}
             fixed={totals.fixedTotal}
             variable={totals.variableTotal}
-            leftover={clampNumber(budget?.estimatedIncome ?? budget?.income) - totals.fixedTotal - totals.variableTotal}
+            leftover={
+              clampNumber(budget?.estimatedIncome ?? budget?.income) -
+              totals.fixedTotal -
+              totals.variableTotal
+            }
             goals={Array.isArray(appState.goals) ? appState.goals : []}
             transactions={transactions}
             accounts={accounts}
@@ -318,9 +293,7 @@ export default function App() {
               setAppState((prev) => ({ ...prev, currentAccountId: id }))
             }
             onOpenGoal={openGoal}
-            onTransactionsUpdate={(nextTx) =>
-              updateBudget({ ...budget, transactions: nextTx })
-            }
+            onTransactionsUpdate={(nextTx) => updateBudget({ ...budget, transactions: nextTx })}
             currentAccountBalance={0}
             totalBalance={0}
             sectionsOrder={budget?.sectionsOrder}
@@ -373,7 +346,12 @@ export default function App() {
             goalId={appState.currentGoalId}
             goals={Array.isArray(appState.goals) ? appState.goals : []}
             onBack={() => setCurrentPage("dashboard")}
-            onUpdateGoals={(nextGoals) => setAppState((prev) => ({ ...prev, goals: nextGoals }))}
+            onUpdateGoals={(nextGoals) =>
+              setAppState((prev) => ({
+                ...prev,
+                goals: nextGoals,
+              }))
+            }
           />
         )}
 
@@ -388,10 +366,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Toast */}
-      {toast && (
-        <Toast kind={toast.kind} message={toast.message} onClose={() => setToast(null)} />
-      )}
+      {toast && <Toast kind={toast.kind} message={toast.message} onClose={() => setToast(null)} />}
     </div>
   );
 }
