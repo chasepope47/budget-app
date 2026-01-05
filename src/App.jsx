@@ -1,1017 +1,756 @@
-// src/App.jsx
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import "./App.css";
+// src/pages/BudgetPage.jsx
+import React from "react";
+import Card from "../components/Card.jsx";
+import MiniDueCalendar from "../components/MiniDueCalendar.jsx";
+import { expandTemplatesForMonth, checkKey } from "../lib/schedule.js";
 
-import { useFirebaseAuth } from "./FirebaseAuthProvider.jsx";
-import { saveWorkspaceState } from "./workspaceStateApi.js";
-import { db } from "./firebaseClient.js";
-import { doc, onSnapshot, deleteDoc } from "firebase/firestore";
-import {
-  loadOrCreateUserProfile,
-  updateUserProfile,
-} from "./userProfileApi.firebase.js";
-
-// Components
-import NavButton from "./components/NavButton.jsx";
-import ActionsMenu from "./components/ActionsMenu.jsx";
-import AuthScreen from "./components/AuthScreen.jsx";
-import Toast from "./components/Toast.jsx";
-import ProfileMenu from "./components/ProfileMenu.jsx";
-
-// Pages
-import Dashboard from "./pages/Dashboard.jsx";
-import BalancesDashboard from "./pages/BalancesDashboard.jsx";
-import BudgetPage from "./pages/BudgetPage.jsx";
-import TransactionsPage from "./pages/TransactionsPage.jsx";
-import GoalDetailPage from "./pages/GoalDetailPage.jsx";
-import ReportsPage from "./pages/ReportsPage.jsx";
-
-// Libs
-import {
-  STORAGE_KEY,
-  loadStoredState,
-  saveStoredState,
-  migrateStoredState,
-} from "./lib/storage.js";
-import {
-  sumAmounts,
-  normalizeAccounts,
-  importTransactionsWithDetection,
-  mergeTransactions,
-  computeAccountBalance,
-} from "./lib/accounts.js";
-import { getThemeConfig } from "./themeConfig.js";
-
-/* ---------------- Navigation ---------------- */
-
-const NAV_ITEMS = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "balances", label: "Accounts" },
-  { key: "budget", label: "Budget" },
-  { key: "transactions", label: "Transactions" },
-  { key: "goalDetail", label: "Goals" },
-  { key: "reports", label: "Reports" },
-];
-
-const NAV_LABELS = Object.fromEntries(NAV_ITEMS.map((n) => [n.key, n.label]));
-
-const DEFAULT_DASHBOARD_SECTIONS = [
-  "monthOverview",
-  "accountSnapshot",
-  "goals",
-  "csvImport",
-];
-
-function getCurrentMonthKey() {
+function todayISO() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function App() {
-  const {
-    user,
-    authLoading,
-    signInWithEmail,
-    signUpWithEmail,
-    signOut,
-    resetPassword,
-  } = useFirebaseAuth();
+function parseISODateLocal(iso) {
+  if (!iso || typeof iso !== "string") return null;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const dt = new Date(y, mo, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
 
-  function makeId(prefix = "id") {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-    return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
+function formatISODate(date) {
+  const d = new Date(date);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
-  function mergeDedupTx(prevTx = [], nextTx = []) {
-    const seen = new Set(
-      prevTx.map((t) => `${t.date}|${t.amount}|${t.description}|${t.accountId}`)
-    );
-    const merged = [...prevTx];
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
 
-    for (const t of nextTx) {
-      const sig = `${t.date}|${t.amount}|${t.description}|${t.accountId}`;
-      if (!seen.has(sig)) {
-        seen.add(sig);
-        merged.push(t);
-      }
-    }
-    return merged;
-  }
+function clampMoney(n) {
+  const x = Number(n);
+  return Number.isFinite(x) ? x : 0;
+}
 
-  const activeWorkspaceId = user?.uid || null;
-  const applyingRemoteRef = useRef(false);
-  const saveTimeoutRef = useRef(null);
-  const initialStoredRef = useRef(null);
-  const pushingLocalRef = useRef(false);
+function monthKeyFromISO(isoDayStr) {
+  if (!isoDayStr || typeof isoDayStr !== "string") return "";
+  return isoDayStr.slice(0, 7);
+}
 
-  if (initialStoredRef.current === null) {
-    initialStoredRef.current = migrateStoredState(loadStoredState());
-  }
-  const stored = initialStoredRef.current;
+function computeActualIncomeFromTransactions(transactions = []) {
+  const list = Array.isArray(transactions) ? transactions : [];
+  return list.reduce((sum, tx) => {
+    const amt = Number(tx?.amount);
+    if (!Number.isFinite(amt)) return sum;
 
-  /* -------- State -------- */
-  const [theme, setTheme] = useState(stored?.theme || "dark");
-  const [budgetsByMonth, setBudgetsByMonth] = useState(stored?.budgetsByMonth || {});
-  const [activeMonth, setActiveMonth] = useState(
-    stored?.activeMonth || getCurrentMonthKey()
+    const ft = (tx?.flowType || "").toLowerCase();
+    if (ft === "income") return sum + Math.max(0, amt);
+    if (ft === "expense" || ft === "transfer" || ft === "ignore") return sum;
+
+    return amt > 0 ? sum + amt : sum;
+  }, 0);
+}
+
+function BudgetPage({
+  month,
+  budget,
+  totals = {},
+  onBudgetChange,
+  scheduledTemplates = [],
+  scheduleChecks = {},
+  onScheduledTemplatesChange = () => {},
+  onScheduleChecksChange = () => {},
+
+  // ✅ (optional) from App.jsx in your updated version
+  accounts = [],
+  currentAccountId = "main",
+  onAddTransaction = () => {}, // allows “Add income/expense” right from this page
+}) {
+  const fixedTotal = Number(totals?.fixed ?? totals?.fixedTotal ?? 0);
+  const variableTotal = Number(totals?.variable ?? totals?.variableTotal ?? 0);
+
+  const fixedItems = Array.isArray(budget?.fixed) ? budget.fixed : [];
+  const variableItems = Array.isArray(budget?.variable) ? budget.variable : [];
+  const tx = Array.isArray(budget?.transactions) ? budget.transactions : [];
+
+  // ✅ Income model (estimate + actual + toggle)
+  const estimatedIncome =
+    Number.isFinite(Number(budget?.estimatedIncome))
+      ? Number(budget.estimatedIncome)
+      : Number.isFinite(Number(budget?.income))
+      ? Number(budget.income) // backward compat
+      : 0;
+
+  const actualIncome = React.useMemo(
+    () => computeActualIncomeFromTransactions(tx),
+    [tx]
   );
-  const [goals, setGoals] = useState(stored?.goals || []);
-  const [accounts, setAccounts] = useState(normalizeAccounts(stored?.accounts || []));
-  const [currentAccountId, setCurrentAccountId] = useState(
-    stored?.currentAccountId || "main"
-  );
-  const [navOrder, setNavOrder] = useState(
-    stored?.navOrder || NAV_ITEMS.map((n) => n.key)
-  );
-  const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
-  const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
-    stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
-  );
-  const [currentPage, setCurrentPage] = useState(stored?.homePage || "dashboard");
-  const [scheduledTemplates, setScheduledTemplates] = useState(
-    Array.isArray(stored?.scheduledTemplates) ? stored.scheduledTemplates : []
-  );
-  const [scheduleChecks, setScheduleChecks] = useState(stored?.scheduleChecks || {});
-  const [clientUpdatedAt, setClientUpdatedAt] = useState(stored?.clientUpdatedAt || 0);
 
-  const [selectedGoalId, setSelectedGoalId] = useState(stored?.selectedGoalId || null);
-  const [goalMode, setGoalMode] = useState(null);
+  const useActualIncome = !!budget?.useActualIncome;
 
-  const [txFilter, setTxFilter] = useState(stored?.txFilter || "");
-  const [toast, setToast] = useState(null);
-  const [lastSavedAt, setLastSavedAt] = useState(null);
+  const incomeForMath = useActualIncome ? actualIncome : estimatedIncome;
+  const leftoverForMath = incomeForMath - fixedTotal - variableTotal;
 
-  const [userProfile, setUserProfile] = useState(null);
-  const [profileLoading, setProfileLoading] = useState(false);
+  // ✅ Calendar selection
+  const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
 
-  // ✅ Live refs
-  const accountsRef = useRef(accounts);
-  const budgetsByMonthRef = useRef(budgetsByMonth);
-  const activeMonthRef = useRef(activeMonth);
-  const currentAccountIdRef = useRef(currentAccountId);
-  const clientUpdatedAtRef = useRef(clientUpdatedAt);
-
-  useEffect(() => {
-    accountsRef.current = accounts;
-  }, [accounts]);
-
-  useEffect(() => {
-    budgetsByMonthRef.current = budgetsByMonth;
-  }, [budgetsByMonth]);
-
-  useEffect(() => {
-    activeMonthRef.current = activeMonth;
-  }, [activeMonth]);
-
-  useEffect(() => {
-    currentAccountIdRef.current = currentAccountId;
-  }, [currentAccountId]);
-
-  useEffect(() => {
-    clientUpdatedAtRef.current = clientUpdatedAt;
-  }, [clientUpdatedAt]);
-
-  function buildStateSnapshot(tsOverride) {
-    const stamp =
-      tsOverride !== undefined && tsOverride !== null
-        ? tsOverride
-        : clientUpdatedAtRef.current || clientUpdatedAt || 0;
-
-    return {
-      budgetsByMonth,
-      activeMonth,
-      goals,
-      accounts,
-      currentAccountId,
-      navOrder,
-      homePage,
-      dashboardSectionsOrder,
-      theme,
-      txFilter,
-      selectedGoalId,
-      scheduledTemplates,
-      scheduleChecks,
-      clientUpdatedAt: stamp,
-    };
-  }
-
-  // ✅ Toast aggregation
-  const importToastAggRef = useRef({
-    files: 0,
-    tx: 0,
-    newAccounts: 0,
-    touchedAccounts: new Set(),
-    sources: new Set(),
+  // ✅ Calendar visible month (rollover)
+  const [calendarMonthISO, setCalendarMonthISO] = React.useState(() => {
+    const mk = monthKeyFromISO(selectedDueDateISO);
+    return `${mk}-01`;
   });
-  const importToastTimerRef = useRef(null);
 
-  function flushImportToastSoon() {
-    if (importToastTimerRef.current) clearTimeout(importToastTimerRef.current);
+  // Keep calendar month aligned if user selects a date in another month
+  React.useEffect(() => {
+    if (!selectedDueDateISO) return;
+    const mk = monthKeyFromISO(selectedDueDateISO);
+    setCalendarMonthISO(`${mk}-01`);
+  }, [selectedDueDateISO]);
 
-    importToastTimerRef.current = setTimeout(() => {
-      const agg = importToastAggRef.current;
-      if (!agg || agg.files <= 0) return;
-
-      const accountCount = agg.touchedAccounts?.size || 0;
-      const sources = Array.from(agg.sources || []);
-      sources.sort((a, b) => a.localeCompare(b));
-
-      const shown = sources.slice(0, 4);
-      const more = Math.max(0, sources.length - shown.length);
-      const sourcesText =
-        shown.length > 0
-          ? ` (${shown.join(", ")}${more ? `, +${more} more` : ""})`
-          : "";
-
-      let msg = "";
-      if (agg.files === 1) {
-        msg = `Imported ${agg.tx} transaction${agg.tx === 1 ? "" : "s"} into ${
-          accountCount === 1
-            ? `"${Array.from(agg.touchedAccounts)[0]}"`
-            : "your accounts"
-        }${sourcesText}.`;
-      } else {
-        msg = `Imported ${agg.tx} transaction${agg.tx === 1 ? "" : "s"} from ${
-          agg.files
-        } files into ${
-          accountCount === 1
-            ? `"${Array.from(agg.touchedAccounts)[0]}"`
-            : `${accountCount} accounts`
-        }${sourcesText}.`;
-      }
-
-      if (agg.newAccounts > 0) {
-        msg += ` Created ${agg.newAccounts} new account${agg.newAccounts === 1 ? "" : "s"}.`;
-      }
-
-      setToast({ variant: "success", message: msg });
-
-      importToastAggRef.current = {
-        files: 0,
-        tx: 0,
-        newAccounts: 0,
-        touchedAccounts: new Set(),
-        sources: new Set(),
-      };
-    }, 750);
-  }
-
-  /* -------- Derived -------- */
-  const activeBudget =
-    budgetsByMonth[activeMonth] || { month: activeMonth, income: 0, transactions: [] };
-
-  function computeActualIncomeFromTransactions(transactions = []) {
-    const list = Array.isArray(transactions) ? transactions : [];
-    return list.reduce((sum, tx) => {
-      const amt = Number(tx?.amount);
-      if (!Number.isFinite(amt)) return sum;
-
-      const ft = (tx?.flowType || "").toLowerCase();
-      if (ft === "income") return sum + Math.max(0, amt);
-      if (ft === "expense" || ft === "transfer" || ft === "ignore") return sum;
-
-      // fallback: positive = income
-      return amt > 0 ? sum + amt : sum;
-    }, 0);
-  }
-
-  const budgetEstimatedIncome = Number.isFinite(Number(activeBudget?.estimatedIncome))
-    ? Number(activeBudget.estimatedIncome)
-    : Number.isFinite(Number(activeBudget?.income))
-    ? Number(activeBudget.income) // legacy fallback
-    : 0;
-
-  const budgetActualIncome = useMemo(
-    () => computeActualIncomeFromTransactions(activeBudget.transactions || []),
-    [activeBudget.transactions]
+  const calendarMonthKey = React.useMemo(
+    () => monthKeyFromISO(calendarMonthISO),
+    [calendarMonthISO]
   );
 
-  const incomeForMath = activeBudget?.useActualIncome ? budgetActualIncome : budgetEstimatedIncome;
+  // ✅ Expand occurrences for the *visible month*
+  const occurrences = React.useMemo(
+    () => expandTemplatesForMonth(scheduledTemplates, calendarMonthKey),
+    [scheduledTemplates, calendarMonthKey]
+  );
 
-  const totals = useMemo(() => {
-    const fixed = sumAmounts(activeBudget.fixed || []);
-    const variable = sumAmounts(activeBudget.variable || []);
-    return { fixed, variable, leftover: incomeForMath - fixed - variable };
-  }, [activeBudget, incomeForMath]);
-
-  const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
-
-  // ✅ UPDATED: use confirmed balances when present
-  const { currentAccountBalance, totalBalance } = useMemo(() => {
-    const list = Array.isArray(accounts) ? accounts : [];
-    const current = list.find((a) => a.id === currentAccountId);
-
-    const balanceFor = (acc) => {
-      const cb = Number(acc?.currentBalance);
-      if (Number.isFinite(cb)) return cb; // ✅ confirmed/statement balance wins
-      return computeAccountBalance(acc);
-    };
-
-    const currentBalance = current ? balanceFor(current) : 0;
-    const total = list.reduce((sum, acc) => sum + balanceFor(acc), 0);
-
-    return { currentAccountBalance: currentBalance, totalBalance: total };
-  }, [accounts, currentAccountId]);
-
-  useEffect(() => {
-    const list = Array.isArray(accounts) ? accounts : [];
-    if (list.length === 0) return;
-    const hasCurrent = list.some((a) => a.id === currentAccountId);
-    if (!hasCurrent) setCurrentAccountId(list[0].id);
-  }, [accounts, currentAccountId]);
-
-  /* -------- Profile -------- */
-  useEffect(() => {
-    if (!user?.uid) return;
-    setProfileLoading(true);
-    loadOrCreateUserProfile(user).then(setUserProfile).finally(() => setProfileLoading(false));
-  }, [user?.uid]);
-
-  /* -------- Remote sync (firebase) -------- */
-  useEffect(() => {
-    if (!activeWorkspaceId) return;
-
-    const ref = doc(db, "workspaces", activeWorkspaceId);
-    const unsub = onSnapshot(ref, (snap) => {
-      const remote = snap.data()?.state;
-      if (!remote) return;
-
-      const remoteTs = Number(remote.clientUpdatedAt) || 0;
-      const localTs = clientUpdatedAtRef.current || 0;
-
-      if (remoteTs > localTs) {
-        applyingRemoteRef.current = true;
-        clientUpdatedAtRef.current = remoteTs;
-
-        setBudgetsByMonth((prev) => remote.budgetsByMonth ?? prev ?? {});
-        setActiveMonth(remote.activeMonth || getCurrentMonthKey());
-
-        setGoals((prev) => (Array.isArray(remote.goals) ? remote.goals : prev));
-
-        setAccounts((prev) => normalizeAccounts(remote.accounts ?? prev ?? []));
-        setCurrentAccountId(remote.currentAccountId ?? currentAccountIdRef.current ?? "main");
-        setNavOrder((prev) => remote.navOrder ?? prev ?? NAV_ITEMS.map((n) => n.key));
-        setDashboardSectionsOrder(
-          (prev) => remote.dashboardSectionsOrder ?? prev ?? DEFAULT_DASHBOARD_SECTIONS
-        );
-        setTheme((prev) => remote.theme ?? prev ?? "dark");
-        setTxFilter((prev) => remote.txFilter ?? prev ?? "");
-        setHomePage((prev) => remote.homePage ?? prev ?? "dashboard");
-        setScheduledTemplates((prev) =>
-          Array.isArray(remote.scheduledTemplates) ? remote.scheduledTemplates : prev || []
-        );
-        setScheduleChecks((prev) => remote.scheduleChecks ?? prev ?? {});
-        setSelectedGoalId((prev) => remote.selectedGoalId ?? prev ?? null);
-        setClientUpdatedAt(remoteTs || 0);
-        return;
-      }
-
-      if (localTs > remoteTs && localTs > 0 && !pushingLocalRef.current) {
-        const state = buildStateSnapshot(localTs);
-        pushingLocalRef.current = true;
-        saveWorkspaceState(activeWorkspaceId, state).finally(() => {
-          pushingLocalRef.current = false;
-        });
-      }
-    });
-
-    return () => unsub();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
-
-  /* -------- Persist (debounced) -------- */
-  useEffect(() => {
-    if (applyingRemoteRef.current) {
-      applyingRemoteRef.current = false;
-      const state = buildStateSnapshot();
-      saveStoredState(state);
-      return;
+  const templateById = React.useMemo(() => {
+    const map = {};
+    for (const t of Array.isArray(scheduledTemplates) ? scheduledTemplates : []) {
+      if (t?.id) map[t.id] = t;
     }
+    return map;
+  }, [scheduledTemplates]);
 
-    const nextClientUpdatedAt = Date.now();
-    clientUpdatedAtRef.current = nextClientUpdatedAt;
-    setClientUpdatedAt(nextClientUpdatedAt);
-
-    const state = buildStateSnapshot(nextClientUpdatedAt);
-    saveStoredState(state);
-
-    if (!activeWorkspaceId) return;
-
-    clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      saveWorkspaceState(activeWorkspaceId, state)
-        .then(() => setLastSavedAt(new Date().toLocaleTimeString()))
-        .catch((err) => {
-          console.error("Sync save failed", err);
-          setToast({
-            message: "Sync to cloud failed. Check your connection/Firebase rules.",
-            variant: "info",
-          });
-        });
-    }, 600);
-  }, [
-    activeWorkspaceId,
-    budgetsByMonth,
-    activeMonth,
-    goals,
-    accounts,
-    currentAccountId,
-    navOrder,
-    homePage,
-    dashboardSectionsOrder,
-    theme,
-    txFilter,
-    selectedGoalId,
-    scheduledTemplates,
-    scheduleChecks,
-  ]);
-
-  /* -------- Reset -------- */
-  async function handleResetAllData() {
-    if (!window.confirm("Reset all data?")) return;
-    if (activeWorkspaceId) {
-      await deleteDoc(doc(db, "workspaces", activeWorkspaceId));
+  const occurrencesByDate = React.useMemo(() => {
+    const map = new Map();
+    for (const item of occurrences) {
+      const key = item?.dueDate;
+      if (!key) continue;
+      const list = map.get(key) || [];
+      list.push(item);
+      map.set(key, list);
     }
-    localStorage.removeItem(STORAGE_KEY);
-    window.location.reload();
-  }
+    return map;
+  }, [occurrences]);
 
-  /* -------- Auth gate -------- */
-  if (!user) {
-    return (
-      <AuthScreen
-        loading={authLoading}
-        onSignIn={signInWithEmail}
-        onSignUp={signUpWithEmail}
-        onResetPassword={resetPassword}
-      />
-    );
-  }
+  const selectedDayItems = occurrencesByDate.get(selectedDueDateISO) || [];
 
-  /* -------- Transactions import -------- */
-  function makeTxId() {
-    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-    return `tx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  }
+  const today = React.useMemo(() => parseISODateLocal(todayISO()), []);
+  const todayStr = React.useMemo(() => (today ? formatISODate(today) : ""), [today]);
+  const upcomingWindowEnd = React.useMemo(() => (today ? addDays(today, 7) : null), [today]);
 
-  function safeArray(v) {
-    return Array.isArray(v) ? v : [];
-  }
-
-  // ✅ UPDATED importer: supports statement balances + account override
-  function handleImportedTransactions(rows = [], meta = {}) {
-    const parsedRows = safeArray(rows)
-      .map((r) => {
-        const amount = typeof r.amount === "number" ? r.amount : Number(r.amount);
+  const occurrenceGroups = React.useMemo(() => {
+    const normalized = occurrences
+      .map((o) => {
+        const due = parseISODateLocal(o?.dueDate);
         return {
-          id: r.id || makeTxId(),
-          date: r.date || "",
-          description: r.description || "",
-          category: r.category || "",
-          amount: Number.isFinite(amount) ? amount : NaN,
-          balance: Number.isFinite(Number(r.balance)) ? Number(r.balance) : undefined,
+          ...o,
+          _due: due,
+          paid: !!scheduleChecks[checkKey(o.templateId, o.dueDate)]?.paid,
+          cadence: templateById[o.templateId]?.cadence || "once",
         };
       })
-      .filter((r) => Number.isFinite(r.amount));
+      .filter((o) => o._due);
 
-    if (!parsedRows.length) {
-      setToast({
-        message: "No valid transactions were found in that file.",
-        variant: "info",
-      });
+    const unpaid = normalized.filter((o) => !o.paid);
+
+    const overdue = unpaid
+      .filter((o) => today && o._due < today)
+      .sort((a, b) => a._due - b._due);
+
+    const dueToday = unpaid
+      .filter((o) => o.dueDate === todayStr)
+      .sort((a, b) => clampMoney(b.amount) - clampMoney(a.amount));
+
+    const upcoming = unpaid
+      .filter((o) => upcomingWindowEnd && today && o._due > today && o._due <= upcomingWindowEnd)
+      .sort((a, b) => a._due - b._due);
+
+    return { overdue, dueToday, upcoming };
+  }, [occurrences, scheduleChecks, templateById, today, todayStr, upcomingWindowEnd]);
+
+  function handleEditEstimatedIncome() {
+    const input = window.prompt("Estimated monthly income amount:", estimatedIncome.toString());
+    if (input === null) return;
+    const next = Number(input);
+    if (!Number.isFinite(next)) {
+      window.alert("Enter a valid number for estimated income.");
+      return;
+    }
+    onBudgetChange({ ...budget, estimatedIncome: next, income: next }); // keep backwards compat
+  }
+
+  function toggleUseActualIncome() {
+    onBudgetChange({ ...budget, useActualIncome: !useActualIncome });
+  }
+
+  // ✅ Manual transaction add flows (income or expense) without CSV import
+  function handleAddQuickTransaction(kind) {
+    const isIncome = kind === "income";
+    const defaultDesc = isIncome ? "Paycheck" : "Expense";
+    const description = window.prompt("Description:", defaultDesc);
+    if (!description) return;
+
+    const amountInput = window.prompt(
+      `Amount (${isIncome ? "positive" : "positive (we'll store as negative)"})`,
+      "0"
+    );
+    if (amountInput === null) return;
+    const rawAmt = Number(amountInput);
+    if (!Number.isFinite(rawAmt)) {
+      window.alert("Please enter a valid number for amount.");
       return;
     }
 
-    const sourceLabel =
-      meta.bank || meta.detectedBank || meta.filename || meta.fileName || "Imported";
-
-    // live refs
-    const prevAccounts = Array.isArray(accountsRef.current) ? accountsRef.current : [];
-    const prevBudgetsByMonth = budgetsByMonthRef.current || {};
-    const monthKey = activeMonthRef.current || getCurrentMonthKey();
-    const fallbackAccountId = currentAccountIdRef.current || "main";
-
-    const forcedAccountId =
-      meta.accountId && typeof meta.accountId === "string" ? meta.accountId : null;
-
-    const detection = forcedAccountId
-      ? {
-          targetAccountId: forcedAccountId,
-          targetAccountName:
-            prevAccounts.find((a) => a.id === forcedAccountId)?.name ||
-            sourceLabel ||
-            "Imported Account",
-          createdNew: !prevAccounts.some((a) => a.id === forcedAccountId),
-        }
-      : importTransactionsWithDetection(
-          prevAccounts,
-          fallbackAccountId,
-          parsedRows,
-          sourceLabel
-        );
-
-    const targetAccountId = detection.targetAccountId;
-    const targetAccountName =
-      detection.targetAccountName || sourceLabel || "Imported Account";
-
-    const statementKey = meta?.statement?.statementKey || null;
-
-    const rowsWithAccount = parsedRows.map((tx) => ({
-      ...tx,
-      accountId: targetAccountId,
-      ...(statementKey ? { statementKey } : {}),
-    }));
-
-    const statement = meta?.statement || null;
-    const hasStatementBalance =
-      statement &&
-      Number.isFinite(Number(statement.endingBalance)) &&
-      Number.isFinite(Number(statement.startingBalance)) &&
-      typeof statement.statementKey === "string" &&
-      statement.statementKey.length > 0;
-
-    const nextAccounts = (() => {
-      const list = Array.isArray(prevAccounts) ? prevAccounts : [];
-      const exists = list.some((a) => a.id === targetAccountId);
-
-      const upsertAccount = (acc) => {
-        const mergedTx = mergeTransactions(acc.transactions || [], rowsWithAccount);
-
-        const prevMap =
-          acc.statementBalances && typeof acc.statementBalances === "object"
-            ? acc.statementBalances
-            : {};
-
-        let nextAcc = { ...acc, transactions: mergedTx };
-
-        if (hasStatementBalance) {
-          const endISO = statement.endISO || "";
-          const endTime = Date.parse(endISO || "") || 0;
-
-          const existingEntry = prevMap[statement.statementKey] || null;
-
-          const nextEntry = {
-            startISO: statement.startISO || "",
-            endISO: statement.endISO || "",
-            statementKey: statement.statementKey,
-            transactionSum: Number(statement.transactionSum || 0),
-            startingBalance: Number(statement.startingBalance),
-            endingBalance: Number(statement.endingBalance),
-            balanceSource: statement.balanceSource || "user",
-            confirmedAt: Date.now(),
-          };
-
-          nextAcc = {
-            ...nextAcc,
-            statementBalances: {
-              ...prevMap,
-              [statement.statementKey]: existingEntry ? existingEntry : nextEntry,
-            },
-            lastConfirmedEndingBalance: Number(statement.endingBalance),
-            lastStatementEndISO: statement.endISO || "",
-            lastStatementKey: statement.statementKey,
-          };
-
-          const prevEndTime = Date.parse(nextAcc.currentBalanceAsOf || "") || 0;
-          if (endTime >= prevEndTime) {
-            nextAcc = {
-              ...nextAcc,
-              currentBalance: Number(statement.endingBalance),
-              currentBalanceAsOf: statement.endISO || "",
-            };
-          }
-        }
-
-        return nextAcc;
-      };
-
-      if (detection.createdNew || !exists) {
-        const newAccount = upsertAccount({
-          id: targetAccountId,
-          name: targetAccountName,
-          type:
-            detection.accounts?.find((a) => a.id === targetAccountId)?.type || "checking",
-          startingBalance: 0,
-          transactions: [],
-          createdAt: Date.now(),
-          statementBalances: {},
-        });
-        return normalizeAccounts([...list, newAccount]);
-      }
-
-      return normalizeAccounts(
-        list.map((acc) => (acc.id === targetAccountId ? upsertAccount(acc) : acc))
-      );
-    })();
-
-    const nextBudgetsByMonth = (() => {
-      const curr =
-        prevBudgetsByMonth?.[monthKey] || {
-          month: monthKey,
-          income: 0,
-          fixed: [],
-          variable: [],
-          transactions: [],
-        };
-
-      const existing = Array.isArray(curr.transactions) ? curr.transactions : [];
-      const nextTransactions = mergeDedupTx(existing, rowsWithAccount);
-
-      return {
-        ...prevBudgetsByMonth,
-        [monthKey]: { ...curr, transactions: nextTransactions },
-      };
-    })();
-
-    accountsRef.current = nextAccounts;
-    budgetsByMonthRef.current = nextBudgetsByMonth;
-    currentAccountIdRef.current = targetAccountId;
-
-    setAccounts(nextAccounts);
-    setBudgetsByMonth(nextBudgetsByMonth);
-    setCurrentAccountId(targetAccountId);
-
-    const agg = importToastAggRef.current;
-    agg.files += 1;
-    agg.tx += rowsWithAccount.length;
-    if (detection.createdNew) agg.newAccounts += 1;
-
-    agg.touchedAccounts.add(targetAccountName);
-    agg.sources.add(sourceLabel);
-
-    flushImportToastSoon();
-  }
-
-  /* -------- Accounts UI actions -------- */
-  function handleCreateAccount() {
-    const nextName = `Account ${accounts.length + 1}`;
-    const newId = makeId("acct");
-    const newAcc = {
-      id: newId,
-      name: nextName,
-      type: "checking",
-      startingBalance: 0,
-      transactions: [],
-      createdAt: Date.now(),
-      statementBalances: {},
-    };
-    setAccounts((prev) =>
-      normalizeAccounts([...(Array.isArray(prev) ? prev : []), newAcc])
-    );
-    setCurrentAccountId(newId);
-    setToast({ variant: "success", message: `Created ${nextName}` });
-  }
-
-  function handleDeleteAccount(id) {
-    if (!id) return;
-    if (
-      !window.confirm(
-        "Delete this account? Transactions tied to it will remain in budgets but the account will be removed."
-      )
-    )
+    const dateInput = window.prompt("Date (YYYY-MM-DD):", selectedDueDateISO || todayISO());
+    if (!dateInput) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      window.alert("Use YYYY-MM-DD format for dates.");
       return;
+    }
 
-    setAccounts((prev) => {
-      const list = Array.isArray(prev) ? prev : [];
-      const remaining = list.filter((a) => a.id !== id);
-      if (currentAccountId === id) setCurrentAccountId(remaining[0]?.id || "main");
-      return remaining;
+    const categoryInput = window.prompt("Category (optional):", isIncome ? "Income" : "");
+
+    const amount = isIncome ? Math.abs(rawAmt) : -Math.abs(rawAmt);
+
+    onAddTransaction({
+      description: description.trim(),
+      amount,
+      date: dateInput,
+      category: (categoryInput || "").trim(),
+      accountId: currentAccountId || "main",
+      flowType: isIncome ? "income" : "expense",
     });
   }
 
-  function handleSetAccountBalance(id, value) {
-    const nextValue = Number(value);
-    setAccounts((prev) =>
-      normalizeAccounts(
-        (Array.isArray(prev) ? prev : []).map((a) =>
-          a.id === id
-            ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 }
-            : a
-        )
-      )
+  // ✅ Create a template and return its id (budget item becomes “plugin” for calendar)
+  function createRecurringTemplate({ label, amount, kind, source, defaultDateISO }) {
+    const wantsRecurring = window.confirm("Add to calendar as repeating due item?");
+    if (!wantsRecurring) return null;
+
+    const startDateInput = window.prompt("Start date (YYYY-MM-DD):", defaultDateISO || todayISO());
+    if (!startDateInput) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDateInput)) {
+      window.alert("Please use YYYY-MM-DD format (example: 2026-01-15).");
+      return null;
+    }
+    const startDate = parseISODateLocal(startDateInput);
+    if (!startDate) {
+      window.alert("Could not parse that date. Try again with YYYY-MM-DD.");
+      return null;
+    }
+
+    const cadenceInput = window.prompt(
+      "Cadence? (once, weekly, biweekly, monthly, yearly)",
+      "monthly"
     );
-  }
+    if (cadenceInput === null) return null;
+    const allowed = ["once", "weekly", "biweekly", "monthly", "yearly"];
+    const cadenceRaw = (cadenceInput || "monthly").trim().toLowerCase();
+    const cadence = allowed.includes(cadenceRaw) ? cadenceRaw : "monthly";
 
-  function handleRenameAccount(id, name) {
-    const cleaned = (name || "").trim() || "Account";
-    setAccounts((prev) =>
-      normalizeAccounts(
-        (Array.isArray(prev) ? prev : []).map((a) => (a.id === id ? { ...a, name: cleaned } : a))
-      )
-    );
-  }
-
-  function updateActiveBudget(updater) {
-    setBudgetsByMonth((prev) => {
-      const curr =
-        prev?.[activeMonth] || {
-          month: activeMonth,
-          income: 0,
-          fixed: [],
-          variable: [],
-          transactions: [],
-        };
-      const next = updater ? updater(curr) : curr;
-      return { ...prev, [activeMonth]: next };
-    });
-  }
-
-  // ✅ Keep manual tx mirrored into accounts too (balances stay correct)
-  function ensureAccountExists(prevAccounts, accountId) {
-    const list = Array.isArray(prevAccounts) ? prevAccounts : [];
-    if (list.some((a) => a.id === accountId)) return list;
-
-    const newAcc = {
-      id: accountId,
-      name: "Manual Account",
-      type: "checking",
-      startingBalance: 0,
-      transactions: [],
-      createdAt: Date.now(),
-      statementBalances: {},
-    };
-    return normalizeAccounts([...list, newAcc]);
-  }
-
-  function handleAddTransactionRow(tx) {
-    const newTx = {
-      id: tx?.id || makeTxId(),
-      date: tx?.date || "",
-      description: tx?.description || "",
-      category: tx?.category || "",
-      accountId: tx?.accountId || currentAccountId || "main",
-      flowType: tx?.flowType,
-      amount: Number.isFinite(Number(tx?.amount)) ? Number(tx.amount) : 0,
+    const nextTemplate = {
+      id: `sched-${Date.now()}`,
+      label: (label || "").trim() || "Due item",
+      amount: Number(amount) || 0,
+      kind: kind || "expense",
+      source,
+      startDate: formatISODate(startDate),
+      cadence,
+      dayOfMonth: startDate.getDate(),
+      // Optional: tie to the current account so a future “pay bill” flow can pick it up
+      accountId: currentAccountId || "main",
     };
 
-    updateActiveBudget((curr) => {
-      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
-      return { ...curr, transactions: [newTx, ...list] };
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    onScheduledTemplatesChange([...list, nextTemplate]);
+
+    // jump selection + visible month
+    const startISO = formatISODate(startDate);
+    setSelectedDueDateISO(startISO);
+    setCalendarMonthISO(`${monthKeyFromISO(startISO)}-01`);
+
+    return nextTemplate.id;
+  }
+
+  function handleAddBudgetItem(sectionKey) {
+    const name = window.prompt(`New ${sectionKey} item name:`);
+    if (!name) return;
+
+    const amountInput = window.prompt(`Amount for "${name}" (numbers only):`);
+    const amount = Number(amountInput);
+    if (!Number.isFinite(amount)) {
+      window.alert("That didn't look like a valid number.");
+      return;
+    }
+
+    const source = sectionKey === "fixed" ? "budget-fixed" : "budget-variable";
+
+    // ✅ Ask if it should be recurring and link it
+    const templateId = createRecurringTemplate({
+      label: name,
+      amount,
+      kind: "expense",
+      source,
+      defaultDateISO: selectedDueDateISO || todayISO(),
     });
 
-    setAccounts((prev) => {
-      const withAcc = ensureAccountExists(prev, newTx.accountId);
-      return normalizeAccounts(
-        withAcc.map((acc) => {
-          if (acc.id !== newTx.accountId) return acc;
-          const prevTx = Array.isArray(acc.transactions) ? acc.transactions : [];
-          return { ...acc, transactions: [newTx, ...prevTx] };
-        })
-      );
+    const nextItem = {
+      id: `budget-${sectionKey}-${Date.now()}`,
+      label: name,
+      amount,
+      templateId: templateId || undefined,
+    };
+
+    const currentList = sectionKey === "fixed" ? fixedItems : variableItems;
+    const updatedSection = [...currentList, nextItem];
+    onBudgetChange({ ...budget, [sectionKey]: updatedSection });
+  }
+
+  function handleDeleteBudgetItem(sectionKey, index) {
+    const currentList = sectionKey === "fixed" ? fixedItems : variableItems;
+    const item = currentList[index];
+
+    if (!window.confirm("Delete this item?")) return;
+
+    // ✅ if it’s linked to calendar, offer to delete template too
+    if (item?.templateId) {
+      const del = window.confirm("This item is linked to a calendar due item. Delete that too?");
+      if (del) {
+        const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+        onScheduledTemplatesChange(list.filter((t) => t.id !== item.templateId));
+
+        const entries = Object.entries(scheduleChecks || {});
+        const filteredChecks = entries.filter(([k]) => !k.startsWith(`${item.templateId}|`));
+        onScheduleChecksChange(Object.fromEntries(filteredChecks));
+      }
+    }
+
+    const updatedSection = currentList.filter((_, i) => i !== index);
+    onBudgetChange({ ...budget, [sectionKey]: updatedSection });
+  }
+
+  function handleTogglePaidOccurrence(occurrence) {
+    if (!occurrence?.templateId || !occurrence?.dueDate) return;
+    const key = checkKey(occurrence.templateId, occurrence.dueDate);
+    const currentPaid = !!scheduleChecks[key]?.paid;
+    onScheduleChecksChange({
+      ...(scheduleChecks || {}),
+      [key]: { paid: !currentPaid },
     });
   }
 
-  function handleUpdateTransactionRow(index, patch = {}) {
-    updateActiveBudget((curr) => {
-      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
-      const target = list[index];
-      if (!target?.id) return curr;
+  function handleDeleteTemplate(templateId) {
+    if (!templateId) return;
+    if (!window.confirm("Delete this repeating due item?")) return;
 
-      const updated = { ...target, ...patch };
-      const txId = updated.id;
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    const nextTemplates = list.filter((t) => t.id !== templateId);
+    onScheduledTemplatesChange(nextTemplates);
 
-      const nextList = list.map((t, i) => (i === index ? updated : t));
-
-      setAccounts((prev) => {
-        let nextAccounts = Array.isArray(prev) ? prev : [];
-
-        const oldAccountId = target.accountId || "main";
-        const newAccountId = updated.accountId || oldAccountId || "main";
-
-        nextAccounts = ensureAccountExists(nextAccounts, newAccountId);
-
-        // remove from old account if moved
-        nextAccounts = nextAccounts.map((acc) => {
-          const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
-          const has = accTx.some((t) => t.id === txId);
-          if (!has) return acc;
-
-          if (acc.id === newAccountId) return acc; // same account, will replace below
-          return { ...acc, transactions: accTx.filter((t) => t.id !== txId) };
-        });
-
-        // add/replace in new account
-        nextAccounts = nextAccounts.map((acc) => {
-          if (acc.id !== newAccountId) return acc;
-          const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
-          const idx = accTx.findIndex((t) => t.id === txId);
-
-          if (idx === -1) return { ...acc, transactions: [updated, ...accTx] };
-
-          const replaced = accTx.map((t) => (t.id === txId ? { ...t, ...patch } : t));
-          return { ...acc, transactions: replaced };
-        });
-
-        return normalizeAccounts(nextAccounts);
-      });
-
-      return { ...curr, transactions: nextList };
-    });
+    const entries = Object.entries(scheduleChecks || {});
+    const filteredChecks = entries.filter(([k]) => !k.startsWith(`${templateId}|`));
+    onScheduleChecksChange(Object.fromEntries(filteredChecks));
   }
 
-  function handleDeleteTransactionRow(index) {
-    updateActiveBudget((curr) => {
-      const list = Array.isArray(curr.transactions) ? curr.transactions : [];
-      const target = list[index];
-      if (!target?.id) return curr;
-
-      const txId = target.id;
-
-      const nextList = list.filter((_, i) => i !== index);
-
-      setAccounts((prev) =>
-        normalizeAccounts(
-          (Array.isArray(prev) ? prev : []).map((acc) => {
-            const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
-            if (!accTx.some((t) => t.id === txId)) return acc;
-            return { ...acc, transactions: accTx.filter((t) => t.id !== txId) };
-          })
-        )
-      );
-
-      return { ...curr, transactions: nextList };
-    });
-  }
-
-  /* ---------------- GOALS FLOW ---------------- */
-  // (unchanged goal code...)
-
-  const selectedGoal =
-    (Array.isArray(goals) ? goals : []).find((g) => g.id === selectedGoalId) || null;
-
-  /* -------- UI -------- */
   return (
-    <div className={`app-shell ${themeStyles.shellClass}`}>
-      <header className={themeStyles.headerClass}>
-        <div className="content headerRow">
-          <div className="brandAndNav">
-            <span className="appTitle">BUDGET CENTER</span>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-slate-100">{month} Budget</h1>
+        <span className="text-xs text-slate-400">Income + Expenses + Goals</span>
+      </div>
 
-            <div className="navRow" aria-label="Primary navigation">
-              {navOrder.map((pageKey) => (
-                <NavButton
-                  key={pageKey}
-                  label={NAV_LABELS[pageKey]}
-                  active={currentPage === pageKey}
-                  onClick={() => setCurrentPage(pageKey)}
-                />
-              ))}
+      <div className="grid md:grid-cols-2 gap-4">
+        <Card title="INCOME">
+          <div className="grid gap-2">
+            <div className="flex items-end justify-between">
+              <div>
+                <div className="text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">
+                  Estimated
+                </div>
+                <div className="text-2xl font-semibold text-emerald-300">
+                  ${estimatedIncome.toFixed(2)}
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div className="text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">
+                  Actual so far
+                </div>
+                <div className="text-2xl font-semibold text-cyan-200">
+                  ${actualIncome.toFixed(2)}
+                </div>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-400">
+              Leftover (using {useActualIncome ? "actual" : "estimated"}):{" "}
+              <span className="text-slate-100 font-semibold">
+                ${leftoverForMath.toFixed(2)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                className="px-3 py-1.5 text-xs rounded-md border border-emerald-400/70 text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 transition"
+                onClick={handleEditEstimatedIncome}
+                type="button"
+              >
+                Edit estimate
+              </button>
+
+              <button
+                className="px-3 py-1.5 text-xs rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+                onClick={toggleUseActualIncome}
+                type="button"
+                title="Use actual income from your logged income transactions"
+              >
+                {useActualIncome ? "Using actual ✓" : "Use actual income"}
+              </button>
+
+              <button
+                className="px-3 py-1.5 text-xs rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+                onClick={() => handleAddQuickTransaction("income")}
+                type="button"
+                title="Add a paycheck / income transaction (no CSV needed)"
+              >
+                + Add income
+              </button>
+            </div>
+
+            <p className="text-[0.7rem] text-slate-500">
+              Tip: Add paychecks here to build “Actual income” automatically.
+            </p>
+          </div>
+        </Card>
+
+        <Card title="FIXED EXPENSES">
+          <ListWithTotal
+            items={fixedItems}
+            total={fixedTotal}
+            onDelete={(index) => handleDeleteBudgetItem("fixed", index)}
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-rose-400/70 text-rose-200 bg-rose-500/10 hover:bg-rose-500/20 transition"
+              onClick={() => handleAddBudgetItem("fixed")}
+              type="button"
+            >
+              + Add Fixed Expense
+            </button>
+
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-rose-400/60 text-rose-200 bg-black/10 hover:bg-rose-500/10 transition"
+              onClick={() => handleAddQuickTransaction("expense")}
+              type="button"
+              title="Add an expense transaction (no CSV needed)"
+            >
+              + Add expense
+            </button>
+          </div>
+        </Card>
+
+        <Card title="VARIABLE SPENDING">
+          <ListWithTotal
+            items={variableItems}
+            total={variableTotal}
+            onDelete={(index) => handleDeleteBudgetItem("variable", index)}
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-amber-400/70 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 transition"
+              onClick={() => handleAddBudgetItem("variable")}
+              type="button"
+            >
+              + Add Variable Expense
+            </button>
+
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-amber-400/60 text-amber-200 bg-black/10 hover:bg-amber-500/10 transition"
+              onClick={() => handleAddQuickTransaction("expense")}
+              type="button"
+              title="Add an expense transaction (no CSV needed)"
+            >
+              + Add expense
+            </button>
+          </div>
+        </Card>
+
+        <Card title="MONTHLY DUE DATES">
+          <div className="grid gap-3 md:grid-cols-2">
+            {/* ✅ Calendar rollover (requires updated MiniDueCalendar props) */}
+            <MiniDueCalendar
+              items={occurrences}
+              selectedDateISO={selectedDueDateISO}
+              onSelectDate={setSelectedDueDateISO}
+              visibleMonthISO={calendarMonthISO}
+              onVisibleMonthChange={setCalendarMonthISO}
+              badgeMode="auto"
+            />
+
+            <div className="space-y-3">
+              <BillsPanel
+                title="OVERDUE"
+                subtitle="Due before today"
+                emptyText="No overdue items 🎉"
+                items={occurrenceGroups.overdue}
+                tone="rose"
+                templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={handleTogglePaidOccurrence}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
+
+              <BillsPanel
+                title="DUE TODAY"
+                subtitle={todayStr}
+                emptyText="Nothing due today."
+                items={occurrenceGroups.dueToday}
+                tone="amber"
+                templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={handleTogglePaidOccurrence}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
+
+              <BillsPanel
+                title="UPCOMING"
+                subtitle="Next 7 days"
+                emptyText="No upcoming items."
+                items={occurrenceGroups.upcoming}
+                tone="cyan"
+                templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
+                onJump={(iso) => setSelectedDueDateISO(iso)}
+                onTogglePaid={handleTogglePaidOccurrence}
+                onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
+              />
             </div>
           </div>
 
-          <div className="headerRight">
-            <ProfileMenu
-              profile={userProfile}
-              email={user.email}
-              loading={profileLoading}
-              onUpdateProfile={(p) => updateUserProfile(user.uid, p).then(setUserProfile)}
-            />
-            <ActionsMenu
-              onReset={handleResetAllData}
-              onSignOut={signOut}
-              themeValue={theme}
-              onChangeTheme={setTheme}
-            />
+          <div className="mt-4 text-xs text-slate-400">
+            Due on <span className="text-slate-200">{selectedDueDateISO}</span>
           </div>
-        </div>
-      </header>
 
-      <main className="content">
-        {currentPage === "dashboard" && (
-          <Dashboard
-            month={activeMonth}
-            income={incomeForMath} // ✅ uses actual vs estimated logic
-            fixed={totals.fixed}
-            variable={totals.variable}
-            leftover={totals.leftover}
-            goals={goals}
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onChangeCurrentAccount={setCurrentAccountId}
-            transactions={activeBudget.transactions || []}
-            currentAccountBalance={currentAccountBalance}
-            totalBalance={totalBalance}
-            onCsvImported={handleImportedTransactions}
-            onTransactionsParsed={handleImportedTransactions}
-            sectionsOrder={dashboardSectionsOrder}
-            onCreateGoal={() => {
-              setSelectedGoalId(null);
-              setGoalMode("create");
-              setCurrentPage("goalDetail");
-            }}
-            onOpenGoal={(goalId) => {
-              if (!goalId) return;
-              setSelectedGoalId(goalId);
-              setGoalMode("edit");
-              setCurrentPage("goalDetail");
-            }}
-          />
-        )}
+          <div className="mt-2 space-y-2 text-sm">
+            {selectedDayItems.length === 0 ? (
+              <p className="text-xs text-slate-500">No items due that day.</p>
+            ) : (
+              selectedDayItems.map((item) => {
+                const amt = clampMoney(item?.amount);
+                const paid = !!scheduleChecks[checkKey(item.templateId, item.dueDate)]?.paid;
+                const overdue =
+                  !paid &&
+                  !!today &&
+                  parseISODateLocal(item.dueDate) &&
+                  parseISODateLocal(item.dueDate) < today;
 
-        {currentPage === "balances" && (
-          <BalancesDashboard
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onChangeCurrentAccount={setCurrentAccountId}
-            onAccountsChange={setAccounts}
-            onCreateAccount={handleCreateAccount}
-            onDeleteAccount={handleDeleteAccount}
-            onSetAccountBalance={handleSetAccountBalance}
-            onRenameAccount={handleRenameAccount}
-          />
-        )}
+                const cadence = templateById[item.templateId]?.cadence || "once";
 
-        {currentPage === "budget" && (
-          <BudgetPage
-            month={activeMonth}
-            budget={activeBudget}
-            totals={totals}
-            budgetsByMonth={budgetsByMonth}
-            onBudgetChange={(nextBudget) =>
-              setBudgetsByMonth((prev) => ({
-                ...prev,
-                [activeMonth]: nextBudget,
-              }))
-            }
-            scheduledTemplates={scheduledTemplates}
-            scheduleChecks={scheduleChecks}
-            onScheduledTemplatesChange={setScheduledTemplates}
-            onScheduleChecksChange={setScheduleChecks}
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onAddTransaction={handleAddTransactionRow} // ✅ allow “add income/expense” from budget/calendar
-          />
-        )}
+                return (
+                  <div
+                    key={`${item.templateId}-${item.dueDate}`}
+                    className={[
+                      "flex items-center justify-between gap-2 rounded-md border bg-black/20 px-3 py-2",
+                      overdue ? "border-rose-400/60" : "border-slate-700/70",
+                    ].join(" ")}
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-200">{item.label}</span>
+                        <span className="text-slate-400">${amt.toFixed(2)}</span>
+                        {overdue && (
+                          <span className="text-[0.65rem] rounded-full border border-rose-400/60 px-2 py-0.5 text-rose-200 bg-rose-500/10">
+                            overdue
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[0.7rem] text-slate-500">
+                        {cadence} · {paid ? "paid" : "unpaid"}
+                      </div>
+                    </div>
 
-        {currentPage === "transactions" && (
-          <TransactionsPage
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            transactions={activeBudget.transactions || []}
-            filter={txFilter}
-            onFilterChange={setTxFilter}
-            scheduledTemplates={scheduledTemplates}
-            scheduleChecks={scheduleChecks}
-            onScheduledTemplatesChange={setScheduledTemplates}
-            onScheduleChecksChange={setScheduleChecks}
-            onAddTransaction={handleAddTransactionRow}
-            onUpdateTransaction={handleUpdateTransactionRow}
-            onDeleteTransaction={handleDeleteTransactionRow}
-            onUpdateBudget={(nextBudget) =>
-              setBudgetsByMonth((prev) => ({
-                ...prev,
-                [activeMonth]: nextBudget,
-              }))
-            }
-          />
-        )}
-
-        {currentPage === "goalDetail" && (
-          <GoalDetailPage
-            goals={goals}
-            goal={selectedGoal}
-            mode={goalMode || "edit"}
-            onSelectGoal={(id) => {
-              setSelectedGoalId(id);
-              setGoalMode("edit");
-            }}
-            onRequestCreateGoal={() => {
-              const newGoal = {
-                id: makeId("goal"),
-                name: "New Goal",
-                target: 1000,
-                saved: 0,
-                monthlyPlan: 0,
-                emoji: "🎯",
-                createdAt: Date.now(),
-              };
-              setGoals((prev) => [newGoal, ...(Array.isArray(prev) ? prev : [])]);
-              setSelectedGoalId(newGoal.id);
-              setGoalMode("edit");
-            }}
-            onEditGoal={() => {}}
-            onDeleteGoal={() => {}}
-            onDuplicateGoal={() => {}}
-            onExportGoal={() => {}}
-            onAddContributionRequest={() => {}}
-          />
-        )}
-
-        {currentPage === "reports" && (
-          <ReportsPage
-            accounts={accounts}
-            monthKey={activeMonth}
-            onMerchantPick={(merchant) => {
-              setTxFilter(merchant);
-              setCurrentPage("transactions");
-            }}
-          />
-        )}
-      </main>
-
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="px-2 py-1 text-[0.7rem] rounded-md border border-slate-600/70 text-slate-200 hover:border-cyan-400/60"
+                        onClick={() => handleTogglePaidOccurrence(item)}
+                        type="button"
+                      >
+                        {paid ? "Unpay" : "Paid"}
+                      </button>
+                      <button
+                        className="text-[0.75rem] text-slate-500 hover:text-rose-400"
+                        onClick={() => handleDeleteTemplate(item.templateId)}
+                        type="button"
+                        aria-label="Delete due item"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }
 
-export default App;
+function ListWithTotal({ items = [], total = 0, onDelete }) {
+  return (
+    <div className="space-y-2 text-sm">
+      {items.length === 0 && <p className="text-xs text-slate-500">No items yet.</p>}
+      {items.map((item, index) => {
+        const amount = Number(item?.amount ?? 0);
+        const label = item?.label || item?.name || `Item ${index + 1}`;
+        const linked = !!item?.templateId;
+
+        return (
+          <div
+            key={(item?.id || label) + index}
+            className="flex items-center justify-between text-slate-200 gap-2"
+          >
+            <div className="flex-1 flex justify-between items-center">
+              <span className="flex items-center gap-2">
+                {label}
+                {linked && (
+                  <span className="rounded-full border border-slate-600/70 px-2 py-[2px] text-[0.65rem] text-slate-200 bg-black/20">
+                    linked
+                  </span>
+                )}
+              </span>
+              <span className="text-slate-300">${amount.toFixed(2)}</span>
+            </div>
+
+            {onDelete && (
+              <button
+                className="text-[0.65rem] text-slate-500 hover:text-rose-400"
+                onClick={() => onDelete(index)}
+                type="button"
+                aria-label="Delete item"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        );
+      })}
+
+      <div className="mt-2 pt-2 border-t border-slate-700 flex items-center justify-between text-xs">
+        <span className="uppercase tracking-[0.18em] text-slate-500">Total</span>
+        <span className="text-slate-100">${Number(total).toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+function BillsPanel({
+  title,
+  subtitle,
+  items = [],
+  emptyText,
+  tone = "cyan",
+  templateLookup = {},
+  scheduleChecks = {},
+  onJump = () => {},
+  onTogglePaid = () => {},
+  onDelete = () => {},
+}) {
+  const toneStyles = {
+    rose: "border-rose-400/30 text-rose-200 bg-rose-500/5",
+    amber: "border-amber-400/30 text-amber-200 bg-amber-500/5",
+    cyan: "border-cyan-400/30 text-cyan-200 bg-cyan-500/5",
+  };
+
+  return (
+    <div className={`rounded-md border ${toneStyles[tone] || toneStyles.cyan} p-3`}>
+      <div className="flex items-baseline justify-between">
+        <div className="text-[0.7rem] tracking-[0.18em] uppercase">{title}</div>
+        <div className="text-[0.7rem] text-slate-400">{subtitle}</div>
+      </div>
+
+      <div className="mt-2 space-y-2">
+        {items.length === 0 ? (
+          <div className="text-xs text-slate-500">{emptyText}</div>
+        ) : (
+          items.slice(0, 5).map((item) => {
+            const amt = clampMoney(item?.amount);
+            const cadence = templateLookup[item.templateId]?.cadence || "once";
+            const paid = !!scheduleChecks[checkKey(item.templateId, item.dueDate)]?.paid;
+
+            return (
+              <div
+                key={`${item.templateId}-${item.dueDate}`}
+                className="flex items-center justify-between gap-2 rounded-md border border-slate-700/60 bg-black/20 px-2 py-2"
+              >
+                <button
+                  type="button"
+                  className="flex-1 text-left"
+                  onClick={() => onJump(item.dueDate)}
+                  title="Jump to this day"
+                >
+                  <div className="text-xs text-slate-200 leading-4">
+                    {item.label}
+                    <span className="text-slate-400"> · ${amt.toFixed(2)}</span>
+                    {paid && (
+                      <span className="ml-2 text-[0.65rem] rounded-full border border-emerald-400/50 px-2 py-[2px] text-emerald-200 bg-emerald-500/10">
+                        paid
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[0.7rem] text-slate-500">
+                    {item.dueDate} · {cadence}
+                  </div>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="px-2 py-1 text-[0.7rem] rounded-md border border-slate-600/70 text-slate-200 hover:border-cyan-400/60"
+                    onClick={() => onTogglePaid(item)}
+                  >
+                    {paid ? "Unpay" : "Paid"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-[0.75rem] text-slate-500 hover:text-rose-400"
+                    onClick={() => onDelete(item)}
+                    aria-label="Delete due item"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+
+        {items.length > 5 && (
+          <div className="text-[0.7rem] text-slate-500">+{items.length - 5} more</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default BudgetPage;

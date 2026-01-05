@@ -72,10 +72,10 @@ function BudgetPage({
   onScheduledTemplatesChange = () => {},
   onScheduleChecksChange = () => {},
 
-  // ✅ (optional) from App.jsx in your updated version
+  // ✅ optional, from App.jsx
   accounts = [],
   currentAccountId = "main",
-  onAddTransaction = () => {}, // allows “Add income/expense” right from this page
+  onAddTransaction = () => {},
 }) {
   const fixedTotal = Number(totals?.fixed ?? totals?.fixedTotal ?? 0);
   const variableTotal = Number(totals?.variable ?? totals?.variableTotal ?? 0);
@@ -102,7 +102,6 @@ function BudgetPage({
   const incomeForMath = useActualIncome ? actualIncome : estimatedIncome;
   const leftoverForMath = incomeForMath - fixedTotal - variableTotal;
 
-  // ✅ Calendar selection
   const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
 
   // ✅ Calendar visible month (rollover)
@@ -111,7 +110,6 @@ function BudgetPage({
     return `${mk}-01`;
   });
 
-  // Keep calendar month aligned if user selects a date in another month
   React.useEffect(() => {
     if (!selectedDueDateISO) return;
     const mk = monthKeyFromISO(selectedDueDateISO);
@@ -123,7 +121,6 @@ function BudgetPage({
     [calendarMonthISO]
   );
 
-  // ✅ Expand occurrences for the *visible month*
   const occurrences = React.useMemo(
     () => expandTemplatesForMonth(scheduledTemplates, calendarMonthKey),
     [scheduledTemplates, calendarMonthKey]
@@ -193,7 +190,7 @@ function BudgetPage({
       window.alert("Enter a valid number for estimated income.");
       return;
     }
-    onBudgetChange({ ...budget, estimatedIncome: next, income: next }); // keep backwards compat
+    onBudgetChange({ ...budget, estimatedIncome: next, income: next });
   }
 
   function toggleUseActualIncome() {
@@ -274,14 +271,12 @@ function BudgetPage({
       startDate: formatISODate(startDate),
       cadence,
       dayOfMonth: startDate.getDate(),
-      // Optional: tie to the current account so a future “pay bill” flow can pick it up
       accountId: currentAccountId || "main",
     };
 
     const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
     onScheduledTemplatesChange([...list, nextTemplate]);
 
-    // jump selection + visible month
     const startISO = formatISODate(startDate);
     setSelectedDueDateISO(startISO);
     setCalendarMonthISO(`${monthKeyFromISO(startISO)}-01`);
@@ -302,7 +297,6 @@ function BudgetPage({
 
     const source = sectionKey === "fixed" ? "budget-fixed" : "budget-variable";
 
-    // ✅ Ask if it should be recurring and link it
     const templateId = createRecurringTemplate({
       label: name,
       amount,
@@ -329,7 +323,6 @@ function BudgetPage({
 
     if (!window.confirm("Delete this item?")) return;
 
-    // ✅ if it’s linked to calendar, offer to delete template too
     if (item?.templateId) {
       const del = window.confirm("This item is linked to a calendar due item. Delete that too?");
       if (del) {
@@ -494,7 +487,6 @@ function BudgetPage({
 
         <Card title="MONTHLY DUE DATES">
           <div className="grid gap-3 md:grid-cols-2">
-            {/* ✅ Calendar rollover (requires updated MiniDueCalendar props) */}
             <MiniDueCalendar
               items={occurrences}
               selectedDateISO={selectedDueDateISO}
