@@ -78,8 +78,7 @@ function App() {
   } = useFirebaseAuth();
 
   function makeId(prefix = "id") {
-    if (typeof crypto !== "undefined" && crypto.randomUUID)
-      return crypto.randomUUID();
+    if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
@@ -113,11 +112,17 @@ function App() {
   /* -------- State -------- */
   const [theme, setTheme] = useState(stored?.theme || "dark");
   const [budgetsByMonth, setBudgetsByMonth] = useState(stored?.budgetsByMonth || {});
-  const [activeMonth, setActiveMonth] = useState(stored?.activeMonth || getCurrentMonthKey());
+  const [activeMonth, setActiveMonth] = useState(
+    stored?.activeMonth || getCurrentMonthKey()
+  );
   const [goals, setGoals] = useState(stored?.goals || []);
   const [accounts, setAccounts] = useState(normalizeAccounts(stored?.accounts || []));
-  const [currentAccountId, setCurrentAccountId] = useState(stored?.currentAccountId || "main");
-  const [navOrder, setNavOrder] = useState(stored?.navOrder || NAV_ITEMS.map((n) => n.key));
+  const [currentAccountId, setCurrentAccountId] = useState(
+    stored?.currentAccountId || "main"
+  );
+  const [navOrder, setNavOrder] = useState(
+    stored?.navOrder || NAV_ITEMS.map((n) => n.key)
+  );
   const [homePage, setHomePage] = useState(stored?.homePage || "dashboard");
   const [dashboardSectionsOrder, setDashboardSectionsOrder] = useState(
     stored?.dashboardSectionsOrder || DEFAULT_DASHBOARD_SECTIONS
@@ -236,9 +241,7 @@ function App() {
       }
 
       if (agg.newAccounts > 0) {
-        msg += ` Created ${agg.newAccounts} new account${
-          agg.newAccounts === 1 ? "" : "s"
-        }.`;
+        msg += ` Created ${agg.newAccounts} new account${agg.newAccounts === 1 ? "" : "s"}.`;
       }
 
       setToast({ variant: "success", message: msg });
@@ -254,13 +257,42 @@ function App() {
   }
 
   /* -------- Derived -------- */
-  const activeBudget = budgetsByMonth[activeMonth] || { month: activeMonth, income: 0 };
+  const activeBudget =
+    budgetsByMonth[activeMonth] || { month: activeMonth, income: 0, transactions: [] };
+
+  function computeActualIncomeFromTransactions(transactions = []) {
+    const list = Array.isArray(transactions) ? transactions : [];
+    return list.reduce((sum, tx) => {
+      const amt = Number(tx?.amount);
+      if (!Number.isFinite(amt)) return sum;
+
+      const ft = (tx?.flowType || "").toLowerCase();
+      if (ft === "income") return sum + Math.max(0, amt);
+      if (ft === "expense" || ft === "transfer" || ft === "ignore") return sum;
+
+      // fallback: positive = income
+      return amt > 0 ? sum + amt : sum;
+    }, 0);
+  }
+
+  const budgetEstimatedIncome = Number.isFinite(Number(activeBudget?.estimatedIncome))
+    ? Number(activeBudget.estimatedIncome)
+    : Number.isFinite(Number(activeBudget?.income))
+    ? Number(activeBudget.income) // legacy fallback
+    : 0;
+
+  const budgetActualIncome = useMemo(
+    () => computeActualIncomeFromTransactions(activeBudget.transactions || []),
+    [activeBudget.transactions]
+  );
+
+  const incomeForMath = activeBudget?.useActualIncome ? budgetActualIncome : budgetEstimatedIncome;
 
   const totals = useMemo(() => {
     const fixed = sumAmounts(activeBudget.fixed || []);
     const variable = sumAmounts(activeBudget.variable || []);
-    return { fixed, variable, leftover: activeBudget.income - fixed - variable };
-  }, [activeBudget]);
+    return { fixed, variable, leftover: incomeForMath - fixed - variable };
+  }, [activeBudget, incomeForMath]);
 
   const themeStyles = useMemo(() => getThemeConfig(theme), [theme]);
 
@@ -292,9 +324,7 @@ function App() {
   useEffect(() => {
     if (!user?.uid) return;
     setProfileLoading(true);
-    loadOrCreateUserProfile(user)
-      .then(setUserProfile)
-      .finally(() => setProfileLoading(false));
+    loadOrCreateUserProfile(user).then(setUserProfile).finally(() => setProfileLoading(false));
   }, [user?.uid]);
 
   /* -------- Remote sync (firebase) -------- */
@@ -439,7 +469,6 @@ function App() {
           description: r.description || "",
           category: r.category || "",
           amount: Number.isFinite(amount) ? amount : NaN,
-          // optional passthrough (if you ever want it in UI later)
           balance: Number.isFinite(Number(r.balance)) ? Number(r.balance) : undefined,
         };
       })
@@ -462,7 +491,6 @@ function App() {
     const monthKey = activeMonthRef.current || getCurrentMonthKey();
     const fallbackAccountId = currentAccountIdRef.current || "main";
 
-    // ✅ If Dashboard forces an account, use it (multi-account safe)
     const forcedAccountId =
       meta.accountId && typeof meta.accountId === "string" ? meta.accountId : null;
 
@@ -486,7 +514,6 @@ function App() {
     const targetAccountName =
       detection.targetAccountName || sourceLabel || "Imported Account";
 
-    // ✅ Attach statementKey to txs for safety/future analytics
     const statementKey = meta?.statement?.statementKey || null;
 
     const rowsWithAccount = parsedRows.map((tx) => ({
@@ -495,7 +522,6 @@ function App() {
       ...(statementKey ? { statementKey } : {}),
     }));
 
-    // ✅ Update account balances safely if statement meta is present
     const statement = meta?.statement || null;
     const hasStatementBalance =
       statement &&
@@ -511,7 +537,6 @@ function App() {
       const upsertAccount = (acc) => {
         const mergedTx = mergeTransactions(acc.transactions || [], rowsWithAccount);
 
-        // statementBalances is a map keyed by statementKey
         const prevMap =
           acc.statementBalances && typeof acc.statementBalances === "object"
             ? acc.statementBalances
@@ -542,13 +567,11 @@ function App() {
               ...prevMap,
               [statement.statementKey]: existingEntry ? existingEntry : nextEntry,
             },
-            // always keep “last confirmed” fields fresh
             lastConfirmedEndingBalance: Number(statement.endingBalance),
             lastStatementEndISO: statement.endISO || "",
             lastStatementKey: statement.statementKey,
           };
 
-          // ✅ currentBalance should reflect the most recent statement end date we’ve confirmed
           const prevEndTime = Date.parse(nextAcc.currentBalanceAsOf || "") || 0;
           if (endTime >= prevEndTime) {
             nextAcc = {
@@ -600,17 +623,14 @@ function App() {
       };
     })();
 
-    // update refs immediately
     accountsRef.current = nextAccounts;
     budgetsByMonthRef.current = nextBudgetsByMonth;
     currentAccountIdRef.current = targetAccountId;
 
-    // commit state
     setAccounts(nextAccounts);
     setBudgetsByMonth(nextBudgetsByMonth);
     setCurrentAccountId(targetAccountId);
 
-    // aggregate toast
     const agg = importToastAggRef.current;
     agg.files += 1;
     agg.tx += rowsWithAccount.length;
@@ -665,10 +685,7 @@ function App() {
       normalizeAccounts(
         (Array.isArray(prev) ? prev : []).map((a) =>
           a.id === id
-            ? {
-                ...a,
-                startingBalance: Number.isFinite(nextValue) ? nextValue : 0,
-              }
+            ? { ...a, startingBalance: Number.isFinite(nextValue) ? nextValue : 0 }
             : a
         )
       )
@@ -699,28 +716,95 @@ function App() {
     });
   }
 
+  // ✅ Keep manual tx mirrored into accounts too (balances stay correct)
+  function ensureAccountExists(prevAccounts, accountId) {
+    const list = Array.isArray(prevAccounts) ? prevAccounts : [];
+    if (list.some((a) => a.id === accountId)) return list;
+
+    const newAcc = {
+      id: accountId,
+      name: "Manual Account",
+      type: "checking",
+      startingBalance: 0,
+      transactions: [],
+      createdAt: Date.now(),
+      statementBalances: {},
+    };
+    return normalizeAccounts([...list, newAcc]);
+  }
+
   function handleAddTransactionRow(tx) {
+    const newTx = {
+      id: tx?.id || makeTxId(),
+      date: tx?.date || "",
+      description: tx?.description || "",
+      category: tx?.category || "",
+      accountId: tx?.accountId || currentAccountId || "main",
+      flowType: tx?.flowType,
+      amount: Number.isFinite(Number(tx?.amount)) ? Number(tx.amount) : 0,
+    };
+
     updateActiveBudget((curr) => {
       const list = Array.isArray(curr.transactions) ? curr.transactions : [];
-      const amountNum = Number(tx?.amount);
-      const cleanAmount = Number.isFinite(amountNum) ? amountNum : 0;
-      const nextTx = {
-        id: tx?.id || makeTxId(),
-        date: tx?.date || "",
-        description: tx?.description || "",
-        category: tx?.category || "",
-        accountId: tx?.accountId || currentAccountId || "main",
-        flowType: tx?.flowType,
-        amount: cleanAmount,
-      };
-      return { ...curr, transactions: [nextTx, ...list] };
+      return { ...curr, transactions: [newTx, ...list] };
+    });
+
+    setAccounts((prev) => {
+      const withAcc = ensureAccountExists(prev, newTx.accountId);
+      return normalizeAccounts(
+        withAcc.map((acc) => {
+          if (acc.id !== newTx.accountId) return acc;
+          const prevTx = Array.isArray(acc.transactions) ? acc.transactions : [];
+          return { ...acc, transactions: [newTx, ...prevTx] };
+        })
+      );
     });
   }
 
   function handleUpdateTransactionRow(index, patch = {}) {
     updateActiveBudget((curr) => {
       const list = Array.isArray(curr.transactions) ? curr.transactions : [];
-      const nextList = list.map((tx, i) => (i === index ? { ...tx, ...patch } : tx));
+      const target = list[index];
+      if (!target?.id) return curr;
+
+      const updated = { ...target, ...patch };
+      const txId = updated.id;
+
+      const nextList = list.map((t, i) => (i === index ? updated : t));
+
+      setAccounts((prev) => {
+        let nextAccounts = Array.isArray(prev) ? prev : [];
+
+        const oldAccountId = target.accountId || "main";
+        const newAccountId = updated.accountId || oldAccountId || "main";
+
+        nextAccounts = ensureAccountExists(nextAccounts, newAccountId);
+
+        // remove from old account if moved
+        nextAccounts = nextAccounts.map((acc) => {
+          const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
+          const has = accTx.some((t) => t.id === txId);
+          if (!has) return acc;
+
+          if (acc.id === newAccountId) return acc; // same account, will replace below
+          return { ...acc, transactions: accTx.filter((t) => t.id !== txId) };
+        });
+
+        // add/replace in new account
+        nextAccounts = nextAccounts.map((acc) => {
+          if (acc.id !== newAccountId) return acc;
+          const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
+          const idx = accTx.findIndex((t) => t.id === txId);
+
+          if (idx === -1) return { ...acc, transactions: [updated, ...accTx] };
+
+          const replaced = accTx.map((t) => (t.id === txId ? { ...t, ...patch } : t));
+          return { ...acc, transactions: replaced };
+        });
+
+        return normalizeAccounts(nextAccounts);
+      });
+
       return { ...curr, transactions: nextList };
     });
   }
@@ -728,7 +812,23 @@ function App() {
   function handleDeleteTransactionRow(index) {
     updateActiveBudget((curr) => {
       const list = Array.isArray(curr.transactions) ? curr.transactions : [];
+      const target = list[index];
+      if (!target?.id) return curr;
+
+      const txId = target.id;
+
       const nextList = list.filter((_, i) => i !== index);
+
+      setAccounts((prev) =>
+        normalizeAccounts(
+          (Array.isArray(prev) ? prev : []).map((acc) => {
+            const accTx = Array.isArray(acc.transactions) ? acc.transactions : [];
+            if (!accTx.some((t) => t.id === txId)) return acc;
+            return { ...acc, transactions: accTx.filter((t) => t.id !== txId) };
+          })
+        )
+      );
+
       return { ...curr, transactions: nextList };
     });
   }
@@ -780,7 +880,7 @@ function App() {
         {currentPage === "dashboard" && (
           <Dashboard
             month={activeMonth}
-            income={activeBudget.income}
+            income={incomeForMath} // ✅ uses actual vs estimated logic
             fixed={totals.fixed}
             variable={totals.variable}
             leftover={totals.leftover}
@@ -839,7 +939,7 @@ function App() {
             onScheduleChecksChange={setScheduleChecks}
             accounts={accounts}
             currentAccountId={currentAccountId}
-            onAddTransaction={handleAddTransactionRow}
+            onAddTransaction={handleAddTransactionRow} // ✅ allow “add income/expense” from budget/calendar
           />
         )}
 

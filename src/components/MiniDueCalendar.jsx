@@ -44,39 +44,39 @@ function fmtCompactMoney(n) {
   return `$${x.toFixed(0)}`;
 }
 
+function safeParseISO(iso) {
+  if (!iso || typeof iso !== "string") return null;
+  const dt = new Date(iso);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
 export default function MiniDueCalendar({
   items,
   bills,
   selectedDateISO,
   onSelectDate = () => {},
-  initialMonthISO,
+
+  // ✅ NEW: parent-controlled month
+  visibleMonthISO,
+  onVisibleMonthChange = () => {},
+
   badgeMode = "auto", // "auto" | "count" | "sum"
 }) {
   const data = Array.isArray(items) ? items : Array.isArray(bills) ? bills : [];
 
-  const [monthAnchor, setMonthAnchor] = React.useState(() => {
-    const base =
-      (selectedDateISO && new Date(selectedDateISO)) ||
-      (initialMonthISO ? new Date(initialMonthISO) : new Date());
-    return startOfMonth(base);
-  });
+  // ✅ Use parent month if provided, else derive from selection or today
+  const monthAnchor = React.useMemo(() => {
+    const fromVisible = safeParseISO(visibleMonthISO);
+    if (fromVisible) return startOfMonth(fromVisible);
 
-  React.useEffect(() => {
-    if (!selectedDateISO) return;
-    const sel = new Date(selectedDateISO);
-    if (Number.isNaN(sel.getTime())) return;
+    const fromSelected = safeParseISO(selectedDateISO);
+    if (fromSelected) return startOfMonth(fromSelected);
 
-    if (
-      sel.getFullYear() !== monthAnchor.getFullYear() ||
-      sel.getMonth() !== monthAnchor.getMonth()
-    ) {
-      setMonthAnchor(startOfMonth(sel));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDateISO]);
+    return startOfMonth(new Date());
+  }, [visibleMonthISO, selectedDateISO]);
 
   const todayISO = isoDay(new Date());
-  const monthStart = startOfMonth(monthAnchor);
+  const monthStart = monthAnchor;
   const totalDays = daysInMonth(monthStart);
   const firstWeekday = weekdayIndexSun0(monthStart);
 
@@ -115,9 +115,22 @@ export default function MiniDueCalendar({
     return isoDay(d);
   }
 
+  function setMonth(nextDateObj) {
+    const next = startOfMonth(nextDateObj);
+    onVisibleMonthChange(isoDay(next)); // store as YYYY-MM-DD (day=01)
+  }
+
+  function goPrev() {
+    setMonth(addMonths(monthStart, -1));
+  }
+
+  function goNext() {
+    setMonth(addMonths(monthStart, 1));
+  }
+
   function goToday() {
     const d = new Date();
-    setMonthAnchor(startOfMonth(d));
+    setMonth(d);
     onSelectDate(isoDay(d));
   }
 
@@ -126,7 +139,7 @@ export default function MiniDueCalendar({
       <div className="flex items-center justify-between gap-2">
         <button
           className="rounded-xl border border-slate-700/70 px-3 py-1 text-xs text-slate-200 hover:border-cyan-400/60 transition"
-          onClick={() => setMonthAnchor((m) => startOfMonth(addMonths(m, -1)))}
+          onClick={goPrev}
           type="button"
           aria-label="Previous month"
         >
@@ -146,7 +159,7 @@ export default function MiniDueCalendar({
 
         <button
           className="rounded-xl border border-slate-700/70 px-3 py-1 text-xs text-slate-200 hover:border-cyan-400/60 transition"
-          onClick={() => setMonthAnchor((m) => startOfMonth(addMonths(m, 1)))}
+          onClick={goNext}
           type="button"
           aria-label="Next month"
         >
