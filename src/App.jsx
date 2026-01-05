@@ -26,7 +26,7 @@ import TransactionsPage from "./pages/TransactionsPage.jsx";
 import GoalDetailPage from "./pages/GoalDetailPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 
-// Libs (matches your updated src/lib/storage.js)
+// Libs
 import {
   loadStoredState,
   saveStoredState,
@@ -65,7 +65,7 @@ const DEFAULT_STATE = {
   currentGoalId: null,
 
   // Nav
-  currentPage: "dashboard", // dashboard | balances | budget | transactions | goal | reports
+  currentPage: "dashboard",
 };
 
 export default function App() {
@@ -274,96 +274,99 @@ export default function App() {
       </nav>
 
       <main className="app-main">
-        {page === "dashboard" && (
-          <Dashboard
-            month={monthLabel}
-            income={clampNumber(budget?.estimatedIncome ?? budget?.income)}
-            fixed={totals.fixedTotal}
-            variable={totals.variableTotal}
-            leftover={
-              clampNumber(budget?.estimatedIncome ?? budget?.income) -
-              totals.fixedTotal -
-              totals.variableTotal
-            }
-            goals={Array.isArray(appState.goals) ? appState.goals : []}
-            transactions={transactions}
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onChangeCurrentAccount={(id) =>
-              setAppState((prev) => ({ ...prev, currentAccountId: id }))
-            }
-            onOpenGoal={openGoal}
-            onTransactionsUpdate={(nextTx) => updateBudget({ ...budget, transactions: nextTx })}
-            currentAccountBalance={0}
-            totalBalance={0}
-            sectionsOrder={budget?.sectionsOrder}
-          />
-        )}
+        {/* ✅ Layout fix: force the routed pages to use full width and center nicely */}
+        <div className="w-full max-w-6xl mx-auto px-4 py-4">
+          {page === "dashboard" && (
+            <Dashboard
+              month={monthLabel}
+              income={clampNumber(budget?.estimatedIncome ?? budget?.income)}
+              fixed={totals.fixedTotal}
+              variable={totals.variableTotal}
+              leftover={
+                clampNumber(budget?.estimatedIncome ?? budget?.income) -
+                totals.fixedTotal -
+                totals.variableTotal
+              }
+              goals={Array.isArray(appState.goals) ? appState.goals : []}
+              transactions={transactions}
+              accounts={accounts}
+              currentAccountId={currentAccountId}
+              onChangeCurrentAccount={(id) =>
+                setAppState((prev) => ({ ...prev, currentAccountId: id }))
+              }
+              onOpenGoal={openGoal}
+              onTransactionsUpdate={(nextTx) => updateBudget({ ...budget, transactions: nextTx })}
+              currentAccountBalance={0}
+              totalBalance={0}
+              sectionsOrder={budget?.sectionsOrder}
+            />
+          )}
 
-        {page === "balances" && (
-          <BalancesDashboard
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onChangeCurrentAccount={(id) =>
-              setAppState((prev) => ({ ...prev, currentAccountId: id }))
-            }
-            transactions={transactions}
-          />
-        )}
+          {page === "balances" && (
+            <BalancesDashboard
+              accounts={accounts}
+              currentAccountId={currentAccountId}
+              onChangeCurrentAccount={(id) =>
+                setAppState((prev) => ({ ...prev, currentAccountId: id }))
+              }
+              transactions={transactions}
+            />
+          )}
 
-        {page === "budget" && (
-          <BudgetPage
-            month={monthLabel}
-            budget={budget}
-            totals={totals}
-            onBudgetChange={updateBudget}
-            scheduledTemplates={appState.scheduledTemplates || []}
-            scheduleChecks={appState.scheduleChecks || {}}
-            onScheduledTemplatesChange={updateScheduledTemplates}
-            onScheduleChecksChange={updateScheduleChecks}
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onAddTransaction={addTransaction}
-          />
-        )}
+          {page === "budget" && (
+            <BudgetPage
+              month={monthLabel}
+              budget={budget}
+              totals={totals}
+              onBudgetChange={updateBudget}
+              scheduledTemplates={appState.scheduledTemplates || []}
+              scheduleChecks={appState.scheduleChecks || {}}
+              onScheduledTemplatesChange={updateScheduledTemplates}
+              onScheduleChecksChange={updateScheduleChecks}
+              accounts={accounts}
+              currentAccountId={currentAccountId}
+              onAddTransaction={addTransaction}
+            />
+          )}
 
-        {page === "transactions" && (
-          <TransactionsPage
-            month={monthLabel}
-            transactions={transactions}
-            accounts={accounts}
-            currentAccountId={currentAccountId}
-            onChangeCurrentAccount={(id) =>
-              setAppState((prev) => ({ ...prev, currentAccountId: id }))
-            }
-            onTransactionsChange={(nextTx) => updateBudget({ ...budget, transactions: nextTx })}
-            onAddTransaction={addTransaction}
-          />
-        )}
+          {page === "transactions" && (
+            <TransactionsPage
+              month={monthLabel}
+              transactions={transactions}
+              accounts={accounts}
+              currentAccountId={currentAccountId}
+              onChangeCurrentAccount={(id) =>
+                setAppState((prev) => ({ ...prev, currentAccountId: id }))
+              }
+              onTransactionsChange={(nextTx) => updateBudget({ ...budget, transactions: nextTx })}
+              onAddTransaction={addTransaction}
+            />
+          )}
 
-        {page === "goal" && (
-          <GoalDetailPage
-            goalId={appState.currentGoalId}
-            goals={Array.isArray(appState.goals) ? appState.goals : []}
-            onBack={() => setCurrentPage("dashboard")}
-            onUpdateGoals={(nextGoals) =>
-              setAppState((prev) => ({
-                ...prev,
-                goals: nextGoals,
-              }))
-            }
-          />
-        )}
+          {page === "goal" && (
+            <GoalDetailPage
+              goalId={appState.currentGoalId}
+              goals={Array.isArray(appState.goals) ? appState.goals : []}
+              onBack={() => setCurrentPage("dashboard")}
+              onUpdateGoals={(nextGoals) =>
+                setAppState((prev) => ({
+                  ...prev,
+                  goals: nextGoals,
+                }))
+              }
+            />
+          )}
 
-        {page === "reports" && (
-          <ReportsPage
-            monthKey={monthKey}
-            month={monthLabel}
-            budget={budget}
-            transactions={transactions}
-            accounts={accounts}
-          />
-        )}
+          {page === "reports" && (
+            <ReportsPage
+              monthKey={monthKey}
+              month={monthLabel}
+              budget={budget}
+              transactions={transactions}
+              accounts={accounts}
+            />
+          )}
+        </div>
       </main>
 
       {toast && <Toast kind={toast.kind} message={toast.message} onClose={() => setToast(null)} />}
