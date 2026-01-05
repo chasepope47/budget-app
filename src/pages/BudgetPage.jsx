@@ -1,9 +1,10 @@
 // src/pages/BudgetPage.jsx
 import React from "react";
 import Card from "../components/Card.jsx";
-import MiniDueCalendar from "../components/MiniDueCalendar.jsx";
-import { expandTemplatesForMonth, checkKey } from "../lib/schedule.js";
 
+// --------------------
+// Date + money helpers
+// --------------------
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -38,6 +39,16 @@ function addDays(date, n) {
   return d;
 }
 
+function addMonths(date, n) {
+  const d = new Date(date);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + n);
+  const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, maxDay));
+  return d;
+}
+
 function clampMoney(n) {
   const x = Number(n);
   return Number.isFinite(x) ? x : 0;
@@ -48,6 +59,114 @@ function monthKeyFromISO(isoDayStr) {
   return isoDayStr.slice(0, 7);
 }
 
+// --------------------
+// Schedule helpers (MISSING before)
+// --------------------
+function checkKey(templateId, dueDateISO) {
+  return `${templateId}|${dueDateISO}`;
+}
+
+function expandTemplatesForMonth(templates = [], monthKey) {
+  // monthKey like "2026-01"
+  if (!monthKey || typeof monthKey !== "string" || monthKey.length < 7) return [];
+
+  const start = parseISODateLocal(`${monthKey}-01`);
+  if (!start) return [];
+
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  end.setHours(0, 0, 0, 0);
+
+  const list = Array.isArray(templates) ? templates : [];
+  const out = [];
+
+  const pushIfInRange = (t, dt) => {
+    if (!dt) return;
+    const d = new Date(dt);
+    d.setHours(0, 0, 0, 0);
+    if (d < start || d > end) return;
+
+    out.push({
+      templateId: t.id,
+      label: t.label || "Due item",
+      amount: Number.isFinite(Number(t.amount)) ? Number(t.amount) : 0,
+      dueDate: formatISODate(d),
+    });
+  };
+
+  for (const t of list) {
+    if (!t?.id) continue;
+
+    const cadence = String(t.cadence || "once").toLowerCase();
+    const startDate = parseISODateLocal(t.startDate);
+    if (!startDate) continue;
+
+    if (cadence === "once") {
+      pushIfInRange(t, startDate);
+      continue;
+    }
+
+    if (cadence === "weekly" || cadence === "biweekly") {
+      const step = cadence === "weekly" ? 7 : 14;
+
+      let cur = new Date(startDate);
+      cur.setHours(0, 0, 0, 0);
+
+      if (cur < start) {
+        const diffDays = Math.floor((start - cur) / (1000 * 60 * 60 * 24));
+        const jumps = Math.ceil(diffDays / step);
+        cur = addDays(cur, jumps * step);
+      }
+
+      while (cur <= end) {
+        pushIfInRange(t, cur);
+        cur = addDays(cur, step);
+      }
+      continue;
+    }
+
+    if (cadence === "monthly") {
+      const desiredDay = Number(t.dayOfMonth) || startDate.getDate();
+
+      let cur = new Date(startDate);
+      cur.setHours(0, 0, 0, 0);
+
+      while (cur < start) cur = addMonths(cur, 1);
+
+      while (cur <= end) {
+        const first = new Date(cur.getFullYear(), cur.getMonth(), 1);
+        const maxDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+
+        const dt = new Date(
+          first.getFullYear(),
+          first.getMonth(),
+          Math.min(desiredDay, maxDay)
+        );
+        dt.setHours(0, 0, 0, 0);
+
+        pushIfInRange(t, dt);
+        cur = addMonths(cur, 1);
+      }
+      continue;
+    }
+
+    if (cadence === "yearly") {
+      const dt = new Date(start.getFullYear(), startDate.getMonth(), startDate.getDate());
+      dt.setHours(0, 0, 0, 0);
+      pushIfInRange(t, dt);
+      continue;
+    }
+
+    // Unknown cadence -> treat as once
+    pushIfInRange(t, startDate);
+  }
+
+  out.sort((a, b) => (a.dueDate > b.dueDate ? 1 : a.dueDate < b.dueDate ? -1 : 0));
+  return out;
+}
+
+// --------------------
+// Income helper
+// --------------------
 function computeActualIncomeFromTransactions(transactions = []) {
   const list = Array.isArray(transactions) ? transactions : [];
   return list.reduce((sum, tx) => {
@@ -72,7 +191,7 @@ function BudgetPage({
   onScheduledTemplatesChange = () => {},
   onScheduleChecksChange = () => {},
 
-  // ✅ optional, from App.jsx
+  // optional from App.jsx
   accounts = [],
   currentAccountId = "main",
   onAddTransaction = () => {},
@@ -84,12 +203,11 @@ function BudgetPage({
   const variableItems = Array.isArray(budget?.variable) ? budget.variable : [];
   const tx = Array.isArray(budget?.transactions) ? budget.transactions : [];
 
-  // ✅ Income model (estimate + actual + toggle)
   const estimatedIncome =
     Number.isFinite(Number(budget?.estimatedIncome))
       ? Number(budget.estimatedIncome)
       : Number.isFinite(Number(budget?.income))
-      ? Number(budget.income) // backward compat
+      ? Number(budget.income)
       : 0;
 
   const actualIncome = React.useMemo(
@@ -102,9 +220,10 @@ function BudgetPage({
   const incomeForMath = useActualIncome ? actualIncome : estimatedIncome;
   const leftoverForMath = incomeForMath - fixedTotal - variableTotal;
 
+  // Calendar selection
   const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
 
-  // ✅ Calendar visible month (rollover)
+  // Visible month
   const [calendarMonthISO, setCalendarMonthISO] = React.useState(() => {
     const mk = monthKeyFromISO(selectedDueDateISO);
     return `${mk}-01`;
@@ -197,7 +316,6 @@ function BudgetPage({
     onBudgetChange({ ...budget, useActualIncome: !useActualIncome });
   }
 
-  // ✅ Manual transaction add flows (income or expense) without CSV import
   function handleAddQuickTransaction(kind) {
     const isIncome = kind === "income";
     const defaultDesc = isIncome ? "Paycheck" : "Expense";
@@ -236,7 +354,6 @@ function BudgetPage({
     });
   }
 
-  // ✅ Create a template and return its id (budget item becomes “plugin” for calendar)
   function createRecurringTemplate({ label, amount, kind, source, defaultDateISO }) {
     const wantsRecurring = window.confirm("Add to calendar as repeating due item?");
     if (!wantsRecurring) return null;
@@ -487,15 +604,6 @@ function BudgetPage({
 
         <Card title="MONTHLY DUE DATES">
           <div className="grid gap-3 md:grid-cols-2">
-            <MiniDueCalendar
-              items={occurrences}
-              selectedDateISO={selectedDueDateISO}
-              onSelectDate={setSelectedDueDateISO}
-              visibleMonthISO={calendarMonthISO}
-              onVisibleMonthChange={setCalendarMonthISO}
-              badgeMode="auto"
-            />
-
             <div className="space-y-3">
               <BillsPanel
                 title="OVERDUE"
