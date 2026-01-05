@@ -156,36 +156,69 @@ video {
   --surface-card-bg: #0b0c14;
   --surface-card-border: rgba(15, 23, 42, 0.8);
   --surface-card-shadow: 0 0 20px rgba(0, 255, 224, 0.08);
+
+  /* ✅ NEW: badge styling defaults */
+  --badge-chip-bg: rgba(0, 0, 0, 0.35);
+  --badge-chip-border: rgba(148, 163, 184, 0.55); /* slate-ish */
+  --badge-chip-text: rgba(226, 232, 240, 0.95);
 }
 
 body[data-theme="light"] {
   --surface-card-bg: #ffffff;
   --surface-card-border: rgba(15, 23, 42, 0.15);
   --surface-card-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+
+  /* ✅ NEW: badges in light mode */
+  --badge-chip-bg: rgba(15, 23, 42, 0.08);
+  --badge-chip-border: rgba(15, 23, 42, 0.22);
+  --badge-chip-text: rgba(15, 23, 42, 0.9);
 }
 
 body[data-theme="midnight"] {
   --surface-card-bg: #0c1024;
   --surface-card-border: rgba(99, 102, 241, 0.35);
   --surface-card-shadow: 0 15px 30px rgba(76, 29, 149, 0.35);
+
+  --badge-chip-bg: rgba(0, 0, 0, 0.35);
+  --badge-chip-border: rgba(99, 102, 241, 0.45);
+  --badge-chip-text: rgba(226, 232, 240, 0.95);
 }
 
 body[data-theme="aurora"] {
   --surface-card-bg: rgba(4, 31, 37, 0.85);
   --surface-card-border: rgba(16, 185, 129, 0.35);
   --surface-card-shadow: 0 20px 40px rgba(16, 185, 129, 0.2);
+
+  --badge-chip-bg: rgba(0, 0, 0, 0.35);
+  --badge-chip-border: rgba(16, 185, 129, 0.45);
+  --badge-chip-text: rgba(226, 232, 240, 0.95);
 }
 
 body[data-theme="crimson"] {
   --surface-card-bg: rgba(43, 13, 18, 0.92);
   --surface-card-border: rgba(244, 63, 94, 0.4);
   --surface-card-shadow: 0 20px 38px rgba(190, 24, 93, 0.25);
+
+  --badge-chip-bg: rgba(0, 0, 0, 0.35);
+  --badge-chip-border: rgba(244, 63, 94, 0.55);
+  --badge-chip-text: rgba(255, 241, 242, 0.95);
 }
 
 .card-surface {
   background: var(--surface-card-bg);
   border-color: var(--surface-card-border);
   box-shadow: var(--surface-card-shadow);
+}
+
+/* =========================
+   Calendar badge contrast (NEW)
+   ========================= */
+
+.badge-chip {
+  background: var(--badge-chip-bg);
+  border-color: var(--badge-chip-border);
+  color: var(--badge-chip-text);
+  backdrop-filter: blur(6px);
 }
 
 /* =========================
@@ -232,7 +265,6 @@ body[data-theme="crimson"] {
    Progress shine animation
    ========================= */
 
-/* move left → right inside the filled part, then back */
 @keyframes shine {
   0% {
     left: 0;
@@ -254,7 +286,6 @@ body[data-theme="crimson"] {
   }
 }
 
-/* the class that actually runs the animation */
 .shine {
   animation: shine 2.2s ease-in-out infinite;
 }
@@ -263,7 +294,7 @@ body[data-theme="crimson"] {
   width: 100%;
   height: 0.5rem;
   border-radius: 0.25rem;
-  background-color: #1e293b; /* slate-800 */
+  background-color: #1e293b;
   overflow: hidden;
 }
 
@@ -271,12 +302,12 @@ body[data-theme="crimson"] {
   height: 100%;
   background: linear-gradient(to right, #22d3ee, #a78bfa, #22d3ee);
   box-shadow: 0 0 20px rgba(34, 211, 238, 0.8);
-  position: relative; /* important for shine */
-  overflow: hidden; /* keep the shine inside the filled bar */
+  position: relative;
+  overflow: hidden;
 }
 
 .progress-shine {
-  --shine-width: 3rem; /* width of the glowing bar */
+  --shine-width: 3rem;
 
   position: absolute;
   top: 0;

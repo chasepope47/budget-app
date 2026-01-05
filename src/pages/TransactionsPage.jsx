@@ -1,6 +1,7 @@
 // src/pages/TransactionsPage.jsx
 import React, { useState, useMemo, useEffect } from "react";
 import Card from "../components/Card.jsx";
+import TransactionModal from "../components/TransactionModal.jsx";
 
 const FLOW_TYPE_OPTIONS = [
   { value: "auto", label: "Auto (detect)" },
@@ -26,14 +27,8 @@ function todayISO() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function isValidISODate(v) {
-  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
-}
-
 function TransactionsPage(props) {
-  // ---- Support BOTH prop styles (so your App.jsx won’t break) ----
   const {
-    // old/standalone props
     transactions = [],
     accountName: accountNameProp = "",
     accounts = [],
@@ -47,11 +42,9 @@ function TransactionsPage(props) {
     scheduledTemplates = [],
     onScheduledTemplatesChange = () => {},
 
-    // new App.jsx style props (you showed earlier)
     filter: filterFromApp,
     onFilterChange: onFilterChangeFromApp,
 
-    // existing props in this file
     filterText: filterTextProp,
     onChangeFilterText: onChangeFilterTextProp,
   } = props;
@@ -62,7 +55,6 @@ function TransactionsPage(props) {
       : null;
   const accountName = accountNameProp || accountFromList?.name || "";
 
-  // normalize the filter props
   const filterText = (filterTextProp ?? filterFromApp ?? "").toString();
   const onChangeFilterText =
     onChangeFilterTextProp ?? onFilterChangeFromApp ?? (() => {});
@@ -78,7 +70,8 @@ function TransactionsPage(props) {
   const [sortBy, setSortBy] = useState("date");
   const [sortDirection, setSortDirection] = useState("desc");
 
-  // If parent sets filterText, sync it into the Search box
+  const [addOpen, setAddOpen] = useState(false);
+
   useEffect(() => {
     const next = (filterText || "").trim();
     if (!next) return;
@@ -99,75 +92,8 @@ function TransactionsPage(props) {
   };
 
   const handleClearFilters = () => {
-    setFilters({
-      query: "",
-      minAmount: "",
-      maxAmount: "",
-    });
+    setFilters({ query: "", minAmount: "", maxAmount: "" });
     onChangeFilterText("");
-  };
-
-  const handleAddTransactionFlow = () => {
-    const description = window.prompt("Description:");
-    if (!description) return;
-
-    const amountInput = window.prompt("Amount (use negative for expense):", "0");
-    if (amountInput === null) return;
-    const amount = Number(amountInput);
-    if (!Number.isFinite(amount)) {
-      window.alert("Please enter a valid number for amount.");
-      return;
-    }
-
-    const dateInput = window.prompt("Date (YYYY-MM-DD):", todayISO());
-    if (!dateInput) return;
-    if (!isValidISODate(dateInput)) {
-      window.alert("Use YYYY-MM-DD format for dates.");
-      return;
-    }
-
-    const categoryInput = window.prompt("Category (optional):", "");
-
-    const tx = {
-      description: description.trim(),
-      amount,
-      date: dateInput,
-      category: (categoryInput || "").trim(),
-      accountId: currentAccountId || "main",
-    };
-
-    onAddTransaction(tx);
-
-    const repeat = window.confirm("Repeat? (add to calendar as repeating due item?)");
-    if (!repeat) return;
-
-    const cadenceInput = window.prompt(
-      "Cadence? (once, weekly, biweekly, monthly, yearly)",
-      "monthly"
-    );
-    if (cadenceInput === null) return;
-    const cadenceRaw = (cadenceInput || "monthly").trim().toLowerCase();
-    const allowedCadence = ["once", "weekly", "biweekly", "monthly", "yearly"];
-    const cadence = allowedCadence.includes(cadenceRaw) ? cadenceRaw : "monthly";
-
-    const dayMatch = dateInput.match(/^\d{4}-\d{2}-(\d{2})$/);
-    const dayOfMonth = dayMatch ? Number(dayMatch[1]) : undefined;
-
-    const nextTemplate = {
-      id: `sched-${Date.now()}`,
-      label: tx.description || "Transaction",
-      amount,
-      kind: amount >= 0 ? "income" : "expense",
-      source: "transaction",
-      startDate: dateInput,
-      cadence,
-      dayOfMonth,
-      accountId: tx.accountId,
-      category: tx.category || undefined,
-    };
-
-    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
-    onScheduledTemplatesChange([...list, nextTemplate]);
   };
 
   const hasActiveFilter = filters.query || filters.minAmount || filters.maxAmount;
@@ -186,9 +112,7 @@ function TransactionsPage(props) {
       const amountNum = Number(tx.amount);
 
       if (q) {
-        const haystack = [tx.description || "", tx.category || ""]
-          .join(" ")
-          .toLowerCase();
+        const haystack = [tx.description || "", tx.category || ""].join(" ").toLowerCase();
         if (!haystack.includes(q)) return false;
       }
 
@@ -234,19 +158,32 @@ function TransactionsPage(props) {
     return sorted;
   }, [transactions, filters, sortBy, sortDirection, hasData]);
 
+  function handleSaveNew(tx) {
+    onAddTransaction({
+      ...tx,
+      accountId: tx.accountId || currentAccountId || "main",
+    });
+  }
+
+  function handleCreateRecurringFromModal(templateFields) {
+    const nextTemplate = {
+      id: `sched-${Date.now()}`,
+      ...templateFields,
+    };
+
+    const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
+    onScheduledTemplatesChange([...list, nextTemplate]);
+  }
+
   return (
     <div className="space-y-4 w-full">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
-          <span className="text-xs text-slate-400">
-            Imported from your bank CSV files
-          </span>
+          <span className="text-xs text-slate-400">Imported + manual entries</span>
           <p className="text-[0.65rem] text-slate-500">
             Currently viewing:{" "}
-            <span className="font-semibold text-cyan-200">
-              {accountName || "None"}
-            </span>
+            <span className="font-semibold text-cyan-200">{accountName || "None"}</span>
           </p>
 
           {!!filterText.trim() && (
@@ -275,7 +212,7 @@ function TransactionsPage(props) {
         <div className="mb-3 flex justify-end">
           <button
             type="button"
-            onClick={handleAddTransactionFlow}
+            onClick={() => setAddOpen(true)}
             className="h-8 px-3 rounded-md border border-cyan-500/60 text-[0.7rem] font-medium text-cyan-200 hover:bg-cyan-500/10"
           >
             + Add Transaction
@@ -284,7 +221,7 @@ function TransactionsPage(props) {
 
         {!hasData && (
           <p className="text-xs text-slate-400">
-            No transactions yet. Import a CSV on the Dashboard to see them here.
+            No transactions yet. Import a CSV on the Dashboard or add one manually.
           </p>
         )}
 
@@ -344,9 +281,7 @@ function TransactionsPage(props) {
 
             <div className="mb-3 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 text-[0.7rem]">
               <div className="flex items-center gap-2">
-                <span className="uppercase tracking-[0.18em] text-slate-500">
-                  Sort by
-                </span>
+                <span className="uppercase tracking-[0.18em] text-slate-500">Sort by</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
@@ -371,13 +306,10 @@ function TransactionsPage(props) {
         )}
 
         {hasData && rowsToRender.length === 0 && (
-          <p className="text-xs text-slate-400">
-            No transactions match your current filters.
-          </p>
+          <p className="text-xs text-slate-400">No transactions match your current filters.</p>
         )}
 
         {hasData && rowsToRender.length > 0 && (
-          // ✅ mobile-friendly: table scrolls *inside* the card
           <div className="hScroll">
             <div className="min-w-[640px] max-h-[65vh] overflow-y-auto border border-slate-800 rounded-lg">
               <table className="w-full text-[0.7rem] sm:text-xs text-left">
@@ -385,11 +317,8 @@ function TransactionsPage(props) {
                   <tr>
                     <th className="px-2 py-1">Date</th>
                     <th className="px-2 py-1">Description</th>
-
-                    {/* ✅ hide these on phones */}
                     <th className="px-2 py-1 hidden sm:table-cell">Category</th>
                     <th className="px-2 py-1 hidden sm:table-cell">Type</th>
-
                     <th className="px-2 py-1 text-right">Amount</th>
                     <th className="px-2 py-1 text-right">Actions</th>
                   </tr>
@@ -398,21 +327,14 @@ function TransactionsPage(props) {
                 <tbody className="divide-y divide-slate-800">
                   {rowsToRender.map(({ tx, index }) => (
                     <tr key={index} className="hover:bg-slate-900/70">
-                      <td className="px-2 py-1 text-slate-300 whitespace-nowrap">
-                        {tx.date || "-"}
-                      </td>
+                      <td className="px-2 py-1 text-slate-300 whitespace-nowrap">{tx.date || "-"}</td>
 
                       <td className="px-2 py-1 text-slate-200">
                         <input
                           className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
                           value={tx.description || ""}
-                          onChange={(e) =>
-                            onUpdateTransaction(index, {
-                              description: e.target.value,
-                            })
-                          }
+                          onChange={(e) => onUpdateTransaction(index, { description: e.target.value })}
                         />
-                        {/* ✅ show category under description on phones */}
                         <div className="sm:hidden mt-1 text-[0.65rem] text-slate-500">
                           {(tx.category || "").trim() ? tx.category : "Uncategorized"}
                         </div>
@@ -422,11 +344,7 @@ function TransactionsPage(props) {
                         <input
                           className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
                           value={tx.category || ""}
-                          onChange={(e) =>
-                            onUpdateTransaction(index, {
-                              category: e.target.value,
-                            })
-                          }
+                          onChange={(e) => onUpdateTransaction(index, { category: e.target.value })}
                         />
                       </td>
 
@@ -449,8 +367,7 @@ function TransactionsPage(props) {
                             ))}
                           </select>
                           <span className="text-[0.6rem] text-slate-500">
-                            Detected:{" "}
-                            {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
+                            Detected: {FLOW_TYPE_LABELS[typeHints[index]] || "Unknown"}
                           </span>
                         </div>
                       </td>
@@ -460,20 +377,14 @@ function TransactionsPage(props) {
                           tx.amount < 0 ? "text-rose-300" : "text-emerald-300"
                         }`}
                       >
-                        {Number.isFinite(Number(tx.amount))
-                          ? `$${Number(tx.amount).toFixed(2)}`
-                          : "-"}
+                        {Number.isFinite(Number(tx.amount)) ? `$${Number(tx.amount).toFixed(2)}` : "-"}
                       </td>
 
                       <td className="px-2 py-1 text-right">
                         <button
                           className="text-[0.7rem] px-2 py-1 rounded-md border border-rose-500/60 text-rose-300 hover:bg-rose-400/10"
                           onClick={() => {
-                            if (
-                              window.confirm(
-                                "Delete this transaction from this account?"
-                              )
-                            ) {
+                            if (window.confirm("Delete this transaction from this account?")) {
                               onDeleteTransaction(index);
                             }
                           }}
@@ -489,6 +400,18 @@ function TransactionsPage(props) {
           </div>
         )}
       </Card>
+
+      <TransactionModal
+        open={addOpen}
+        title="Add Transaction"
+        accounts={accounts}
+        defaultAccountId={currentAccountId || "main"}
+        initial={{ date: todayISO(), accountId: currentAccountId || "main" }}
+        allowRecurring={true}
+        onCreateRecurring={handleCreateRecurringFromModal}
+        onSave={handleSaveNew}
+        onClose={() => setAddOpen(false)}
+      />
     </div>
   );
 }

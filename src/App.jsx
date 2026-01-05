@@ -837,6 +837,9 @@ function App() {
             scheduleChecks={scheduleChecks}
             onScheduledTemplatesChange={setScheduledTemplates}
             onScheduleChecksChange={setScheduleChecks}
+            accounts={accounts}
+            currentAccountId={currentAccountId}
+            onAddTransaction={handleAddTransactionRow}
           />
         )}
 
