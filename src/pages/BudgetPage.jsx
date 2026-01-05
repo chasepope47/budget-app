@@ -54,12 +54,10 @@ function computeActualIncomeFromTransactions(transactions = []) {
     const amt = Number(tx?.amount);
     if (!Number.isFinite(amt)) return sum;
 
-    // Prefer explicit flowType if present
     const ft = (tx?.flowType || "").toLowerCase();
     if (ft === "income") return sum + Math.max(0, amt);
     if (ft === "expense" || ft === "transfer" || ft === "ignore") return sum;
 
-    // Fallback: positive amounts count as income
     return amt > 0 ? sum + amt : sum;
   }, 0);
 }
@@ -73,6 +71,11 @@ function BudgetPage({
   scheduleChecks = {},
   onScheduledTemplatesChange = () => {},
   onScheduleChecksChange = () => {},
+
+  // ✅ (optional) from App.jsx in your updated version
+  accounts = [],
+  currentAccountId = "main",
+  onAddTransaction = () => {}, // allows “Add income/expense” right from this page
 }) {
   const fixedTotal = Number(totals?.fixed ?? totals?.fixedTotal ?? 0);
   const variableTotal = Number(totals?.variable ?? totals?.variableTotal ?? 0);
@@ -89,18 +92,23 @@ function BudgetPage({
       ? Number(budget.income) // backward compat
       : 0;
 
-  const actualIncome = React.useMemo(() => computeActualIncomeFromTransactions(tx), [tx]);
+  const actualIncome = React.useMemo(
+    () => computeActualIncomeFromTransactions(tx),
+    [tx]
+  );
+
   const useActualIncome = !!budget?.useActualIncome;
 
   const incomeForMath = useActualIncome ? actualIncome : estimatedIncome;
   const leftoverForMath = incomeForMath - fixedTotal - variableTotal;
 
+  // ✅ Calendar selection
   const [selectedDueDateISO, setSelectedDueDateISO] = React.useState(() => todayISO());
 
-  // ✅ NEW: calendar-visible month (this drives rollover + occurrence expansion)
+  // ✅ Calendar visible month (rollover)
   const [calendarMonthISO, setCalendarMonthISO] = React.useState(() => {
-    // start on selected date month
-    return `${selectedDueDateISO.slice(0, 7)}-01`;
+    const mk = monthKeyFromISO(selectedDueDateISO);
+    return `${mk}-01`;
   });
 
   // Keep calendar month aligned if user selects a date in another month
@@ -115,6 +123,7 @@ function BudgetPage({
     [calendarMonthISO]
   );
 
+  // ✅ Expand occurrences for the *visible month*
   const occurrences = React.useMemo(
     () => expandTemplatesForMonth(scheduledTemplates, calendarMonthKey),
     [scheduledTemplates, calendarMonthKey]
@@ -184,11 +193,50 @@ function BudgetPage({
       window.alert("Enter a valid number for estimated income.");
       return;
     }
-    onBudgetChange({ ...budget, estimatedIncome: next, income: next }); // keep backwards compat field in sync
+    onBudgetChange({ ...budget, estimatedIncome: next, income: next }); // keep backwards compat
   }
 
   function toggleUseActualIncome() {
     onBudgetChange({ ...budget, useActualIncome: !useActualIncome });
+  }
+
+  // ✅ Manual transaction add flows (income or expense) without CSV import
+  function handleAddQuickTransaction(kind) {
+    const isIncome = kind === "income";
+    const defaultDesc = isIncome ? "Paycheck" : "Expense";
+    const description = window.prompt("Description:", defaultDesc);
+    if (!description) return;
+
+    const amountInput = window.prompt(
+      `Amount (${isIncome ? "positive" : "positive (we'll store as negative)"})`,
+      "0"
+    );
+    if (amountInput === null) return;
+    const rawAmt = Number(amountInput);
+    if (!Number.isFinite(rawAmt)) {
+      window.alert("Please enter a valid number for amount.");
+      return;
+    }
+
+    const dateInput = window.prompt("Date (YYYY-MM-DD):", selectedDueDateISO || todayISO());
+    if (!dateInput) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      window.alert("Use YYYY-MM-DD format for dates.");
+      return;
+    }
+
+    const categoryInput = window.prompt("Category (optional):", isIncome ? "Income" : "");
+
+    const amount = isIncome ? Math.abs(rawAmt) : -Math.abs(rawAmt);
+
+    onAddTransaction({
+      description: description.trim(),
+      amount,
+      date: dateInput,
+      category: (categoryInput || "").trim(),
+      accountId: currentAccountId || "main",
+      flowType: isIncome ? "income" : "expense",
+    });
   }
 
   // ✅ Create a template and return its id (budget item becomes “plugin” for calendar)
@@ -226,13 +274,18 @@ function BudgetPage({
       startDate: formatISODate(startDate),
       cadence,
       dayOfMonth: startDate.getDate(),
+      // Optional: tie to the current account so a future “pay bill” flow can pick it up
+      accountId: currentAccountId || "main",
     };
 
     const list = Array.isArray(scheduledTemplates) ? scheduledTemplates : [];
     onScheduledTemplatesChange([...list, nextTemplate]);
 
-    // jump selection
-    setSelectedDueDateISO(formatISODate(startDate));
+    // jump selection + visible month
+    const startISO = formatISODate(startDate);
+    setSelectedDueDateISO(startISO);
+    setCalendarMonthISO(`${monthKeyFromISO(startISO)}-01`);
+
     return nextTemplate.id;
   }
 
@@ -370,10 +423,19 @@ function BudgetPage({
               >
                 {useActualIncome ? "Using actual ✓" : "Use actual income"}
               </button>
+
+              <button
+                className="px-3 py-1.5 text-xs rounded-md border border-cyan-400/70 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 transition"
+                onClick={() => handleAddQuickTransaction("income")}
+                type="button"
+                title="Add a paycheck / income transaction (no CSV needed)"
+              >
+                + Add income
+              </button>
             </div>
 
             <p className="text-[0.7rem] text-slate-500">
-              Tip: Add paychecks in Transactions as flow type “Income” to build your actual income.
+              Tip: Add paychecks here to build “Actual income” automatically.
             </p>
           </div>
         </Card>
@@ -384,13 +446,24 @@ function BudgetPage({
             total={fixedTotal}
             onDelete={(index) => handleDeleteBudgetItem("fixed", index)}
           />
-          <button
-            className="mt-3 px-3 py-1.5 text-xs rounded-md border border-rose-400/70 text-rose-200 bg-rose-500/10 hover:bg-rose-500/20 transition"
-            onClick={() => handleAddBudgetItem("fixed")}
-            type="button"
-          >
-            + Add Fixed Expense
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-rose-400/70 text-rose-200 bg-rose-500/10 hover:bg-rose-500/20 transition"
+              onClick={() => handleAddBudgetItem("fixed")}
+              type="button"
+            >
+              + Add Fixed Expense
+            </button>
+
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-rose-400/60 text-rose-200 bg-black/10 hover:bg-rose-500/10 transition"
+              onClick={() => handleAddQuickTransaction("expense")}
+              type="button"
+              title="Add an expense transaction (no CSV needed)"
+            >
+              + Add expense
+            </button>
+          </div>
         </Card>
 
         <Card title="VARIABLE SPENDING">
@@ -399,17 +472,29 @@ function BudgetPage({
             total={variableTotal}
             onDelete={(index) => handleDeleteBudgetItem("variable", index)}
           />
-          <button
-            className="mt-3 px-3 py-1.5 text-xs rounded-md border border-amber-400/70 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 transition"
-            onClick={() => handleAddBudgetItem("variable")}
-            type="button"
-          >
-            + Add Variable Expense
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-amber-400/70 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 transition"
+              onClick={() => handleAddBudgetItem("variable")}
+              type="button"
+            >
+              + Add Variable Expense
+            </button>
+
+            <button
+              className="px-3 py-1.5 text-xs rounded-md border border-amber-400/60 text-amber-200 bg-black/10 hover:bg-amber-500/10 transition"
+              onClick={() => handleAddQuickTransaction("expense")}
+              type="button"
+              title="Add an expense transaction (no CSV needed)"
+            >
+              + Add expense
+            </button>
+          </div>
         </Card>
 
         <Card title="MONTHLY DUE DATES">
           <div className="grid gap-3 md:grid-cols-2">
+            {/* ✅ Calendar rollover (requires updated MiniDueCalendar props) */}
             <MiniDueCalendar
               items={occurrences}
               selectedDateISO={selectedDueDateISO}
@@ -427,6 +512,7 @@ function BudgetPage({
                 items={occurrenceGroups.overdue}
                 tone="rose"
                 templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
                 onJump={(iso) => setSelectedDueDateISO(iso)}
                 onTogglePaid={handleTogglePaidOccurrence}
                 onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
@@ -439,6 +525,7 @@ function BudgetPage({
                 items={occurrenceGroups.dueToday}
                 tone="amber"
                 templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
                 onJump={(iso) => setSelectedDueDateISO(iso)}
                 onTogglePaid={handleTogglePaidOccurrence}
                 onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
@@ -451,6 +538,7 @@ function BudgetPage({
                 items={occurrenceGroups.upcoming}
                 tone="cyan"
                 templateLookup={templateById}
+                scheduleChecks={scheduleChecks}
                 onJump={(iso) => setSelectedDueDateISO(iso)}
                 onTogglePaid={handleTogglePaidOccurrence}
                 onDelete={(occ) => handleDeleteTemplate(occ.templateId)}
@@ -474,6 +562,7 @@ function BudgetPage({
                   !!today &&
                   parseISODateLocal(item.dueDate) &&
                   parseISODateLocal(item.dueDate) < today;
+
                 const cadence = templateById[item.templateId]?.cadence || "once";
 
                 return (
@@ -545,7 +634,7 @@ function ListWithTotal({ items = [], total = 0, onDelete }) {
               <span className="flex items-center gap-2">
                 {label}
                 {linked && (
-                  <span className="badge-chip rounded-full border px-2 py-[2px] text-[0.65rem] text-slate-200">
+                  <span className="rounded-full border border-slate-600/70 px-2 py-[2px] text-[0.65rem] text-slate-200 bg-black/20">
                     linked
                   </span>
                 )}
@@ -582,6 +671,7 @@ function BillsPanel({
   emptyText,
   tone = "cyan",
   templateLookup = {},
+  scheduleChecks = {},
   onJump = () => {},
   onTogglePaid = () => {},
   onDelete = () => {},
@@ -606,6 +696,8 @@ function BillsPanel({
           items.slice(0, 5).map((item) => {
             const amt = clampMoney(item?.amount);
             const cadence = templateLookup[item.templateId]?.cadence || "once";
+            const paid = !!scheduleChecks[checkKey(item.templateId, item.dueDate)]?.paid;
+
             return (
               <div
                 key={`${item.templateId}-${item.dueDate}`}
@@ -620,6 +712,11 @@ function BillsPanel({
                   <div className="text-xs text-slate-200 leading-4">
                     {item.label}
                     <span className="text-slate-400"> · ${amt.toFixed(2)}</span>
+                    {paid && (
+                      <span className="ml-2 text-[0.65rem] rounded-full border border-emerald-400/50 px-2 py-[2px] text-emerald-200 bg-emerald-500/10">
+                        paid
+                      </span>
+                    )}
                   </div>
                   <div className="text-[0.7rem] text-slate-500">
                     {item.dueDate} · {cadence}
@@ -632,10 +729,7 @@ function BillsPanel({
                     className="px-2 py-1 text-[0.7rem] rounded-md border border-slate-600/70 text-slate-200 hover:border-cyan-400/60"
                     onClick={() => onTogglePaid(item)}
                   >
-                    {(() => {
-                      const paidKey = checkKey(item.templateId, item.dueDate);
-                      return paidKey ? "Paid" : "Paid";
-                    })()}
+                    {paid ? "Unpay" : "Paid"}
                   </button>
                   <button
                     type="button"
