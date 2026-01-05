@@ -1,8 +1,5 @@
 // src/pages/BudgetPage.jsx
 import React from "react";
-import Card from "../components/Card.jsx";
-import MiniDueCalendar from "../components/MiniDueCalendar.jsx";
-import { expandTemplatesForMonth, checkKey } from "../lib/schedule.js";
 
 function todayISO() {
   const d = new Date();
@@ -494,15 +491,6 @@ function BudgetPage({
 
         <Card title="MONTHLY DUE DATES">
           <div className="grid gap-3 md:grid-cols-2">
-            {/* ✅ Calendar rollover (requires updated MiniDueCalendar props) */}
-            <MiniDueCalendar
-              items={occurrences}
-              selectedDateISO={selectedDueDateISO}
-              onSelectDate={setSelectedDueDateISO}
-              visibleMonthISO={calendarMonthISO}
-              onVisibleMonthChange={setCalendarMonthISO}
-              badgeMode="auto"
-            />
 
             <div className="space-y-3">
               <BillsPanel
