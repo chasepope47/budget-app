@@ -1,9 +1,20 @@
-// src/App.jsx
+// src/App.jsx - Enhanced with workspace sharing & version history
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 import { useFirebaseAuth } from "./FirebaseAuthProvider.jsx";
-import { saveWorkspaceState } from "./workspaceStateApi.js";
+import { 
+  saveWorkspaceState, 
+  loadWorkspaceState, 
+  initializeWorkspace,
+  getWorkspaceHistory,
+  restoreWorkspaceVersion 
+} from "./workspaceStateApi.js";
+import { 
+  getUserWorkspaces,
+  getUserRole,
+  updateMemberActivity 
+} from "./workspaceSharingApi.js";
 import { db } from "./firebaseClient.js";
 import { doc, onSnapshot } from "firebase/firestore";
 import {
@@ -17,6 +28,7 @@ import ActionsMenu from "./components/ActionsMenu.jsx";
 import AuthScreen from "./components/AuthScreen.jsx";
 import Toast from "./components/Toast.jsx";
 import ProfileMenu from "./components/ProfileMenu.jsx";
+import WorkspaceManager from "./components/WorkspaceManager.jsx";
 
 // Pages
 import Dashboard from "./pages/Dashboard.jsx";
@@ -49,22 +61,22 @@ function clampNumber(n, fallback = 0) {
 const DEFAULT_STATE = {
   monthKey: safeMonthKey(),
   budgetsByMonth: {},
-
   accounts: [{ id: "main", name: "Main Account", type: "checking" }],
   currentAccountId: "main",
-
   scheduledTemplates: [],
   scheduleChecks: {},
-
   goals: [],
   currentGoalId: null,
-
   currentPage: "dashboard",
 };
 
 export default function App() {
-  const { user, workspaceId, signOut } = useFirebaseAuth();
+  const { user, authLoading, signInWithEmail, signUpWithEmail, signOut, resetPassword } = useFirebaseAuth();
   const [toast, setToast] = useState(null);
+  const [showWorkspaceManager, setShowWorkspaceManager] = useState(false);
+  const [currentWorkspaceId, setCurrentWorkspaceId] = useState(null);
+  const [userWorkspaces, setUserWorkspaces] = useState([]);
+  const [userRole, setUserRole] = useState(null);
 
   const [appState, setAppState] = useState(() => {
     const stored = migrateStoredState(loadStoredState());
@@ -72,27 +84,66 @@ export default function App() {
   });
 
   const savingRef = useRef(false);
+  const initialSyncDone = useRef(false);
 
+  // Save to localStorage
   useEffect(() => {
     saveStoredState(appState);
   }, [appState]);
 
-  // Firestore workspace sync
+  // Initialize workspace on first login
   useEffect(() => {
-    if (!user || !workspaceId) return;
+    if (!user || initialSyncDone.current) return;
 
-    const ref = doc(db, "workspaces", workspaceId);
+    async function init() {
+      try {
+        // Load user's workspaces
+        const workspaces = await getUserWorkspaces(user.uid);
+        setUserWorkspaces(workspaces);
+
+        // Use first workspace or create new one
+        const workspaceId = workspaces.length > 0 ? workspaces[0].id : user.uid;
+        setCurrentWorkspaceId(workspaceId);
+
+        // Get user role
+        const role = await getUserRole(workspaceId, user.uid);
+        setUserRole(role);
+
+        // Initialize workspace with smart merging
+        const merged = await initializeWorkspace(workspaceId, appState);
+        if (merged) {
+          setAppState(merged);
+        }
+
+        initialSyncDone.current = true;
+      } catch (error) {
+        console.error("Failed to initialize workspace:", error);
+        setToast({ kind: "error", message: "Failed to load workspace" });
+      }
+    }
+
+    init();
+  }, [user]);
+
+  // Real-time sync from Firestore
+  useEffect(() => {
+    if (!user || !currentWorkspaceId) return;
+
+    const ref = doc(db, "workspaces", currentWorkspaceId);
     const unsub = onSnapshot(
       ref,
       (snap) => {
         const remote = snap.exists() ? snap.data()?.state : null;
         if (!remote) return;
 
-        setAppState((prev) => ({
-          ...DEFAULT_STATE,
-          ...prev,
-          ...migrateStoredState(remote),
-        }));
+        setAppState((prev) => {
+          // Merge remote changes with local state
+          return {
+            ...DEFAULT_STATE,
+            ...prev,
+            ...migrateStoredState(remote),
+          };
+        });
       },
       (err) => {
         console.error("onSnapshot(workspace) failed", err);
@@ -101,17 +152,19 @@ export default function App() {
     );
 
     return () => unsub();
-  }, [user, workspaceId]);
+  }, [user, currentWorkspaceId]);
 
   // Persist to Firestore (debounced)
   useEffect(() => {
-    if (!user || !workspaceId) return;
+    if (!user || !currentWorkspaceId) return;
     if (savingRef.current) return;
 
     savingRef.current = true;
     const t = setTimeout(async () => {
       try {
-        await saveWorkspaceState(workspaceId, appState);
+        await saveWorkspaceState(currentWorkspaceId, appState);
+        // Update user activity
+        await updateMemberActivity(currentWorkspaceId, user.uid);
       } catch (e) {
         console.error("saveWorkspaceState failed", e);
       } finally {
@@ -120,7 +173,7 @@ export default function App() {
     }, 450);
 
     return () => clearTimeout(t);
-  }, [appState, user, workspaceId]);
+  }, [appState, user, currentWorkspaceId]);
 
   // Ensure user profile exists
   useEffect(() => {
@@ -216,13 +269,22 @@ export default function App() {
     }));
   }
 
-  if (!user) return <AuthScreen />;
+  // Show auth screen if not logged in
+  if (!user) {
+    return (
+      <AuthScreen
+        onSignIn={signInWithEmail}
+        onSignUp={signUpWithEmail}
+        onResetPassword={resetPassword}
+        loading={authLoading}
+      />
+    );
+  }
 
   const page = appState.currentPage || "dashboard";
 
   return (
     <div className="app-shell">
-      {/* ✅ Header uses the CSS classes you already wrote */}
       <header className="app-header">
         <div className="content headerRow">
           <div className="brandAndNav">
@@ -231,7 +293,6 @@ export default function App() {
               <span style={{ opacity: 0.85 }}>{monthLabel}</span>
             </div>
 
-            {/* ✅ Nav row: scrolls on mobile instead of smashing into the profile/menu */}
             <nav className="navRow" aria-label="Primary navigation">
               <NavButton active={page === "dashboard"} onClick={() => setCurrentPage("dashboard")}>
                 Dashboard
@@ -255,7 +316,12 @@ export default function App() {
           </div>
 
           <div className="headerRight">
-            <ActionsMenu monthKey={monthKey} onSetMonthKey={setMonthKey} onToast={setToast} />
+            <ActionsMenu 
+              monthKey={monthKey} 
+              onSetMonthKey={setMonthKey} 
+              onToast={setToast}
+              onOpenWorkspaceManager={() => setShowWorkspaceManager(true)}
+            />
             <ProfileMenu
               user={user}
               onSignOut={signOut}
@@ -359,6 +425,14 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {showWorkspaceManager && (
+        <WorkspaceManager
+          workspaceId={currentWorkspaceId}
+          currentUserId={user.uid}
+          onClose={() => setShowWorkspaceManager(false)}
+        />
+      )}
 
       {toast && <Toast kind={toast.kind} message={toast.message} onClose={() => setToast(null)} />}
     </div>
