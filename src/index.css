@@ -8,4 +8,5 @@ input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0 1000px #1e293b inset;
   -webkit-text-fill-color: #f1f5f9;
   caret-color: #f1f5f9;
+  transition: background-color 9999s ease-in-out 0s;
 }
