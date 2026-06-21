@@ -56,6 +56,7 @@ export default function AuthPage({ onSignIn, onSignUp, onResetPassword }: Props)
             <input
               type="email"
               placeholder="Email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -66,6 +67,7 @@ export default function AuthPage({ onSignIn, onSignUp, onResetPassword }: Props)
               <input
                 type="password"
                 placeholder="Password"
+                autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
