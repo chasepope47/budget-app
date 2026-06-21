@@ -50,11 +50,17 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
   includePantry: boolean
 }) {
   const [pantryTotal, setPantryTotal] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     if (!includePantry) { setPantryTotal(0); return }
-    getPantryInventoryTotal(householdId).then(setPantryTotal).catch(() => setPantryTotal(0))
-  }, [householdId, includePantry])
+    setRefreshing(true)
+    getPantryInventoryTotal(householdId)
+      .then(setPantryTotal)
+      .catch(() => setPantryTotal(0))
+      .finally(() => setRefreshing(false))
+  }, [householdId, includePantry, refreshKey])
 
   const slices = useMemo(() => {
     const buckets: Record<string, number> = {}
@@ -77,12 +83,22 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
       {/* Header stats */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-slate-100">{month} Spending</h2>
-        {income > 0 && (
-          <div className="text-right">
-            <div className="text-xs text-slate-500">Income</div>
-            <div className="text-sm font-semibold text-emerald-300">${income.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {income > 0 && (
+            <div className="text-right">
+              <div className="text-xs text-slate-500">Income</div>
+              <div className="text-sm font-semibold text-emerald-300">${income.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
+            </div>
+          )}
+          <button
+            onClick={() => setRefreshKey((k) => k + 1)}
+            disabled={refreshing}
+            title="Refresh chart from latest data"
+            className="h-7 px-2.5 rounded-md border border-slate-700 text-[0.65rem] text-slate-400 hover:border-cyan-500/60 hover:text-cyan-300 transition disabled:opacity-40"
+          >
+            {refreshing ? '…' : '↺ Refresh'}
+          </button>
+        </div>
       </div>
 
       {slices.length === 0
