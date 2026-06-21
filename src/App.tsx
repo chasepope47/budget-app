@@ -190,6 +190,28 @@ export default function App() {
   const incomeForMath = useActualIncome ? actualIncome : estimatedIncome
   const leftover = incomeForMath - fixedTotal - variableTotal
 
+  // ─── Actual spending from transactions (for Dashboard overview) ───────────
+  const FIXED_TX_KEYWORDS = ['rent','mortgage','apt','apartment','lease','hoa','insurance','internet','phone','utilities','loan','payment','prime membership','netflix','hulu','spotify','youtube premium','membership','subscription','icloud','google one','dropbox']
+  const TRANSFER_TX_KEYWORDS = ['transfer','zelle','venmo','cash app','withdrawal','deposit']
+
+  const { actualFixed: actualFixedSpend, actualVariable: actualVariableSpend } = useMemo(() => {
+    let actualFixed = 0
+    let actualVariable = 0
+    for (const tx of transactions) {
+      if (tx.amount >= 0) continue
+      const desc = (tx.description || '').toLowerCase()
+      if (TRANSFER_TX_KEYWORDS.some((k) => desc.includes(k))) continue
+      if (FIXED_TX_KEYWORDS.some((k) => desc.includes(k))) {
+        actualFixed += Math.abs(tx.amount)
+      } else {
+        actualVariable += Math.abs(tx.amount)
+      }
+    }
+    return { actualFixed, actualVariable }
+  }, [transactions])
+
+  const actualLeftover = actualIncome - actualFixedSpend - actualVariableSpend
+
   // ─── Account balance helpers ──────────────────────────────────────────────
   const accountBalances = useMemo(() => {
     const netByAccount: Record<string, number> = {}
@@ -566,10 +588,10 @@ export default function App() {
             // @ts-ignore – JSX component, props checked at runtime
             <Dashboard
               month={monthLabel}
-              income={incomeForMath}
-              fixed={fixedTotal}
-              variable={variableTotal}
-              leftover={leftover}
+              income={actualIncome}
+              fixed={actualFixedSpend}
+              variable={actualVariableSpend}
+              leftover={actualLeftover}
               goals={goals}
               transactions={transactions}
               accounts={accounts}
