@@ -15,8 +15,8 @@ import type {
 
 import { ensureHousehold } from './api/householdApi'
 import { getBudgetMonth, upsertBudgetMonth, getBudgetItems, addBudgetItem, deleteBudgetItem } from './api/budgetApi'
-import { getTransactions, getAllTransactions, addTransaction as apiAddTransaction, updateTransaction as apiUpdateTransaction, deleteTransaction as apiDeleteTransaction, addTransactions } from './api/transactionsApi'
-import { getGoals, addGoal as apiAddGoal, updateGoal as apiUpdateGoal, deleteGoal as apiDeleteGoal, addContribution } from './api/goalsApi'
+import { getTransactions, getAllTransactions, addTransaction as apiAddTransaction, updateTransaction as apiUpdateTransaction, deleteTransaction as apiDeleteTransaction, deleteTransactionsBulk, addTransactions } from './api/transactionsApi'
+import { getGoals, addGoal as apiAddGoal, updateGoal as apiUpdateGoal, deleteGoal as apiDeleteGoal, addContribution, recalculateGoalFromContributions } from './api/goalsApi'
 import { getScheduledTemplates, addScheduledTemplate, deleteScheduledTemplate, getScheduleChecks, setScheduleCheck } from './api/scheduledApi'
 import { getAccounts, addAccount as apiAddAccount, updateAccount as apiUpdateAccount, deleteAccount as apiDeleteAccount, applyStatementBalance } from './api/accountsApi'
 
@@ -262,13 +262,47 @@ export default function App() {
     setAllTransactions((prev) => prev.filter((t) => t.id !== id))
   }
 
+  async function handleClearTransactions(ids: string[]) {
+    await deleteTransactionsBulk(ids)
+    const idSet = new Set(ids)
+    setTransactions((prev) => prev.filter((t) => !idSet.has(t.id)))
+    setAllTransactions((prev) => prev.filter((t) => !idSet.has(t.id)))
+    setToast({ kind: 'success', message: `Cleared ${ids.length} transaction${ids.length === 1 ? '' : 's'}.` })
+  }
+
   async function handleImportTransactions(
     rows: Array<{ date: string; description: string; amount: number; category?: string; balance?: number }>,
-    meta: { accountId?: string; statement?: { statementKey: string; startISO: string; endISO: string; endingBalance: number; startingBalance: number; transactionSum: number; balanceSource: 'user' | 'csv' } },
+    meta: {
+      accountId?: string
+      bank?: string
+      filename?: string
+      statement?: { statementKey: string; startISO: string; endISO: string; endingBalance: number; startingBalance: number; transactionSum: number; balanceSource: 'user' | 'csv' }
+    },
   ) {
     if (!householdId) return
 
-    const targetAccountId = meta.accountId ?? currentAccountId ?? null
+    // Resolve account — use selected, or auto-create from bank name
+    let targetAccountId = meta.accountId ?? currentAccountId ?? null
+
+    if (!targetAccountId) {
+      const accountName = meta.bank
+        || meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+        || 'Imported Account'
+      const newAcc = await apiAddAccount({
+        household_id: householdId,
+        name: accountName,
+        type: 'checking',
+        starting_balance: 0,
+        current_balance: null,
+        current_balance_as_of: null,
+        last_statement_key: null,
+        last_confirmed_ending_balance: null,
+        statement_balances: {},
+      })
+      setAccounts((prev) => [...prev, newAcc])
+      setCurrentAccountId(newAcc.id)
+      targetAccountId = newAcc.id
+    }
 
     const toInsert = rows.map((row) => ({
       household_id: householdId,
@@ -302,7 +336,8 @@ export default function App() {
       setAccounts(await getAccounts(householdId))
     }
 
-    setToast({ kind: 'success', message: `Imported ${inserted.length} transactions.` })
+    const acctMsg = meta.bank ? ` into ${meta.bank}` : ''
+    setToast({ kind: 'success', message: `Imported ${inserted.length} transactions${acctMsg}.` })
   }
 
   // ─── Account actions ──────────────────────────────────────────────────────
@@ -373,6 +408,12 @@ export default function App() {
     await apiDeleteGoal(id)
     setGoals((prev) => prev.filter((g) => g.id !== id))
     if (currentGoalId === id) setCurrentGoalId(null)
+  }
+
+  async function handleResetGoal(id: string) {
+    const newAmount = await recalculateGoalFromContributions(id)
+    setGoals((prev) => prev.map((g) => g.id === id ? { ...g, current_amount: newAmount } : g))
+    setToast({ kind: 'success', message: `Progress reset to $${newAmount.toFixed(2)} from saved contributions.` })
   }
 
   async function handleAddContribution(goalId: string, amount: number, note?: string) {
@@ -565,6 +606,7 @@ export default function App() {
               onAddTransaction={handleAddTransaction}
               onUpdateTransaction={handleUpdateTransaction}
               onDeleteTransaction={handleDeleteTransaction}
+              onClearTransactions={handleClearTransactions}
               scheduledTemplates={scheduledTemplates}
               onScheduledTemplatesChange={() => {}}
             />
@@ -601,6 +643,7 @@ export default function App() {
                 })
               }}
               onExportGoal={() => {}}
+              onResetGoal={handleResetGoal}
               onAddContributionRequest={(id: string) => {
                 const amtStr = window.prompt('Contribution amount:')
                 const amt = Number(amtStr)

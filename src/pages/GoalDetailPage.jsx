@@ -23,6 +23,7 @@ function GoalDetailPage({
   onDuplicateGoal = () => {},
   onExportGoal = () => {},
   onAddContributionRequest = () => {},
+  onResetGoal = () => {},
 }) {
   const [view, setView] = React.useState("detail"); // "detail" | "all"
 
@@ -177,6 +178,17 @@ function GoalDetailPage({
             onClick={() => onAddContributionRequest(goal?.id)}
           >
             Add Contribution
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1.5 text-xs rounded-md border border-amber-500/60 text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 transition"
+            onClick={() => {
+              if (window.confirm("Recalculate progress from saved contributions? This will set the progress to the sum of all contributions recorded for this goal.")) {
+                onResetGoal(goal?.id);
+              }
+            }}
+          >
+            Reset progress
           </button>
         </div>
       </Card>

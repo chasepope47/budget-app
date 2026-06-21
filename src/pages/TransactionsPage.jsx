@@ -25,6 +25,7 @@ function TransactionsPage({
   onAddTransaction = () => {},
   onUpdateTransaction = () => {},
   onDeleteTransaction = () => {},
+  onClearTransactions = () => {},
   scheduledTemplates = [],
   onScheduledTemplatesChange = () => {},
 }) {
@@ -76,11 +77,22 @@ function TransactionsPage({
       </header>
 
       <Card title="ALL TRANSACTIONS">
-        <div className="mb-3 flex justify-end">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <button type="button" onClick={() => setAddOpen(true)}
             className="h-8 px-3 rounded-md border border-cyan-500/60 text-[0.7rem] font-medium text-cyan-200 hover:bg-cyan-500/10">
             + Add Transaction
           </button>
+          {hasData && (
+            <button type="button"
+              onClick={() => {
+                if (window.confirm(`Delete all ${transactions.length} transaction${transactions.length === 1 ? "" : "s"} for ${month}? This cannot be undone.`)) {
+                  onClearTransactions(transactions.map((t) => t.id));
+                }
+              }}
+              className="h-8 px-3 rounded-md border border-rose-500/60 text-[0.7rem] font-medium text-rose-300 hover:bg-rose-400/10">
+              Clear all
+            </button>
+          )}
         </div>
 
         {!hasData && <p className="text-xs text-slate-400">No transactions yet. Import a CSV on the Dashboard or add one manually.</p>}

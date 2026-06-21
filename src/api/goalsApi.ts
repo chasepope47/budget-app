@@ -70,3 +70,16 @@ export async function getContributions(goalId: string): Promise<GoalContribution
     .order('date', { ascending: false })
   return data ?? []
 }
+
+export async function recalculateGoalFromContributions(goalId: string): Promise<number> {
+  const { data } = await supabase
+    .from('goal_contributions')
+    .select('amount')
+    .eq('goal_id', goalId)
+  const total = (data ?? []).reduce((s, c) => s + (Number(c.amount) ?? 0), 0)
+  await supabase
+    .from('goals')
+    .update({ current_amount: total, updated_at: new Date().toISOString() })
+    .eq('id', goalId)
+  return total
+}
