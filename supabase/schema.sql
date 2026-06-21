@@ -40,17 +40,23 @@ alter table households        enable row level security;
 alter table household_members enable row level security;
 alter table household_invites enable row level security;
 
+-- Security definer function prevents infinite recursion in RLS policies
+create or replace function get_my_household_ids()
+returns setof uuid language sql security definer stable as $$
+  select household_id from household_members where user_id = auth.uid()
+$$;
+
 create policy "members can view their household"
   on households for select
-  using (id in (select household_id from household_members where user_id = auth.uid()));
+  using (id in (select get_my_household_ids()));
 
 create policy "members can update their household"
   on households for update
-  using (id in (select household_id from household_members where user_id = auth.uid()));
+  using (id in (select get_my_household_ids()));
 
 create policy "members can view membership"
   on household_members for select
-  using (household_id in (select household_id from household_members where user_id = auth.uid()));
+  using (household_id in (select get_my_household_ids()));
 
 create policy "members can insert themselves"
   on household_members for insert
@@ -62,11 +68,11 @@ create policy "members can delete themselves"
 
 create policy "members can view invites"
   on household_invites for select
-  using (household_id in (select household_id from household_members where user_id = auth.uid()));
+  using (household_id in (select get_my_household_ids()));
 
 create policy "members can create invites"
   on household_invites for insert
-  with check (household_id in (select household_id from household_members where user_id = auth.uid()));
+  with check (household_id in (select get_my_household_ids()));
 
 create policy "anyone can claim an invite"
   on household_invites for update

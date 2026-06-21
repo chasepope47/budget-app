@@ -46,10 +46,7 @@ export async function renameHousehold(householdId: string, name: string): Promis
 }
 
 export async function getMembers(householdId: string): Promise<HouseholdMember[]> {
-  const { data } = await supabase
-    .from('household_members')
-    .select('*')
-    .eq('household_id', householdId)
+  const { data } = await supabase.rpc('get_household_members', { p_household_id: householdId })
   return data ?? []
 }
 
