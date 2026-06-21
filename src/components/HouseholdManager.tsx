@@ -27,7 +27,9 @@ export default function HouseholdManager({ householdId, currentUserId, onClose, 
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
-  const isOwner = members.find((m) => m.user_id === currentUserId)?.role === 'owner'
+  // Check created_by first (reliable), fall back to role field
+  const isOwner = household?.created_by === currentUserId
+    || members.find((m) => m.user_id === currentUserId)?.role === 'owner'
 
   useEffect(() => {
     Promise.all([
@@ -125,25 +127,31 @@ export default function HouseholdManager({ householdId, currentUserId, onClose, 
           ))}
         </div>
 
-        {/* Invite */}
-        {isOwner && (
-          <div className="space-y-2">
-            <div className="text-xs uppercase tracking-widest text-slate-500">Invite</div>
-            <button onClick={handleGenerateCode} disabled={loading}
-              className="px-3 py-1.5 text-xs rounded-md border border-cyan-400/60 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 disabled:opacity-50">
-              {inviteCode ? 'Regenerate code' : 'Generate invite code'}
-            </button>
-            {inviteCode && (
+        {/* Invite — visible to all members */}
+        <div className="space-y-2">
+          <div className="text-xs uppercase tracking-widest text-slate-500">Invite someone</div>
+          <button onClick={handleGenerateCode} disabled={loading}
+            className="px-3 py-1.5 text-xs rounded-md border border-cyan-400/60 text-cyan-200 bg-cyan-500/10 hover:bg-cyan-500/20 disabled:opacity-50 transition">
+            {inviteCode ? 'New code' : 'Generate invite code'}
+          </button>
+          {inviteCode && (
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <code className="text-lg font-mono tracking-[0.25em] text-cyan-300 bg-cyan-500/10 px-4 py-1 rounded-lg">
+                <code className="flex-1 text-xl font-mono tracking-[0.3em] text-cyan-300 bg-cyan-500/10 px-4 py-2 rounded-lg text-center">
                   {inviteCode}
                 </code>
-                <button onClick={() => navigator.clipboard.writeText(inviteCode).then(() => setMessage('Copied!'))}
-                  className="text-xs text-slate-400 hover:text-slate-200">Copy</button>
+                <button
+                  onClick={() => navigator.clipboard.writeText(inviteCode).then(() => setMessage('Code copied!'))}
+                  className="px-2 py-2 text-xs text-slate-400 hover:text-slate-200 border border-slate-700 rounded-lg">
+                  Copy
+                </button>
               </div>
-            )}
-          </div>
-        )}
+              <p className="text-xs text-slate-500">
+                Share this code. They open the ⚙ menu and enter it under "Join a household". Expires in 24 hours.
+              </p>
+            </div>
+          )}
+        </div>
 
         {/* Join */}
         <div className="space-y-2">
