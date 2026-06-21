@@ -22,16 +22,20 @@ export default function PantryBudgetCard({ householdId, monthKey }: Props) {
   }, [monthKey])
 
   useEffect(() => {
-    setLoading(true)
-    supabase
-      .from('pantry_items')
-      .select('price, quantity')
-      .eq('household_id', householdId)
-      .then(({ data }) => {
+    async function load() {
+      setLoading(true)
+      try {
+        const { data } = await supabase
+          .from('pantry_items')
+          .select('price, quantity')
+          .eq('household_id', householdId)
         const total = (data ?? []).reduce((s, i) => s + (i.price ?? 0) * (i.quantity ?? 1), 0)
         setActual(total)
+      } finally {
         setLoading(false)
-      })
+      }
+    }
+    load()
   }, [householdId])
 
   function saveGoal() {

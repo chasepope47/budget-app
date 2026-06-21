@@ -1,5 +1,4 @@
 import React from "react";
-import { formatMoney, formatPercent } from "../utils/format.js";
 
 function NeonProgressBar({ value = 0 }) {
   const clamped = Math.max(0, Math.min(100, Number.isNaN(value) ? 0 : value));

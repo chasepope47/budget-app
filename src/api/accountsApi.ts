@@ -25,11 +25,13 @@ export async function updateAccount(
   id: string,
   patch: Partial<Omit<FinancialAccount, 'id' | 'household_id' | 'created_at'>>,
 ): Promise<void> {
-  await supabase.from('financial_accounts').update(patch).eq('id', id)
+  const { error } = await supabase.from('financial_accounts').update(patch).eq('id', id)
+  if (error) throw error
 }
 
 export async function deleteAccount(id: string): Promise<void> {
-  await supabase.from('financial_accounts').delete().eq('id', id)
+  const { error } = await supabase.from('financial_accounts').delete().eq('id', id)
+  if (error) throw error
 }
 
 export async function applyStatementBalance(
@@ -48,7 +50,7 @@ export async function applyStatementBalance(
 
   const hasEnding = typeof entry.endingBalance === 'number' && Number.isFinite(entry.endingBalance)
 
-  await supabase.from('financial_accounts').update({
+  const { error } = await supabase.from('financial_accounts').update({
     statement_balances: updated,
     last_statement_key: statementKey,
     ...(hasEnding
@@ -59,4 +61,5 @@ export async function applyStatementBalance(
         }
       : {}),
   }).eq('id', accountId)
+  if (error) throw error
 }

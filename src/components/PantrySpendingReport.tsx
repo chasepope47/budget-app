@@ -30,42 +30,45 @@ export default function PantrySpendingReport({ householdId }: { householdId: str
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const { data } = await supabase
-        .from('pantry_items')
-        .select('store, category, price, quantity')
-        .eq('household_id', householdId)
+      try {
+        const { data } = await supabase
+          .from('pantry_items')
+          .select('store, category, price, quantity')
+          .eq('household_id', householdId)
 
-      if (!data) { setLoading(false); return }
+        if (!data) return
 
-      const storeMap = new Map<string, Map<string, number>>()
-      for (const item of data) {
-        const storeName = item.store?.trim() || 'No Store'
-        const catLabel  = item.category || 'Other'
-        const value     = (item.price ?? 0) * (item.quantity ?? 1)
-        if (!storeMap.has(storeName)) storeMap.set(storeName, new Map())
-        const catMap = storeMap.get(storeName)!
-        catMap.set(catLabel, (catMap.get(catLabel) ?? 0) + value)
-      }
-
-      const result: StoreEntry[] = []
-      for (const [storeName, catMap] of storeMap) {
-        const categories: CategoryEntry[] = []
-        for (const [label, total] of catMap) {
-          const def = CATEGORIES.find(c => c.label === label)
-          categories.push({ label, emoji: def?.emoji ?? '📦', total })
+        const storeMap = new Map<string, Map<string, number>>()
+        for (const item of data) {
+          const storeName = item.store?.trim() || 'No Store'
+          const catLabel  = item.category || 'Other'
+          const value     = (item.price ?? 0) * (item.quantity ?? 1)
+          if (!storeMap.has(storeName)) storeMap.set(storeName, new Map())
+          const catMap = storeMap.get(storeName)!
+          catMap.set(catLabel, (catMap.get(catLabel) ?? 0) + value)
         }
-        categories.sort((a, b) => b.total - a.total)
-        result.push({ name: storeName, total: categories.reduce((s, c) => s + c.total, 0), categories })
+
+        const result: StoreEntry[] = []
+        for (const [storeName, catMap] of storeMap) {
+          const categories: CategoryEntry[] = []
+          for (const [label, total] of catMap) {
+            const def = CATEGORIES.find(c => c.label === label)
+            categories.push({ label, emoji: def?.emoji ?? '📦', total })
+          }
+          categories.sort((a, b) => b.total - a.total)
+          result.push({ name: storeName, total: categories.reduce((s, c) => s + c.total, 0), categories })
+        }
+
+        result.sort((a, b) => {
+          if (a.name === 'No Store') return 1
+          if (b.name === 'No Store') return -1
+          return b.total - a.total
+        })
+
+        setStores(result)
+      } finally {
+        setLoading(false)
       }
-
-      result.sort((a, b) => {
-        if (a.name === 'No Store') return 1
-        if (b.name === 'No Store') return -1
-        return b.total - a.total
-      })
-
-      setStores(result)
-      setLoading(false)
     }
     load()
   }, [householdId])

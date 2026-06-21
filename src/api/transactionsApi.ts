@@ -49,9 +49,11 @@ export async function updateTransaction(
   id: string,
   patch: Partial<Pick<Transaction, 'description' | 'category' | 'flow_type' | 'amount' | 'date'>>,
 ): Promise<void> {
-  await supabase.from('transactions').update(patch).eq('id', id)
+  const { error } = await supabase.from('transactions').update(patch).eq('id', id)
+  if (error) throw error
 }
 
 export async function deleteTransaction(id: string): Promise<void> {
-  await supabase.from('transactions').delete().eq('id', id)
+  const { error } = await supabase.from('transactions').delete().eq('id', id)
+  if (error) throw error
 }
