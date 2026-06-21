@@ -49,6 +49,18 @@ export async function getPantrySpendingForMonth(
   }))
 }
 
+/**
+ * Get total pantry inventory value from pantry_items (current stock).
+ * Used by the Reports pie chart since item_history only has consumed items.
+ */
+export async function getPantryInventoryTotal(householdId: string): Promise<number> {
+  const { data } = await supabase
+    .from('pantry_items')
+    .select('price, quantity')
+    .eq('household_id', householdId)
+  return (data ?? []).reduce((s, i) => s + (i.price ?? 0) * (i.quantity ?? 1), 0)
+}
+
 /** Pull all pantry spending (for all-time reports / Sankey). */
 export async function getAllPantrySpending(householdId: string): Promise<PantrySpendRow[]> {
   const { data } = await supabase

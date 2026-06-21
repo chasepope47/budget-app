@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { type Transaction } from '../lib/supabase'
-import { getPantrySpendingForMonth, pantryRowsToTransactions } from '../lib/pantrySync'
+import { getPantryInventoryTotal } from '../lib/pantrySync'
 import PantrySpendingReport from '../components/PantrySpendingReport'
 import SpendingPieChart, { buildSlices } from '../components/SpendingPieChart'
 
@@ -43,23 +43,31 @@ function bucketFor(matchText: string): string {
 
 const SETTINGS_KEY = 'budgetApp_reportSettings_v2'
 
-function OverviewTab({ transactions, pantryTxs, month, includePantry }: {
+function OverviewTab({ householdId, transactions, month, includePantry }: {
+  householdId: string
   transactions: Transaction[]
-  pantryTxs: Transaction[]
   month: string
   includePantry: boolean
 }) {
+  const [pantryTotal, setPantryTotal] = useState(0)
+
+  useEffect(() => {
+    if (!includePantry) { setPantryTotal(0); return }
+    getPantryInventoryTotal(householdId).then(setPantryTotal).catch(() => setPantryTotal(0))
+  }, [householdId, includePantry])
+
   const slices = useMemo(() => {
-    const all = includePantry ? [...transactions, ...pantryTxs] : transactions
     const buckets: Record<string, number> = {}
-    for (const t of all) {
+    for (const t of transactions) {
       if (t.amount >= 0) continue
-      const isPantry = t.source === 'pantry'
-      const bucket = isPantry ? 'Groceries' : bucketFor(normalizeForMatch(t.description))
+      const bucket = bucketFor(normalizeForMatch(t.description))
       buckets[bucket] = (buckets[bucket] ?? 0) + Math.abs(t.amount)
     }
+    if (includePantry && pantryTotal > 0) {
+      buckets['Groceries'] = (buckets['Groceries'] ?? 0) + pantryTotal
+    }
     return buildSlices(buckets)
-  }, [transactions, pantryTxs, includePantry])
+  }, [transactions, pantryTotal, includePantry])
 
   const total = slices.reduce((s, sl) => s + sl.value, 0)
   const income = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
@@ -100,8 +108,6 @@ function OverviewTab({ transactions, pantryTxs, month, includePantry }: {
 
 export default function ReportsPage({ householdId, monthKey, month, transactions }: ReportsPageProps) {
   const [tab, setTab] = useState<'overview' | 'pantry' | 'settings'>('overview')
-  const [pantryTxs, setPantryTxs] = useState<Transaction[]>([])
-
   type Settings = typeof DEFAULT_SETTINGS
   const [settings, setSettings] = useState<Settings>(() => {
     try {
@@ -109,13 +115,6 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
       return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS }
     } catch { return { ...DEFAULT_SETTINGS } }
   })
-
-  useEffect(() => {
-    if (!householdId || !settings.includePantry) { setPantryTxs([]); return }
-    getPantrySpendingForMonth(householdId, monthKey)
-      .then((rows) => setPantryTxs(pantryRowsToTransactions(rows, householdId) as Transaction[]))
-      .catch(() => setPantryTxs([]))
-  }, [householdId, monthKey, settings.includePantry])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -143,7 +142,7 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
         </div>
       </div>
 
-      {tab === 'overview' && <OverviewTab transactions={transactions} pantryTxs={pantryTxs} month={month} includePantry={settings.includePantry} />}
+      {tab === 'overview' && <OverviewTab householdId={householdId} transactions={transactions} month={month} includePantry={settings.includePantry} />}
 
       {tab === 'pantry' && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
