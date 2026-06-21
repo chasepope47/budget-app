@@ -6,30 +6,12 @@ function generateCode(): string {
 }
 
 export async function ensureHousehold(userId: string, email: string): Promise<string> {
-  const { data: existing } = await supabase
-    .from('household_members')
-    .select('household_id')
-    .eq('user_id', userId)
-    .single()
-
-  if (existing) return existing.household_id
-
-  const { data: household, error } = await supabase
-    .from('households')
-    .insert({ name: 'My Budget', created_by: userId })
-    .select()
-    .single()
-
-  if (error || !household) throw new Error(error?.message ?? 'Failed to create household')
-
-  await supabase.from('household_members').insert({
-    household_id: household.id,
-    user_id: userId,
-    email,
-    role: 'owner',
+  const { data, error } = await supabase.rpc('ensure_my_household', {
+    p_user_id: userId,
+    p_email: email,
   })
-
-  return household.id
+  if (error) throw new Error(`[${error.code}] ${error.message}`)
+  return data as string
 }
 
 export async function getHousehold(householdId: string): Promise<Household | null> {
