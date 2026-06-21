@@ -72,7 +72,7 @@ export async function createInviteCode(householdId: string, userId: string): Pro
   const code = generateCode()
   const { error } = await supabase.from('household_invites').insert({
     household_id: householdId,
-    invited_by: userId,
+    created_by: userId,
     code,
   })
   if (error) throw new Error('Failed to create invite code')

@@ -11,6 +11,7 @@ create extension if not exists "pgcrypto";
 create table if not exists households (
   id          uuid primary key default gen_random_uuid(),
   name        text not null default 'My Household',
+  created_by  uuid references auth.users(id),
   created_at  timestamptz default now()
 );
 
@@ -18,6 +19,7 @@ create table if not exists household_members (
   id           uuid primary key default gen_random_uuid(),
   household_id uuid not null references households(id) on delete cascade,
   user_id      uuid not null references auth.users(id) on delete cascade,
+  email        text,
   role         text not null default 'member',
   joined_at    timestamptz default now(),
   unique (household_id, user_id)
