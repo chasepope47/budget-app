@@ -45,7 +45,6 @@ const GoalDetailPage = GoalDetailPageJsx as AnyPage
 import ReportsPage from './pages/ReportsPage'
 
 import { monthLabelFromKey } from './lib/storage.js'
-import { mergeTransactions, importTransactionsWithDetection, applyStatementToAccounts } from './lib/accounts.js'
 import { statementKeyFromRange, getStatementDateRange, sumAmounts, isoDate } from './lib/statementMath.js'
 
 type Page = 'dashboard' | 'balances' | 'budget' | 'transactions' | 'reports' | 'goals'
@@ -508,7 +507,7 @@ export default function App() {
               onChangeCurrentAccount={setCurrentAccountId}
               onOpenGoal={(id: string) => { setCurrentGoalId(id); setCurrentPage('goals') }}
               onCreateGoal={handleCreateGoal}
-              onTransactionsUpdate={() => {}}
+              onTransactionsParsed={handleImportTransactions}
               sectionsOrder={undefined}
             />
           )}
