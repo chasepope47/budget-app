@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import FlowSankey from '../components/FlowSankey.jsx'
+import { useEffect, useMemo, useState } from 'react'
 import { type Transaction } from '../lib/supabase'
 import { getPantrySpendingForMonth, pantryRowsToTransactions } from '../lib/pantrySync'
 import PantrySpendingReport from '../components/PantrySpendingReport'
+import SpendingPieChart, { buildSlices } from '../components/SpendingPieChart'
 
 type ReportsPageProps = {
   householdId: string
@@ -31,14 +31,6 @@ const ESSENTIAL    = ['grocery','groceries','costco','walmart','gas','fuel','med
 const TRANSFER     = ['transfer','zelle','venmo','cash app','withdrawal','deposit']
 
 function normalizeForMatch(desc = '') { return String(desc).trim().toLowerCase().replace(/\s+/g, ' ') }
-function normalizeForDisplay(desc = '') {
-  let s = String(desc).trim()
-  s = s.replace(/[*#]{3,}\w{2,}$/g, '').trim()
-  s = s.replace(/\b(?:\d{3,}|x{3,}\d+)\b/gi, '').trim()
-  s = s.replace(/\s+/g, ' ')
-  if (s.length > 28) s = s.slice(0, 26) + '…'
-  return s || 'Uncategorized'
-}
 
 function bucketFor(matchText: string): string {
   const d = matchText.toLowerCase()
@@ -49,116 +41,57 @@ function bucketFor(matchText: string): string {
   return 'Variable'
 }
 
-function bucketForPantry(category: string | null): string {
-  const c = (category ?? '').toLowerCase()
-  if (['produce','dairy','meat & seafood','frozen','canned & jarred','grains & pasta','snacks','beverages','condiments','spices','baking'].some((k) => c.includes(k.split(' ')[0]))) {
-    return 'Groceries'
-  }
-  return 'Groceries'
-}
-
-type SankeyData = {
-  nodes: { name: string }[]
-  links: { source: string; target: string; value: number }[]
-  meta: { incomeTotal: number; spentTotal?: number; leftover?: number; groceriesTotal?: number }
-}
-
-function buildSankey(
-  txs: Transaction[],
-  pantryTxs: Transaction[],
-  opts: { topNPerBucket: number; maxRows: number; includeTransfers: boolean; includePantry: boolean },
-): SankeyData {
-  const allTxs = opts.includePantry ? [...txs, ...pantryTxs] : txs
-  const capped = allTxs.length > opts.maxRows ? allTxs.slice(-opts.maxRows) : allTxs
-
-  const incomeTotal = capped.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
-
-  const bucketTotals = new Map<string, number>()
-  const bucketMerchants = new Map<string, Map<string, number>>()
-
-  for (const t of capped) {
-    const amt = t.amount
-    if (!(amt < 0)) continue
-
-    const isPantry = t.source === 'pantry'
-    const matchText = normalizeForMatch(t.description)
-    const merchant = isPantry
-      ? normalizeForDisplay(t.description)
-      : normalizeForDisplay(t.description)
-    const bucket = isPantry ? bucketForPantry(t.category) : bucketFor(matchText)
-
-    if (!opts.includeTransfers && bucket === 'Transfers') continue
-
-    const v = Math.abs(amt)
-    bucketTotals.set(bucket, (bucketTotals.get(bucket) ?? 0) + v)
-
-    if (!bucketMerchants.has(bucket)) bucketMerchants.set(bucket, new Map())
-    const m = bucketMerchants.get(bucket)!
-    m.set(merchant, (m.get(merchant) ?? 0) + v)
-  }
-
-  if (incomeTotal <= 0 && bucketTotals.size === 0) {
-    return { nodes: [], links: [], meta: { incomeTotal: 0 } }
-  }
-
-  const baseBuckets = opts.includeTransfers
-    ? ['Fixed', 'Subscriptions', 'Essential', 'Groceries', 'Variable', 'Transfers']
-    : ['Fixed', 'Subscriptions', 'Essential', 'Groceries', 'Variable']
-
-  const activeBuckets = baseBuckets.filter((b) => (bucketTotals.get(b) ?? 0) > 0)
-  const nodes: { name: string }[] = [{ name: 'Income' }, ...activeBuckets.map((b) => ({ name: b }))]
-  const links: { source: string; target: string; value: number }[] = []
-
-  for (const b of activeBuckets) {
-    const v = bucketTotals.get(b) ?? 0
-    if (v > 0) links.push({ source: 'Income', target: b, value: v })
-  }
-
-  function topN(m: Map<string, number>, n: number): [string, number][] {
-    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, n)
-  }
-
-  for (const b of activeBuckets) {
-    const m = bucketMerchants.get(b)
-    if (!m) continue
-    for (const [merchant, v] of topN(m, opts.topNPerBucket)) {
-      nodes.push({ name: merchant })
-      links.push({ source: b, target: merchant, value: v })
-    }
-  }
-
-  const nonTransferBuckets = activeBuckets.filter((b) => b !== 'Transfers')
-  const spent = nonTransferBuckets.reduce((s, b) => s + (bucketTotals.get(b) ?? 0), 0)
-  const leftover = Math.max(0, incomeTotal - spent)
-
-  if (leftover > 0) {
-    nodes.push({ name: 'Leftover' })
-    links.push({ source: 'Income', target: 'Leftover', value: leftover })
-  }
-
-  const seen = new Set<string>()
-  const uniqueNodes = nodes.filter((n) => { if (seen.has(n.name)) return false; seen.add(n.name); return true })
-
-  return {
-    nodes: uniqueNodes,
-    links,
-    meta: {
-      incomeTotal,
-      spentTotal: spent,
-      leftover,
-      groceriesTotal: bucketTotals.get('Groceries'),
-    },
-  }
-}
-
 const SETTINGS_KEY = 'budgetApp_reportSettings_v2'
+
+function OverviewTab({ transactions, pantryTxs, month, includePantry }: {
+  transactions: Transaction[]
+  pantryTxs: Transaction[]
+  month: string
+  includePantry: boolean
+}) {
+  const slices = useMemo(() => {
+    const all = includePantry ? [...transactions, ...pantryTxs] : transactions
+    const buckets: Record<string, number> = {}
+    for (const t of all) {
+      if (t.amount >= 0) continue
+      const isPantry = t.source === 'pantry'
+      const bucket = isPantry ? 'Groceries' : bucketFor(normalizeForMatch(t.description))
+      buckets[bucket] = (buckets[bucket] ?? 0) + Math.abs(t.amount)
+    }
+    return buildSlices(buckets)
+  }, [transactions, pantryTxs, includePantry])
+
+  const total = slices.reduce((s, sl) => s + sl.value, 0)
+  const income = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
+
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-medium text-slate-100">{month} Spending</h2>
+        {income > 0 && (
+          <div className="text-right">
+            <div className="text-xs text-slate-500">Income</div>
+            <div className="text-sm font-semibold text-emerald-300">${income.toFixed(2)}</div>
+          </div>
+        )}
+      </div>
+      {slices.length === 0
+        ? <p className="text-sm text-slate-400 py-4 text-center">No expenses recorded this month.</p>
+        : <SpendingPieChart slices={slices} size={200} />
+      }
+      {income > 0 && total > 0 && (
+        <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <span>Total spent: <span className="text-rose-300 font-semibold">${total.toFixed(2)}</span></span>
+          <span>Leftover: <span className="text-emerald-300 font-semibold">${Math.max(0, income - total).toFixed(2)}</span></span>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function ReportsPage({ householdId, monthKey, month, transactions }: ReportsPageProps) {
   const [tab, setTab] = useState<'overview' | 'pantry' | 'settings'>('overview')
-  const [data, setData] = useState<SankeyData>({ nodes: [], links: [], meta: { incomeTotal: 0 } })
   const [pantryTxs, setPantryTxs] = useState<Transaction[]>([])
-  const [pantryLoading, setPantryLoading] = useState(false)
-  const [chartHeight, setChartHeight] = useState(560)
 
   type Settings = typeof DEFAULT_SETTINGS
   const [settings, setSettings] = useState<Settings>(() => {
@@ -168,33 +101,13 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
     } catch { return { ...DEFAULT_SETTINGS } }
   })
 
-  // Responsive chart height
-  useEffect(() => {
-    function compute() { setChartHeight(Math.max(380, Math.min(680, Math.round(window.innerHeight * 0.55)))) }
-    compute()
-    window.addEventListener('resize', compute)
-    return () => window.removeEventListener('resize', compute)
-  }, [])
-
-  // Load pantry spending for this month
   useEffect(() => {
     if (!householdId || !settings.includePantry) { setPantryTxs([]); return }
-    setPantryLoading(true)
     getPantrySpendingForMonth(householdId, monthKey)
       .then((rows) => setPantryTxs(pantryRowsToTransactions(rows, householdId) as Transaction[]))
       .catch(() => setPantryTxs([]))
-      .finally(() => setPantryLoading(false))
   }, [householdId, monthKey, settings.includePantry])
 
-  // Rebuild Sankey when data or settings change
-  useEffect(() => {
-    const id = setTimeout(() => {
-      setData(buildSankey(transactions, pantryTxs, settings))
-    }, 0)
-    return () => clearTimeout(id)
-  }, [transactions, pantryTxs, settings])
-
-  // Persist settings
   useEffect(() => {
     const t = setTimeout(() => {
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) } catch {}
@@ -206,9 +119,6 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
     const p = PRESETS[name]
     if (p) setSettings((s) => ({ ...s, ...p }))
   }
-
-  const groceriesTotal = data.meta.groceriesTotal ?? 0
-  const pantryItems = pantryTxs.length
 
   return (
     <div className="space-y-3">
@@ -224,25 +134,7 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
         </div>
       </div>
 
-      {tab === 'overview' && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-          {settings.includePantry && pantryItems > 0 && (
-            <div className="mb-3 flex items-center gap-2 px-1">
-              <span className="text-xs text-slate-400">
-                🥫 {pantryItems} pantry items included
-                {groceriesTotal > 0 && (
-                  <span className="ml-1 text-amber-300 font-medium">(${groceriesTotal.toFixed(2)} in groceries)</span>
-                )}
-              </span>
-            </div>
-          )}
-          <div className="hScroll">
-            <div style={{ minHeight: chartHeight }}>
-              <FlowSankey data={data} height={chartHeight} onNodeClick={() => {}} />
-            </div>
-          </div>
-        </div>
-      )}
+      {tab === 'overview' && <OverviewTab transactions={transactions} pantryTxs={pantryTxs} month={month} includePantry={settings.includePantry} />}
 
       {tab === 'pantry' && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">

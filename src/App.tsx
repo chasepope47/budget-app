@@ -481,7 +481,6 @@ export default function App() {
             <ActionsMenu
               monthKey={monthKey}
               onSetMonthKey={setMonthKey}
-              onToast={setToast}
               onOpenWorkspaceManager={() => setShowHouseholdManager(true)}
             />
             <ProfileMenu
