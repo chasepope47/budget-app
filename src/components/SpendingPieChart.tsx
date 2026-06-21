@@ -23,16 +23,15 @@ export function buildSlices(buckets: Record<string, number>): Slice[] {
     .map(([label, value], i) => ({ label, value, color: COLORS[i % COLORS.length] }))
 }
 
-export default function SpendingPieChart({ slices, size = 220 }: Props) {
+export default function SpendingPieChart({ slices, size = 280 }: Props) {
   if (slices.length === 0) return null
 
   const total = slices.reduce((s, sl) => s + sl.value, 0)
   const cx = size / 2
   const cy = size / 2
-  const r  = size * 0.38
-  const ir = size * 0.22 // inner radius for donut
+  const r  = size * 0.40
+  const ir = size * 0.24
 
-  // Build SVG arc paths
   function polarToXY(angle: number, radius: number) {
     const rad = (angle - 90) * (Math.PI / 180)
     return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) }
@@ -62,31 +61,28 @@ export default function SpendingPieChart({ slices, size = 220 }: Props) {
   })
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-6">
-      {/* Donut */}
-      <div className="relative flex-shrink-0">
-        <svg width={size} height={size}>
-          {paths.map((sl) => (
-            <path key={sl.label} d={sl.path} fill={sl.color} opacity={0.9} />
-          ))}
-          {/* centre text */}
-          <text x={cx} y={cy - 8} textAnchor="middle" fill="#94a3b8" fontSize={11}>Total</text>
-          <text x={cx} y={cy + 10} textAnchor="middle" fill="#f1f5f9" fontSize={14} fontWeight="bold">
-            ${total.toFixed(0)}
-          </text>
-        </svg>
-      </div>
+    <div className="flex flex-col items-center gap-6">
+      {/* Donut — always centered */}
+      <svg width={size} height={size} style={{ display: 'block', margin: '0 auto' }}>
+        {paths.map((sl) => (
+          <path key={sl.label} d={sl.path} fill={sl.color} opacity={0.9} />
+        ))}
+        <text x={cx} y={cy - 10} textAnchor="middle" fill="#94a3b8" fontSize={13}>Total</text>
+        <text x={cx} y={cy + 14} textAnchor="middle" fill="#f1f5f9" fontSize={Math.round(size * 0.072)} fontWeight="bold">
+          ${total.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+        </text>
+      </svg>
 
-      {/* Legend */}
-      <div className="flex flex-col gap-2 w-full">
+      {/* Legend — full width below chart */}
+      <div className="w-full flex flex-col gap-2.5">
         {paths.map((sl) => {
           const pct = ((sl.value / total) * 100).toFixed(1)
           return (
-            <div key={sl.label} className="flex items-center gap-2">
+            <div key={sl.label} className="flex items-center gap-3">
               <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: sl.color }} />
-              <span className="flex-1 text-sm text-slate-300 truncate">{sl.label}</span>
-              <span className="text-xs text-slate-500">{pct}%</span>
-              <span className="text-sm font-semibold text-slate-100 w-20 text-right">${sl.value.toFixed(2)}</span>
+              <span className="flex-1 text-sm text-slate-300">{sl.label}</span>
+              <span className="text-xs text-slate-500 w-12 text-right">{pct}%</span>
+              <span className="text-sm font-semibold text-slate-100 w-24 text-right">${sl.value.toFixed(2)}</span>
             </div>
           )
         })}

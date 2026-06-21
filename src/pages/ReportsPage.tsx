@@ -65,20 +65,29 @@ function OverviewTab({ transactions, pantryTxs, month, includePantry }: {
   const income = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-5">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5 space-y-5">
+      {/* Header stats */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium text-slate-100">{month} Spending</h2>
         {income > 0 && (
           <div className="text-right">
             <div className="text-xs text-slate-500">Income</div>
-            <div className="text-sm font-semibold text-emerald-300">${income.toFixed(2)}</div>
+            <div className="text-sm font-semibold text-emerald-300">${income.toLocaleString('en-US', { maximumFractionDigits: 2 })}</div>
           </div>
         )}
       </div>
+
       {slices.length === 0
-        ? <p className="text-sm text-slate-400 py-4 text-center">No expenses recorded this month.</p>
-        : <SpendingPieChart slices={slices} size={200} />
+        ? <p className="text-sm text-slate-400 py-8 text-center">No expenses recorded this month.</p>
+        : (
+          <div className="flex justify-center">
+            <div className="w-full max-w-sm">
+              <SpendingPieChart slices={slices} size={300} />
+            </div>
+          </div>
+        )
       }
+
       {income > 0 && total > 0 && (
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <span>Total spent: <span className="text-rose-300 font-semibold">${total.toFixed(2)}</span></span>
