@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type React from 'react'
 import './App.css'
 
 import { useAuth } from './SupabaseAuthProvider'
@@ -461,12 +462,9 @@ export default function App() {
     <div className="app-shell">
       <header className="app-header">
         <div className="content headerRow">
+          {/* Brand + desktop nav */}
           <div className="brandAndNav">
-            <div className="appTitle">
-              FlowMetrics Budget <span style={{ opacity: 0.6 }}>·</span>{' '}
-              <span style={{ opacity: 0.85 }}>{monthLabel}</span>
-            </div>
-
+            <div className="appTitle">FlowMetrics</div>
             <nav className="navRow" aria-label="Primary navigation">
               <NavButton active={currentPage === 'dashboard'} onClick={() => setCurrentPage('dashboard')}>Dashboard</NavButton>
               <NavButton active={currentPage === 'balances'} onClick={() => setCurrentPage('balances')}>Balances</NavButton>
@@ -626,6 +624,26 @@ export default function App() {
           }}
         />
       )}
+
+      {/* Mobile bottom nav */}
+      <nav className="bottom-nav" aria-label="Primary navigation">
+        {([
+          { page: 'dashboard',    label: 'Home',    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M3 12L12 4l9 8"/><path d="M5 10v9h5v-5h4v5h5V10"/></svg> },
+          { page: 'balances',     label: 'Balances',icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><line x1="6" y1="15" x2="9" y2="15"/></svg> },
+          { page: 'budget',       label: 'Budget',  icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="12" width="4" height="8"/><rect x="10" y="7" width="4" height="13"/><rect x="17" y="3" width="4" height="17"/></svg> },
+          { page: 'transactions', label: 'Txns',    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M7 16V4m0 0L4 7m3-3 3 3M17 8v12m0 0 3-3m-3 3-3-3"/></svg> },
+          { page: 'reports',      label: 'Reports', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v10l6.5 3.7A10 10 0 1 1 12 2z"/></svg> },
+          { page: 'goals',        label: 'Goals',   icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg> },
+        ] as { page: typeof currentPage; label: string; icon: React.ReactNode }[]).map(({ page, label, icon }) => (
+          <button key={page} type="button"
+            className={`bottom-nav-item${currentPage === page ? ' active' : ''}`}
+            onClick={() => setCurrentPage(page)}
+          >
+            <span className="bottom-nav-icon">{icon}</span>
+            <span className="bottom-nav-label">{label}</span>
+          </button>
+        ))}
+      </nav>
 
       {toast && (
         <Toast kind={toast.kind} message={toast.message} onClose={() => setToast(null)} />

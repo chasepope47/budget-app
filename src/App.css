@@ -70,7 +70,7 @@ body {
 }
 
 /* =========================
-   Mobile header + nav fixes (NEW)
+   Header + nav
    ========================= */
 
 .headerRow {
@@ -78,56 +78,115 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
 }
 
 .brandAndNav {
   display: flex;
   align-items: center;
   gap: 1rem;
-  min-width: 0; /* critical so nav can shrink/scroll instead of forcing overflow */
+  min-width: 0;
 }
 
 .appTitle {
   font-weight: 700;
+  font-size: 0.9375rem;
   white-space: nowrap;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
 }
 
+/* Desktop nav pills */
 .navRow {
   display: flex;
-  gap: 0.5rem;
-  overflow-x: auto; /* key mobile win */
+  gap: 0.375rem;
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   white-space: nowrap;
-  max-width: 100%;
-  padding-bottom: 0.25rem;
+  scrollbar-width: none;
 }
+.navRow::-webkit-scrollbar { display: none; }
 
 .headerRight {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.625rem;
   flex-shrink: 0;
 }
 
-@media (max-width: 768px) {
-  .headerRow {
-    flex-direction: column;
-    align-items: stretch;
-  }
+/* Hide desktop nav on mobile */
+@media (max-width: 639px) {
+  .navRow { display: none; }
+  /* Push content up so bottom nav doesn't cover it */
+  .app-main { padding-bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+}
 
-  .brandAndNav {
-    flex-direction: column;
-    align-items: stretch;
-  }
+/* Hide bottom nav on desktop */
+@media (min-width: 640px) {
+  .bottom-nav { display: none; }
+}
 
-  .appTitle {
-    text-align: center;
-  }
+/* =========================
+   Bottom nav (mobile)
+   ========================= */
 
-  .headerRight {
-    width: 100%;
-    justify-content: space-between;
-  }
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  background: rgba(5, 6, 15, 0.92);
+  border-top: 1px solid rgba(51, 65, 85, 0.6);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.55rem 0.25rem 0.45rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #64748b;
+  transition: color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bottom-nav-item:active {
+  opacity: 0.7;
+}
+
+.bottom-nav-item.active {
+  color: #22d3ee;
+}
+
+.bottom-nav-icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bottom-nav-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bottom-nav-label {
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
 
 /* =========================
