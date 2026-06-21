@@ -190,6 +190,24 @@ export default function App() {
   const incomeForMath = useActualIncome ? actualIncome : estimatedIncome
   const leftover = incomeForMath - fixedTotal - variableTotal
 
+  // ─── Account balance helpers ──────────────────────────────────────────────
+  const accountBalances = useMemo(() => {
+    const netByAccount: Record<string, number> = {}
+    for (const tx of allTransactions) {
+      if (!tx.account_id) continue
+      netByAccount[tx.account_id] = (netByAccount[tx.account_id] ?? 0) + (Number(tx.amount) || 0)
+    }
+    return accounts.map((acc) => {
+      const net = netByAccount[acc.id] ?? 0
+      const confirmed = Number.isFinite(Number(acc.current_balance)) ? Number(acc.current_balance) : null
+      const computed = (Number(acc.starting_balance) || 0) + net
+      return { id: acc.id, balance: confirmed ?? computed }
+    })
+  }, [accounts, allTransactions])
+
+  const currentAccountBalance = accountBalances.find((a) => a.id === currentAccountId)?.balance ?? 0
+  const totalBalance = accountBalances.reduce((s, a) => s + a.balance, 0)
+
   // ─── Budget month actions ─────────────────────────────────────────────────
   async function handleSetEstimatedIncome(amount: number) {
     if (!householdId) return
@@ -557,6 +575,8 @@ export default function App() {
               accounts={accounts}
               currentAccountId={currentAccountId}
               onChangeCurrentAccount={setCurrentAccountId}
+              currentAccountBalance={currentAccountBalance}
+              totalBalance={totalBalance}
               onOpenGoal={(id: string) => { setCurrentGoalId(id); setCurrentPage('goals') }}
               onCreateGoal={handleCreateGoal}
               onCsvImported={handleImportTransactions}
