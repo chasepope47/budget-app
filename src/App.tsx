@@ -321,38 +321,56 @@ export default function App() {
   ) {
     if (!householdId) return
 
-    // 1. If bank name detected, try to find a matching existing account first
+    // Resolve which account gets these transactions.
+    // When a bank is detected, it must match an existing account or get its own new one —
+    // never silently fall through to whatever account happens to be selected.
     let targetAccountId: string | null = null
+
     if (meta.bank) {
+      // Look for an existing account whose name matches the detected bank
       const bankLower = meta.bank.toLowerCase()
       const matched = accounts.find(
         (a) => a.name.toLowerCase().includes(bankLower) || bankLower.includes(a.name.toLowerCase()),
       )
-      if (matched) targetAccountId = matched.id
-    }
-
-    // 2. Fall back to explicitly-selected account
-    if (!targetAccountId) targetAccountId = meta.accountId ?? currentAccountId ?? null
-
-    // 3. Nothing matched — auto-create an account named after the bank/file
-    if (!targetAccountId) {
-      const accountName = meta.bank
-        || meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
-        || 'Imported Account'
-      const newAcc = await apiAddAccount({
-        household_id: householdId,
-        name: accountName,
-        type: 'checking',
-        starting_balance: 0,
-        current_balance: null,
-        current_balance_as_of: null,
-        last_statement_key: null,
-        last_confirmed_ending_balance: null,
-        statement_balances: {},
-      })
-      setAccounts((prev) => [...prev, newAcc])
-      setCurrentAccountId(newAcc.id)
-      targetAccountId = newAcc.id
+      if (matched) {
+        targetAccountId = matched.id
+      } else {
+        // Bank detected but no matching account — create one for it
+        const newAcc = await apiAddAccount({
+          household_id: householdId,
+          name: meta.bank,
+          type: 'checking',
+          starting_balance: 0,
+          current_balance: null,
+          current_balance_as_of: null,
+          last_statement_key: null,
+          last_confirmed_ending_balance: null,
+          statement_balances: {},
+        })
+        setAccounts((prev) => [...prev, newAcc])
+        setCurrentAccountId(newAcc.id)
+        targetAccountId = newAcc.id
+      }
+    } else {
+      // No bank detected — use selected account or create a generic one
+      targetAccountId = currentAccountId ?? null
+      if (!targetAccountId) {
+        const accountName = meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ') || 'Imported Account'
+        const newAcc = await apiAddAccount({
+          household_id: householdId,
+          name: accountName,
+          type: 'checking',
+          starting_balance: 0,
+          current_balance: null,
+          current_balance_as_of: null,
+          last_statement_key: null,
+          last_confirmed_ending_balance: null,
+          statement_balances: {},
+        })
+        setAccounts((prev) => [...prev, newAcc])
+        setCurrentAccountId(newAcc.id)
+        targetAccountId = newAcc.id
+      }
     }
 
     const toInsert = rows.map((row) => ({
