@@ -154,7 +154,7 @@ function buildSankey(
 const SETTINGS_KEY = 'budgetApp_reportSettings_v2'
 
 export default function ReportsPage({ householdId, monthKey, month, transactions }: ReportsPageProps) {
-  const [tab, setTab] = useState<'overview' | 'pantry' | 'groceries' | 'settings'>('overview')
+  const [tab, setTab] = useState<'overview' | 'pantry' | 'settings'>('overview')
   const [data, setData] = useState<SankeyData>({ nodes: [], links: [], meta: { incomeTotal: 0 } })
   const [pantryTxs, setPantryTxs] = useState<Transaction[]>([])
   const [pantryLoading, setPantryLoading] = useState(false)
@@ -215,7 +215,7 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-slate-100">{month} Reports</h1>
         <div className="inline-flex rounded-xl border border-slate-800 bg-slate-950/40 p-1">
-          {(['overview', 'pantry', 'groceries', 'settings'] as const).map((t) => (
+          {(['overview', 'pantry', 'settings'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-sm rounded-lg capitalize transition ${tab === t ? 'bg-slate-900 text-slate-100' : 'text-slate-300 hover:text-slate-100'}`}>
               {t}
@@ -248,55 +248,6 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
           <h2 className="text-sm font-medium text-slate-100 mb-4">Pantry Spending by Store</h2>
           <PantrySpendingReport householdId={householdId} />
-        </div>
-      )}
-
-      {tab === 'groceries' && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 space-y-4">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-medium text-slate-100">Pantry Spending — {month}</h2>
-            {pantryLoading && <span className="text-xs text-slate-400">Loading…</span>}
-          </div>
-
-          {!settings.includePantry && (
-            <p className="text-xs text-slate-400">Enable "Include Pantry" in Settings to see grocery data.</p>
-          )}
-
-          {settings.includePantry && pantryTxs.length === 0 && !pantryLoading && (
-            <p className="text-xs text-slate-400">
-              No pantry spending recorded this month. Items consumed in the Pantry app appear here automatically.
-            </p>
-          )}
-
-          {settings.includePantry && pantryTxs.length > 0 && (
-            <>
-              <div className="text-2xl font-semibold text-amber-300">${groceriesTotal.toFixed(2)}</div>
-              <div className="text-xs text-slate-400">{pantryTxs.length} items consumed this month</div>
-
-              <div className="max-h-72 overflow-auto rounded-lg border border-slate-800">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-900 text-slate-300 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-1.5">Date</th>
-                      <th className="px-3 py-1.5">Item</th>
-                      <th className="px-3 py-1.5">Category</th>
-                      <th className="px-3 py-1.5 text-right">Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {pantryTxs.map((tx) => (
-                      <tr key={tx.pantry_history_id ?? tx.id} className="hover:bg-slate-900/60">
-                        <td className="px-3 py-1.5 text-slate-400">{tx.date}</td>
-                        <td className="px-3 py-1.5 text-slate-200">{tx.description}</td>
-                        <td className="px-3 py-1.5 text-slate-400">{tx.category ?? 'Groceries'}</td>
-                        <td className="px-3 py-1.5 text-right text-rose-300">${Math.abs(tx.amount).toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
         </div>
       )}
 

@@ -2,6 +2,7 @@
 import React from "react";
 import Card from "../components/Card.jsx";
 import PantrySpendingReport from "../components/PantrySpendingReport";
+import PantryBudgetCard from "../components/PantryBudgetCard";
 
 // --------------------
 // Date + money helpers
@@ -377,6 +378,10 @@ function BudgetPage({
           </div>
         </Card>
       </div>
+
+      {householdId && (
+        <PantryBudgetCard householdId={householdId} monthKey={monthKey} />
+      )}
 
       {householdId && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">

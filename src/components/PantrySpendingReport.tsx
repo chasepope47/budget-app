@@ -18,11 +18,13 @@ const CATEGORIES = [
 ]
 
 type CategoryEntry = { label: string; emoji: string; total: number }
-type StoreEntry = { name: string; total: number; categories: CategoryEntry[] }
+type StoreEntry    = { name: string; total: number; categories: CategoryEntry[] }
+type View = 'total' | 'stores' | 'categories'
 
 export default function PantrySpendingReport({ householdId }: { householdId: string }) {
-  const [stores, setStores] = useState<StoreEntry[]>([])
-  const [loading, setLoading] = useState(true)
+  const [stores, setStores]         = useState<StoreEntry[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [view, setView]             = useState<View>('total')
   const [drillStore, setDrillStore] = useState<StoreEntry | null>(null)
 
   useEffect(() => {
@@ -38,8 +40,8 @@ export default function PantrySpendingReport({ householdId }: { householdId: str
       const storeMap = new Map<string, Map<string, number>>()
       for (const item of data) {
         const storeName = item.store?.trim() || 'No Store'
-        const catLabel = item.category || 'Other'
-        const value = (item.price ?? 0) * (item.quantity ?? 1)
+        const catLabel  = item.category || 'Other'
+        const value     = (item.price ?? 0) * (item.quantity ?? 1)
         if (!storeMap.has(storeName)) storeMap.set(storeName, new Map())
         const catMap = storeMap.get(storeName)!
         catMap.set(catLabel, (catMap.get(catLabel) ?? 0) + value)
@@ -68,30 +70,42 @@ export default function PantrySpendingReport({ householdId }: { householdId: str
     load()
   }, [householdId])
 
-  if (loading) {
-    return <div className="py-6 text-center text-slate-400 text-sm">Loading pantry data…</div>
-  }
+  if (loading) return <div className="py-6 text-center text-slate-400 text-sm">Loading pantry data…</div>
+
+  const grandTotal = stores.reduce((s, st) => s + st.total, 0)
 
   if (stores.length === 0) {
     return (
       <div className="py-6 text-center">
         <p className="text-slate-400 text-sm">No pantry data yet</p>
-        <p className="text-slate-500 text-xs mt-1">Add items with prices in the pantry app to see your spending breakdown</p>
+        <p className="text-slate-500 text-xs mt-1">Add items with prices in the pantry app to see spending</p>
       </div>
     )
   }
 
-  const grandTotal = stores.reduce((s, st) => s + st.total, 0)
+  // ── Level 0: total ────────────────────────────────────────────
+  if (view === 'total') {
+    return (
+      <button
+        onClick={() => setView('stores')}
+        className="w-full text-left group rounded-xl border border-slate-700/60 bg-slate-900/40 px-5 py-4 hover:border-cyan-400/40 transition"
+      >
+        <div className="text-xs text-slate-500 mb-1">Total pantry value</div>
+        <div className="text-3xl font-bold text-cyan-300">${grandTotal.toFixed(2)}</div>
+        <div className="mt-2 flex items-center gap-1 text-xs text-slate-400 group-hover:text-cyan-400 transition">
+          View by store <ChevronRight size={13} />
+        </div>
+      </button>
+    )
+  }
 
-  if (drillStore) {
+  // ── Level 2: categories for a store ──────────────────────────
+  if (view === 'categories' && drillStore) {
     return (
       <div>
-        <button
-          onClick={() => setDrillStore(null)}
-          className="flex items-center gap-1 text-sm font-medium text-cyan-400 mb-4"
-        >
-          <ChevronLeft size={16} />
-          All stores
+        <button onClick={() => setView('stores')}
+          className="flex items-center gap-1 text-sm font-medium text-cyan-400 mb-4">
+          <ChevronLeft size={16} /> All stores
         </button>
 
         <div className="flex items-center justify-between mb-4">
@@ -126,8 +140,14 @@ export default function PantrySpendingReport({ householdId }: { householdId: str
     )
   }
 
+  // ── Level 1: stores ───────────────────────────────────────────
   return (
     <div>
+      <button onClick={() => setView('total')}
+        className="flex items-center gap-1 text-sm font-medium text-cyan-400 mb-4">
+        <ChevronLeft size={16} /> Total
+      </button>
+
       <div className="flex items-center justify-between mb-4">
         <p className="text-xs text-slate-500">Tap a store to see category breakdown</p>
         <p className="text-xs font-semibold text-slate-400">Total: ${grandTotal.toFixed(2)}</p>
@@ -137,11 +157,8 @@ export default function PantrySpendingReport({ householdId }: { householdId: str
         {stores.map(store => {
           const pct = (store.total / grandTotal) * 100
           return (
-            <button
-              key={store.name}
-              onClick={() => setDrillStore(store)}
-              className="w-full text-left group"
-            >
+            <button key={store.name} onClick={() => { setDrillStore(store); setView('categories') }}
+              className="w-full text-left group">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-sm font-medium text-slate-200 flex items-center gap-1.5">
                   <span>🏪</span>{store.name}
