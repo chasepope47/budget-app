@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import FlowSankey from '../components/FlowSankey.jsx'
 import { type Transaction } from '../lib/supabase'
 import { getPantrySpendingForMonth, pantryRowsToTransactions } from '../lib/pantrySync'
+import PantrySpendingReport from '../components/PantrySpendingReport'
 
 type ReportsPageProps = {
   householdId: string
@@ -153,7 +154,7 @@ function buildSankey(
 const SETTINGS_KEY = 'budgetApp_reportSettings_v2'
 
 export default function ReportsPage({ householdId, monthKey, month, transactions }: ReportsPageProps) {
-  const [tab, setTab] = useState<'overview' | 'groceries' | 'settings'>('overview')
+  const [tab, setTab] = useState<'overview' | 'pantry' | 'groceries' | 'settings'>('overview')
   const [data, setData] = useState<SankeyData>({ nodes: [], links: [], meta: { incomeTotal: 0 } })
   const [pantryTxs, setPantryTxs] = useState<Transaction[]>([])
   const [pantryLoading, setPantryLoading] = useState(false)
@@ -214,7 +215,7 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-slate-100">{month} Reports</h1>
         <div className="inline-flex rounded-xl border border-slate-800 bg-slate-950/40 p-1">
-          {(['overview', 'groceries', 'settings'] as const).map((t) => (
+          {(['overview', 'pantry', 'groceries', 'settings'] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-3 py-1.5 text-sm rounded-lg capitalize transition ${tab === t ? 'bg-slate-900 text-slate-100' : 'text-slate-300 hover:text-slate-100'}`}>
               {t}
@@ -240,6 +241,13 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
               <FlowSankey data={data} height={chartHeight} onNodeClick={() => {}} />
             </div>
           </div>
+        </div>
+      )}
+
+      {tab === 'pantry' && (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+          <h2 className="text-sm font-medium text-slate-100 mb-4">Pantry Spending by Store</h2>
+          <PantrySpendingReport householdId={householdId} />
         </div>
       )}
 
