@@ -281,9 +281,20 @@ export default function App() {
   ) {
     if (!householdId) return
 
-    // Resolve account — use selected, or auto-create from bank name
-    let targetAccountId = meta.accountId ?? currentAccountId ?? null
+    // 1. If bank name detected, try to find a matching existing account first
+    let targetAccountId: string | null = null
+    if (meta.bank) {
+      const bankLower = meta.bank.toLowerCase()
+      const matched = accounts.find(
+        (a) => a.name.toLowerCase().includes(bankLower) || bankLower.includes(a.name.toLowerCase()),
+      )
+      if (matched) targetAccountId = matched.id
+    }
 
+    // 2. Fall back to explicitly-selected account
+    if (!targetAccountId) targetAccountId = meta.accountId ?? currentAccountId ?? null
+
+    // 3. Nothing matched — auto-create an account named after the bank/file
     if (!targetAccountId) {
       const accountName = meta.bank
         || meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
