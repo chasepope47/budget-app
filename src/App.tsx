@@ -617,7 +617,7 @@ export default function App() {
               householdId={householdId!}
               monthKey={monthKey}
               month={monthLabel}
-              transactions={allTransactions}
+              transactions={transactions}
             />
           )}
 
