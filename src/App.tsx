@@ -307,7 +307,7 @@ export default function App() {
     const toInsert = rows.map((row) => ({
       household_id: householdId,
       account_id: targetAccountId,
-      month_key: row.date?.slice(0, 7) ?? monthKey,
+      month_key: /^\d{4}-\d{2}$/.test(row.date?.slice(0, 7) ?? '') ? row.date!.slice(0, 7) : monthKey,
       date: row.date,
       description: row.description,
       amount: row.amount,
