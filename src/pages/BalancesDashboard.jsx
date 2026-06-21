@@ -18,6 +18,7 @@ function fmtDate(iso) {
 
 function BalancesDashboard({
   accounts = [],
+  allTransactions = [],
   currentAccountId,
   onChangeCurrentAccount = () => {},
   onCreateAccount = () => {},
@@ -59,53 +60,50 @@ function BalancesDashboard({
         {hasAccounts && (
           <div className="space-y-2">
             {accounts.map((acc) => {
-              const txCount = Array.isArray(acc.transactions)
-                ? acc.transactions.length
-                : 0;
+              // Filter transactions belonging to this account
+              const accountTransactions = Array.isArray(allTransactions)
+                ? allTransactions.filter((t) => t.account_id === acc.id)
+                : [];
 
-              const net = computeNetTransactions(acc);
+              const txCount = accountTransactions.length;
+              const net = accountTransactions.reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-              const computedBalance =
-                (typeof acc.startingBalance === "number" ? acc.startingBalance : 0) +
-                net;
+              const startingBalance = Number(acc.starting_balance) || 0;
+              const computedBalance = startingBalance + net;
 
-              // ✅ Prefer confirmed/currentBalance if present (from statement)
-              const hasConfirmed = Number.isFinite(Number(acc.currentBalance));
+              // Prefer confirmed current_balance (from statement import) when available
+              const hasConfirmed = Number.isFinite(Number(acc.current_balance));
               const displayBalance = hasConfirmed
-                ? Number(acc.currentBalance)
+                ? Number(acc.current_balance)
                 : computedBalance;
 
-              const asOfLabel = hasConfirmed ? fmtDate(acc.currentBalanceAsOf) : "";
-              const statementKey = acc.lastStatementKey || "";
-              const lastEnding = Number.isFinite(Number(acc.lastConfirmedEndingBalance))
-                ? Number(acc.lastConfirmedEndingBalance)
+              const asOfLabel = hasConfirmed ? fmtDate(acc.current_balance_as_of) : "";
+              const statementKey = acc.last_statement_key || "";
+              const lastEnding = Number.isFinite(Number(acc.last_confirmed_ending_balance))
+                ? Number(acc.last_confirmed_ending_balance)
                 : null;
 
-              // last statement entry (if present)
               const statementEntry =
                 statementKey &&
-                acc.statementBalances &&
-                typeof acc.statementBalances === "object"
-                  ? acc.statementBalances[statementKey] || null
+                acc.statement_balances &&
+                typeof acc.statement_balances === "object"
+                  ? acc.statement_balances[statementKey] || null
                   : null;
 
               const balanceSource = statementEntry?.balanceSource || "";
 
-              const sortedTransactions = Array.isArray(acc.transactions)
-                ? acc.transactions
-                    .slice()
-                    .filter((tx) => tx && typeof tx === "object")
-                    .sort((a, b) => {
-                      const aTime = Date.parse(a.date);
-                      const bTime = Date.parse(b.date);
-                      const aValid = Number.isFinite(aTime);
-                      const bValid = Number.isFinite(bTime);
-                      if (!aValid && !bValid) return 0;
-                      if (!aValid) return 1;
-                      if (!bValid) return -1;
-                      return bTime - aTime;
-                    })
-                : [];
+              const sortedTransactions = accountTransactions
+                .slice()
+                .sort((a, b) => {
+                  const aTime = Date.parse(a.date);
+                  const bTime = Date.parse(b.date);
+                  const aValid = Number.isFinite(aTime);
+                  const bValid = Number.isFinite(bTime);
+                  if (!aValid && !bValid) return 0;
+                  if (!aValid) return 1;
+                  if (!bValid) return -1;
+                  return bTime - aTime;
+                });
 
               const hasTransactions = sortedTransactions.length > 0;
               const isExpanded = expandedAccounts.includes(acc.id);
@@ -189,7 +187,7 @@ function BalancesDashboard({
                         <input
                           type="number"
                           className="w-24 bg-slate-900/80 border border-slate-700 rounded px-1 py-0.5 text-right text-xs font-mono text-slate-100 focus:outline-none focus:ring-1 focus:ring-cyan-400"
-                          value={acc.startingBalance ?? 0}
+                          value={acc.starting_balance ?? 0}
                           onChange={(e) =>
                             onSetAccountBalance(
                               acc.id,

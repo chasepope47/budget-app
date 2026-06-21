@@ -557,6 +557,7 @@ export default function App() {
             // @ts-ignore – JSX component, props checked at runtime
             <BalancesDashboard
               accounts={accounts}
+              allTransactions={allTransactions}
               currentAccountId={currentAccountId}
               onChangeCurrentAccount={setCurrentAccountId}
               onCreateAccount={handleCreateAccount}
