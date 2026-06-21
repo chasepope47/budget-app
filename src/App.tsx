@@ -507,7 +507,7 @@ export default function App() {
               onChangeCurrentAccount={setCurrentAccountId}
               onOpenGoal={(id: string) => { setCurrentGoalId(id); setCurrentPage('goals') }}
               onCreateGoal={handleCreateGoal}
-              onTransactionsParsed={handleImportTransactions}
+              onCsvImported={handleImportTransactions}
               sectionsOrder={undefined}
             />
           )}

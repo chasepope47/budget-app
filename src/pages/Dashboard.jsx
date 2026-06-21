@@ -67,10 +67,11 @@ function Dashboard({
     setShowAccountTransactions(false);
   }, [transactions]);
 
-  // ✅ NEW: balance modal state
+  // balance modal state
   const [balanceModalOpen, setBalanceModalOpen] = React.useState(false);
   const [balanceModalBusy, setBalanceModalBusy] = React.useState(false);
   const [pendingImport, setPendingImport] = React.useState(null);
+  const [importError, setImportError] = React.useState("");
 
   return (
     <div className="space-y-6">
@@ -191,6 +192,11 @@ function Dashboard({
           case "csvImport":
             return (
               <Card key="csvImport" title="BANK STATEMENT IMPORT (CSV)">
+                {importError && (
+                  <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+                    {importError}
+                  </div>
+                )}
                 <BankImportCard
                   onTransactionsParsed={async (rows, raw) => {
                     setShowAccountTransactions(false);
@@ -219,19 +225,24 @@ function Dashboard({
                       const startISO = range?.start ? isoDate(range.start) : "";
                       const endISO = range?.end ? isoDate(range.end) : "";
 
-                      await handleImport(rows, {
-                        ...raw,
-                        accountId: currentAccountId,
-                        statement: {
-                          startISO,
-                          endISO,
-                          statementKey,
-                          transactionSum,
-                          endingBalance,
-                          startingBalance,
-                          balanceSource: "csv",
-                        },
-                      });
+                      try {
+                        setImportError("");
+                        await handleImport(rows, {
+                          ...raw,
+                          accountId: currentAccountId,
+                          statement: {
+                            startISO,
+                            endISO,
+                            statementKey,
+                            transactionSum,
+                            endingBalance,
+                            startingBalance,
+                            balanceSource: "csv",
+                          },
+                        });
+                      } catch (err) {
+                        setImportError(err?.message || "Import failed. Check your file and try again.");
+                      }
 
                       return;
                     }
@@ -353,6 +364,7 @@ function Dashboard({
               ? isoDate(pendingImport.range.end)
               : "";
 
+            setImportError("");
             await handleImport(pendingImport.rows, {
               ...pendingImport.raw,
               accountId: pendingImport.accountId,
@@ -369,6 +381,8 @@ function Dashboard({
 
             setBalanceModalOpen(false);
             setPendingImport(null);
+          } catch (err) {
+            setImportError(err?.message || "Import failed. Check your file and try again.");
           } finally {
             setBalanceModalBusy(false);
           }
