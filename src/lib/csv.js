@@ -2,16 +2,36 @@
 
 // --- Known banks for account detection ---
 export const KNOWN_BANKS = [
+  { key: "usaa", label: "USAA" },
   { key: "chase", label: "Chase" },
   { key: "capitalone", label: "Capital One" },
   { key: "wellsfargo", label: "Wells Fargo" },
-  { key: "americanexpress", label: "Amex" },
+  { key: "americanexpress", label: "American Express" },
+  { key: "amex", label: "American Express" },
   { key: "discover", label: "Discover" },
   { key: "navyfederal", label: "Navy Federal" },
   { key: "mountainamerica", label: "Mountain America" },
   { key: "bankofamerica", label: "Bank of America" },
   { key: "usbank", label: "US Bank" },
   { key: "pnc", label: "PNC" },
+  { key: "citibank", label: "Citibank" },
+  { key: "citi", label: "Citibank" },
+  { key: "tdbank", label: "TD Bank" },
+  { key: "ally", label: "Ally" },
+  { key: "sofi", label: "SoFi" },
+  { key: "chime", label: "Chime" },
+  { key: "fidelity", label: "Fidelity" },
+  { key: "schwab", label: "Charles Schwab" },
+  { key: "vanguard", label: "Vanguard" },
+  { key: "regions", label: "Regions" },
+  { key: "fifththird", label: "Fifth Third" },
+  { key: "keybank", label: "KeyBank" },
+  { key: "suntrust", label: "Truist" },
+  { key: "truist", label: "Truist" },
+  { key: "synchrony", label: "Synchrony" },
+  { key: "barclays", label: "Barclays" },
+  { key: "marcus", label: "Marcus" },
+  { key: "apple", label: "Apple Card" },
 ];
 
 // normalize a string for matching (file names, descriptions, etc)

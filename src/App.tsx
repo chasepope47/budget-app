@@ -352,24 +352,51 @@ export default function App() {
         targetAccountId = newAcc.id
       }
     } else {
-      // No bank detected — use selected account or create a generic one
-      targetAccountId = currentAccountId ?? null
-      if (!targetAccountId) {
-        const accountName = meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ') || 'Imported Account'
-        const newAcc = await apiAddAccount({
-          household_id: householdId,
-          name: accountName,
-          type: 'checking',
-          starting_balance: 0,
-          current_balance: null,
-          current_balance_as_of: null,
-          last_statement_key: null,
-          last_confirmed_ending_balance: null,
-          statement_balances: {},
-        })
-        setAccounts((prev) => [...prev, newAcc])
-        setCurrentAccountId(newAcc.id)
-        targetAccountId = newAcc.id
+      // No bank detected — try to match by filename, then fall back to selected account
+      const filenameHint = meta.filename?.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ').trim() || ''
+      if (filenameHint) {
+        const hintLower = filenameHint.toLowerCase()
+        const matched = accounts.find(
+          (a) => a.name.toLowerCase().includes(hintLower) || hintLower.includes(a.name.toLowerCase()),
+        )
+        if (matched) {
+          targetAccountId = matched.id
+        } else {
+          // Filename doesn't match any account — create one named after the file
+          const newAcc = await apiAddAccount({
+            household_id: householdId,
+            name: filenameHint,
+            type: 'checking',
+            starting_balance: 0,
+            current_balance: null,
+            current_balance_as_of: null,
+            last_statement_key: null,
+            last_confirmed_ending_balance: null,
+            statement_balances: {},
+          })
+          setAccounts((prev) => [...prev, newAcc])
+          setCurrentAccountId(newAcc.id)
+          targetAccountId = newAcc.id
+        }
+      } else {
+        // No hints at all — use selected account as last resort
+        targetAccountId = currentAccountId ?? null
+        if (!targetAccountId) {
+          const newAcc = await apiAddAccount({
+            household_id: householdId,
+            name: 'Imported Account',
+            type: 'checking',
+            starting_balance: 0,
+            current_balance: null,
+            current_balance_as_of: null,
+            last_statement_key: null,
+            last_confirmed_ending_balance: null,
+            statement_balances: {},
+          })
+          setAccounts((prev) => [...prev, newAcc])
+          setCurrentAccountId(newAcc.id)
+          targetAccountId = newAcc.id
+        }
       }
     }
 
