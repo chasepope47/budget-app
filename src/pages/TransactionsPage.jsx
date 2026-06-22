@@ -11,6 +11,24 @@ const FLOW_TYPE_OPTIONS = [
   { value: "ignore", label: "Ignore" },
 ];
 
+const CATEGORY_OPTIONS = [
+  "",
+  "Income – Paycheck",
+  "Income – Refund",
+  "Income – Other",
+  "Transport – Rideshare",
+  "Transport – Gas",
+  "Groceries",
+  "Food & Dining",
+  "Subscriptions",
+  "Housing – Rent/Mortgage",
+  "Utilities",
+  "Health & Fitness",
+  "Insurance",
+  "Shopping",
+  "Other",
+];
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -179,9 +197,15 @@ function TransactionsPage({
                           onChange={(e) => onUpdateTransaction(tx.id, { description: e.target.value })} />
                       </td>
                       <td className="px-2 py-1 text-slate-300 hidden sm:table-cell">
-                        <input className="w-full bg-transparent border-b border-slate-700 focus:outline-none focus:border-cyan-400 text-[0.7rem] sm:text-xs"
+                        <select className="w-full bg-slate-900/40 rounded-md border border-slate-700 px-2 py-1 text-[0.65rem] focus:outline-none focus:border-cyan-400"
                           value={tx.category || ""}
-                          onChange={(e) => onUpdateTransaction(tx.id, { category: e.target.value })} />
+                          onChange={(e) => onUpdateTransaction(tx.id, { category: e.target.value })}>
+                          {CATEGORY_OPTIONS.map((cat) => (
+                            <option key={cat || "empty"} value={cat}>
+                              {cat || "(no category)"}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-2 py-1 text-slate-300 hidden sm:table-cell">
                         <select className="w-full bg-slate-900/40 rounded-md border border-slate-700 px-2 py-1 text-[0.65rem] focus:outline-none focus:border-cyan-400"
