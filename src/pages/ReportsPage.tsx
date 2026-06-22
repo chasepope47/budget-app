@@ -52,6 +52,7 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
   const [pantryTotal, setPantryTotal] = useState(0)
   const [refreshKey, setRefreshKey] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
+  const [selectedBucket, setSelectedBucket] = useState<string | null>(null)
 
   useEffect(() => {
     if (!includePantry) { setPantryTotal(0); return }
@@ -106,11 +107,47 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
         : (
           <div className="flex justify-center">
             <div className="w-full max-w-sm">
-              <SpendingPieChart slices={slices} size={300} />
+              <SpendingPieChart slices={slices} size={300} onSliceClick={setSelectedBucket} />
             </div>
           </div>
         )
       }
+
+      {selectedBucket && (
+        <div className="border-t border-slate-800 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-slate-100">{selectedBucket} transactions</h3>
+            <button
+              onClick={() => setSelectedBucket(null)}
+              className="text-xs text-slate-400 hover:text-slate-300 transition"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div className="max-h-96 overflow-auto rounded-lg border border-slate-800">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-slate-900 text-slate-300 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2">Date</th>
+                  <th className="px-3 py-2">Description</th>
+                  <th className="px-3 py-2 text-right">Amount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {transactions
+                  .filter((t) => t.amount < 0 && bucketFor(normalizeForMatch(t.description)) === selectedBucket)
+                  .map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-900/50">
+                      <td className="px-3 py-2 text-slate-400">{t.date}</td>
+                      <td className="px-3 py-2 text-slate-200">{t.description}</td>
+                      <td className="px-3 py-2 text-right text-rose-300 font-medium">${Math.abs(t.amount).toFixed(2)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {income > 0 && total > 0 && (
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">

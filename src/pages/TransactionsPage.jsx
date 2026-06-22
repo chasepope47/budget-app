@@ -26,6 +26,8 @@ const CATEGORY_OPTIONS = [
   "Health & Fitness",
   "Insurance",
   "Shopping",
+  "Donations",
+  "Transfers",
   "Other",
 ];
 
