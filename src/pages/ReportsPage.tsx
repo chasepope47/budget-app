@@ -43,11 +43,12 @@ function bucketFor(matchText: string): string {
 
 const SETTINGS_KEY = 'budgetApp_reportSettings_v2'
 
-function OverviewTab({ householdId, transactions, month, includePantry }: {
+function OverviewTab({ householdId, transactions, month, includePantry, includeTransfers }: {
   householdId: string
   transactions: Transaction[]
   month: string
   includePantry: boolean
+  includeTransfers: boolean
 }) {
   const [pantryTotal, setPantryTotal] = useState(0)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -69,13 +70,17 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
       if (t.amount >= 0) continue
       // Use manually-set category if present, otherwise auto-detect from description
       const bucket = t.category || bucketFor(normalizeForMatch(t.description))
+
+      // Skip transfers if includeTransfers is false
+      if (!includeTransfers && bucket === 'Transfers') continue
+
       buckets[bucket] = (buckets[bucket] ?? 0) + Math.abs(t.amount)
     }
     if (includePantry && pantryTotal > 0) {
       buckets['Groceries'] = (buckets['Groceries'] ?? 0) + pantryTotal
     }
     return buildSlices(buckets)
-  }, [transactions, pantryTotal, includePantry])
+  }, [transactions, pantryTotal, includePantry, includeTransfers])
 
   const total = slices.reduce((s, sl) => s + sl.value, 0)
   const income = transactions.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0)
@@ -139,6 +144,7 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
                   .filter((t) => {
                     if (t.amount >= 0) return false
                     const bucket = t.category || bucketFor(normalizeForMatch(t.description))
+                    if (!includeTransfers && bucket === 'Transfers') return false
                     return bucket === selectedBucket
                   })
                   .map((t) => (
@@ -200,7 +206,7 @@ export default function ReportsPage({ householdId, monthKey, month, transactions
         </div>
       </div>
 
-      {tab === 'overview' && <OverviewTab householdId={householdId} transactions={transactions} month={month} includePantry={settings.includePantry} />}
+      {tab === 'overview' && <OverviewTab householdId={householdId} transactions={transactions} month={month} includePantry={settings.includePantry} includeTransfers={settings.includeTransfers} />}
 
       {tab === 'pantry' && (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
