@@ -720,7 +720,7 @@ export default function App() {
             // @ts-ignore – JSX component, props checked at runtime
             <TransactionsPage
               month={monthLabel}
-              transactions={transactions}
+              transactions={allTransactions}
               accounts={accounts}
               currentAccountId={currentAccountId}
               onChangeCurrentAccount={setCurrentAccountId}

@@ -29,20 +29,23 @@ function TransactionsPage({
   scheduledTemplates = [],
   onScheduledTemplatesChange = () => {},
 }) {
-  const accountFromList = Array.isArray(accounts) ? accounts.find((a) => a.id === currentAccountId) : null;
-  const accountName = accountFromList?.name ?? "";
-
+  const [filterAccountId, setFilterAccountId] = useState(currentAccountId ?? "all");
   const [filters, setFilters] = useState({ query: "", minAmount: "", maxAmount: "" });
   const [sortBy, setSortBy] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
   const [addOpen, setAddOpen] = useState(false);
 
-  const hasData = transactions.length > 0;
+  const visibleTransactions = useMemo(() => {
+    if (filterAccountId === "all") return transactions;
+    return transactions.filter((tx) => tx.account_id === filterAccountId);
+  }, [transactions, filterAccountId]);
+
+  const hasData = visibleTransactions.length > 0;
   const hasActiveFilter = filters.query || filters.minAmount || filters.maxAmount;
 
   const rowsToRender = useMemo(() => {
     if (!hasData) return [];
-    const filtered = transactions.filter((tx) => {
+    const filtered = visibleTransactions.filter((tx) => {
       const q = filters.query.trim().toLowerCase();
       if (q) {
         const hay = [tx.description || "", tx.category || ""].join(" ").toLowerCase();
@@ -59,21 +62,34 @@ function TransactionsPage({
       if (sortBy === "description" || sortBy === "category") return ((a[sortBy] || "").localeCompare(b[sortBy] || "")) * dir;
       return ((Date.parse(a.date) || 0) - (Date.parse(b.date) || 0)) * dir;
     });
-  }, [transactions, filters, sortBy, sortDir, hasData]);
+  }, [visibleTransactions, filters, sortBy, sortDir, hasData]);
 
   return (
     <div className="space-y-4 w-full">
       <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
-          <span className="text-xs text-slate-400">Imported + manual entries</span>
-          {accountName && (
-            <p className="text-[0.65rem] text-slate-500">
-              Account: <span className="font-semibold text-cyan-200">{accountName}</span>
-            </p>
+        <h1 className="text-lg font-semibold text-slate-100">Transactions</h1>
+        <div className="flex items-center gap-2">
+          <select
+            value={filterAccountId}
+            onChange={(e) => setFilterAccountId(e.target.value)}
+            className="h-8 rounded-md bg-slate-900/70 px-2 text-[0.7rem] text-slate-100 outline-none ring-1 ring-slate-700 focus:ring-2 focus:ring-cyan-500"
+          >
+            <option value="all">All accounts ({transactions.length})</option>
+            {(accounts || []).map((acc) => {
+              const count = transactions.filter((t) => t.account_id === acc.id).length;
+              return (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} ({count})
+                </option>
+              );
+            })}
+          </select>
+          {hasData && (
+            <span className="text-[0.65rem] text-slate-500 whitespace-nowrap">
+              {rowsToRender.length} of {visibleTransactions.length}
+            </span>
           )}
         </div>
-        {hasData && <span className="text-[0.65rem] text-slate-500">Showing {rowsToRender.length} of {transactions.length}</span>}
       </header>
 
       <Card title="ALL TRANSACTIONS">
@@ -85,8 +101,9 @@ function TransactionsPage({
           {hasData && (
             <button type="button"
               onClick={() => {
-                if (window.confirm(`Delete all ${transactions.length} transaction${transactions.length === 1 ? "" : "s"} for ${month}? This cannot be undone.`)) {
-                  onClearTransactions(transactions.map((t) => t.id));
+                const label = filterAccountId === "all" ? `all ${visibleTransactions.length}` : `${visibleTransactions.length}`;
+                if (window.confirm(`Delete ${label} transaction${visibleTransactions.length === 1 ? "" : "s"}? This cannot be undone.`)) {
+                  onClearTransactions(visibleTransactions.map((t) => t.id));
                 }
               }}
               className="h-8 px-3 rounded-md border border-rose-500/60 text-[0.7rem] font-medium text-rose-300 hover:bg-rose-400/10">
