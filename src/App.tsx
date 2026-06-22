@@ -327,13 +327,35 @@ export default function App() {
     let targetAccountId: string | null = null
 
     if (meta.bank) {
-      // Look for an existing account whose name matches the detected bank
       const bankLower = meta.bank.toLowerCase()
       const matched = accounts.find(
         (a) => a.name.toLowerCase().includes(bankLower) || bankLower.includes(a.name.toLowerCase()),
       )
       if (matched) {
-        targetAccountId = matched.id
+        // An account for this bank already exists — ask whether to reuse it or create a new one
+        const useExisting = window.confirm(
+          `Found existing account "${matched.name}".\n\nClick OK to import into it, or Cancel to create a new account (e.g. for a second ${meta.bank} account like savings vs checking).`
+        )
+        if (useExisting) {
+          targetAccountId = matched.id
+        } else {
+          const suggestedName = `${meta.bank} ${accounts.filter(a => a.name.toLowerCase().includes(bankLower)).length + 1}`
+          const accountName = window.prompt('New account name:', suggestedName) || suggestedName
+          const newAcc = await apiAddAccount({
+            household_id: householdId,
+            name: accountName,
+            type: 'checking',
+            starting_balance: 0,
+            current_balance: null,
+            current_balance_as_of: null,
+            last_statement_key: null,
+            last_confirmed_ending_balance: null,
+            statement_balances: {},
+          })
+          setAccounts((prev) => [...prev, newAcc])
+          setCurrentAccountId(newAcc.id)
+          targetAccountId = newAcc.id
+        }
       } else {
         // Bank detected but no matching account — create one for it
         const newAcc = await apiAddAccount({
