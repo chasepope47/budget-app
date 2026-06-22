@@ -67,7 +67,8 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
     const buckets: Record<string, number> = {}
     for (const t of transactions) {
       if (t.amount >= 0) continue
-      const bucket = bucketFor(normalizeForMatch(t.description))
+      // Use manually-set category if present, otherwise auto-detect from description
+      const bucket = t.category || bucketFor(normalizeForMatch(t.description))
       buckets[bucket] = (buckets[bucket] ?? 0) + Math.abs(t.amount)
     }
     if (includePantry && pantryTotal > 0) {
@@ -135,7 +136,11 @@ function OverviewTab({ householdId, transactions, month, includePantry }: {
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {transactions
-                  .filter((t) => t.amount < 0 && bucketFor(normalizeForMatch(t.description)) === selectedBucket)
+                  .filter((t) => {
+                    if (t.amount >= 0) return false
+                    const bucket = t.category || bucketFor(normalizeForMatch(t.description))
+                    return bucket === selectedBucket
+                  })
                   .map((t) => (
                     <tr key={t.id} className="hover:bg-slate-900/50">
                       <td className="px-3 py-2 text-slate-400">{t.date}</td>
